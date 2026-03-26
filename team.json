@@ -1,0 +1,92 @@
+[
+    {
+        "studentId":"55-1174",
+        "name":"Ahmed waleed ElFar",
+        "githubUsername":"AhmedWaleedElFar",
+        "service":"account-service"
+    },
+    {
+        "studentId":"55-11762",
+        "name":"Ahmed Mostafa Salama",
+        "githubUsername":"salama-02",
+        "service":"account-service"
+    },
+    {
+        "studentId":"55-10390",
+        "name":"Youssef Sameh",
+        "githubUsername":"youssefsameh55",
+        "service":"account-service"
+    },
+    {
+        "studentId":"55-11114",
+        "name":"Youssef Ahmed Abdalsattar",
+        "githubUsername":"youssefa460",
+        "service":"budget-service"
+    },
+    {
+        "studentId":"55-19624",
+        "name":"Mohanad Yehia",
+        "githubUsername":"Mohanad49",
+        "service":"budget-service"
+    },
+    {
+        "studentId":"55-1140",
+        "name":"Mohammed Waleed",
+        "githubUsername":"MohammedWaleed11",
+        "service":"budget-service"
+    },
+    {
+        "studentId":"55-13999",
+        "name":"Marwan Mostafa",
+        "githubUsername":"MarwanMostafa54",
+        "service":"reporting-service"
+    },
+    {
+        "studentId":"55-16066",
+        "name":"Abdelrahman Emad",
+        "githubUsername":"thybet333",
+        "service":"reporting-service"
+    },
+    {
+        "studentId":"55-23390",
+        "name":"Ahmed HossamEldin Mahmoud",
+        "githubUsername":"A-HO7",
+        "service":"reporting-service"
+    },
+    {
+        "studentId":"55-18839",
+        "name":"Ahmed Said",
+        "githubUsername":"ahmed-cmd-web",
+        "service":"transaction-service"
+    },
+    {
+        "studentId":"55-12283",
+        "name":"Ahmed Mohamed Mostafa",
+        "githubUsername":"AhmedV100",
+        "service":"transaction-service"
+    },
+    {
+        "studentId":"55-15033",
+        "name":"Mostafa Ahmed",
+        "githubUsername":"MostafaVT",
+        "service":"transaction-service"
+    },
+    {
+        "studentId":"55-26257",
+        "name":"Abdelrahman Khalil",
+        "githubUsername":"AbdelrahmaNofal",
+        "service":"user-service"
+    },
+    {
+        "studentId":"55-25341",
+        "name":"Ziad Amgad Saleh",
+        "githubUsername":"ZiaddAmgad",
+        "service":"user-service"
+    },
+    {
+        "studentId":"55-24894",
+        "name":"Mohamed Ahmed Mohamed",
+        "githubUsername":"Mohamedhossam77",
+        "service":"user-service"
+    }
+]

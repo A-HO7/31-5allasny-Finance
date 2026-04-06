@@ -25,8 +25,8 @@ public class UserController {
         return userService.getAllUsers();
     }
 
-    @GetMapping("/health")
-    public String healthCheck() {
-        return "OK";
-    }
+//    @GetMapping("/health")
+//    public String healthCheck() {
+//        return "OK";
+//    }
 }

@@ -10,6 +10,9 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
+import com.team31.financetracker.user.dto.UserProfileDTO;
+import com.team31.financetracker.user.dto.FinancialGoalDTO;
+import java.util.stream.Collectors;
 
 import java.util.List;
 
@@ -99,5 +102,32 @@ public class UserService {
 
         // Save via JPA cascade from User
         return userRepository.save(user);
+    }
+
+    // Get User Profile with Goals (S1-F8)
+    @Transactional(readOnly = true)
+    public UserProfileDTO getUserProfileWithGoals(Long id) {
+        User user = getUserById(id);
+
+        List<FinancialGoalDTO> goalDTOs = user.getFinancialGoals().stream()
+                .map(goal -> new FinancialGoalDTO(
+                        goal.getLabel(),
+                        goal.getTargetAmount(),
+                        goal.getCurrentAmount(),
+                        goal.getDeadline(),
+                        goal.getPrimary(),
+                        goal.getMetadata()
+                ))
+                .collect(Collectors.toList());
+
+        return new UserProfileDTO(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getPreferences(),
+                goalDTOs,
+                goalDTOs.size()
+        );
     }
 }

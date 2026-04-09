@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.user.model.Role;
+import com.team31.financetracker.user.model.UserStatus;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -53,5 +55,21 @@ public class UserService {
     //Search with Filter (S1-F1)
     public List<User> searchUsers(String name, String email, Role role) {
         return userRepository.searchUsers(name, email, role != null ? role.name() : null);
+    }
+
+    // Deactivate User (S1-F4)
+    @Transactional
+    public User deactivateUser(Long id) {
+        User user = getUserById(id);
+
+        int activeBudgets = userRepository.countActiveBudgetsNative(id);
+        if (activeBudgets > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate user with active budgets");
+        }
+
+        userRepository.voidPendingTransactionsNative(id);
+
+        user.setStatus(UserStatus.DEACTIVATED);
+        return userRepository.save(user);
     }
 }

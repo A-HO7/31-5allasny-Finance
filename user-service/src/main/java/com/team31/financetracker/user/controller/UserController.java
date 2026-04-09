@@ -56,4 +56,10 @@ public class UserController {
 
         return userService.searchUsers(name, email, role);
     }
+
+    // Deactivate User (S1-F4)
+    @PutMapping("/{id}/deactivate")
+    public User deactivateUser(@PathVariable Long id) {
+        return userService.deactivateUser(id);
+    }
 }

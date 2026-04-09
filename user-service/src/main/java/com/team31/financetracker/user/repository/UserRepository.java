@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Modifying;
 
 import java.util.List;
 
@@ -21,4 +22,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("name") String name,
             @Param("email") String email,
             @Param("role") String role);
+
+    @Query(value = "SELECT COUNT(*) FROM budgets WHERE user_id = :userId AND status = 'ACTIVE'", nativeQuery = true)
+    int countActiveBudgetsNative(@Param("userId") Long userId);
+
+    @Modifying
+    @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE user_id = :userId AND status = 'PENDING'", nativeQuery = true)
+    void voidPendingTransactionsNative(@Param("userId") Long userId);
 }

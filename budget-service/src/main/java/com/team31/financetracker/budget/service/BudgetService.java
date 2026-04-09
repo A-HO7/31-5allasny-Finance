@@ -48,6 +48,21 @@ public class BudgetService {
         return budgetRepository.save(existingBudget);
     }
 
+    public List<com.team31.financetracker.budget.dto.OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
+        List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
+        return projections.stream().map(p -> {
+            com.team31.financetracker.budget.dto.OverspentBudgetDTO dto = new com.team31.financetracker.budget.dto.OverspentBudgetDTO();
+            dto.setBudgetId(p.getBudgetId());
+            dto.setUserName(p.getUserName());
+            dto.setCategory(p.getCategory());
+            dto.setBudgetAmount(p.getBudgetAmount());
+            dto.setSpentAmount(p.getSpentAmount());
+            dto.setOverspendPercentage(p.getOverspendPercentage());
+            dto.setWarningSent(p.getWarningSent());
+            return dto;
+        }).toList();
+    }
+
     public void deleteBudget(Long id) {
         Budget existingBudget = getBudgetById(id);
         budgetRepository.delete(existingBudget);

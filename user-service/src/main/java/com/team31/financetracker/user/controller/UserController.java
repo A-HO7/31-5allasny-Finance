@@ -62,4 +62,10 @@ public class UserController {
     public User deactivateUser(@PathVariable Long id) {
         return userService.deactivateUser(id);
     }
+
+    // Set Primary Financial Goal (S1-F7)
+    @PutMapping("/{userId}/goals/{goalId}/primary")
+    public User setPrimaryFinancialGoal(@PathVariable Long userId, @PathVariable Long goalId) {
+        return userService.setPrimaryFinancialGoal(userId, goalId);
+    }
 }

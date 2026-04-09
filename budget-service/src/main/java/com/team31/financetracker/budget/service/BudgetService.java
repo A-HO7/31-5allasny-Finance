@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -67,6 +69,21 @@ public class BudgetService {
                     "value must be numeric when operator is " + operator
             );
         }
+    }
+
+    public List<Budget> getBudgetHistory(LocalDate startDate, LocalDate endDate, Category category) {
+        if (startDate == null || endDate == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate and endDate are required");
+        }
+
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must be before or equal to endDate");
+        }
+
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTimeExclusive = endDate.plusDays(1).atStartOfDay();
+
+        return budgetRepository.findHistoryByCreatedAtRange(startDateTime, endDateTimeExclusive, category);
     }
 
     public Budget updateBudget(Long id, Budget updatedBudget) {

@@ -45,4 +45,18 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
               AND CAST(jsonb_extract_path_text(metadata, :key) AS double precision) < CAST(:value AS double precision)
             """, nativeQuery = true)
         List<Budget> findByMetadataKeyLessThan(@Param("key") String key, @Param("value") String value);
+
+            @Query("""
+              SELECT b
+              FROM Budget b
+              WHERE b.createdAt >= :startDateTime
+                AND b.createdAt < :endDateTimeExclusive
+                AND (:category IS NULL OR b.category = :category)
+              ORDER BY b.createdAt ASC
+              """)
+            List<Budget> findHistoryByCreatedAtRange(
+              @Param("startDateTime") java.time.LocalDateTime startDateTime,
+              @Param("endDateTimeExclusive") java.time.LocalDateTime endDateTimeExclusive,
+              @Param("category") Category category
+            );
 }

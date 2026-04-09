@@ -61,4 +61,9 @@ public class BudgetController {
     ) {
         return budgetService.getActiveBudgetForUserByCategory(userId, category);
     }
+
+    @DeleteMapping("/purge")
+    public Integer purgeOldBudgets(@RequestParam int olderThanDays) {
+        return budgetService.purgeOldBudgets(olderThanDays);
+    }
 }

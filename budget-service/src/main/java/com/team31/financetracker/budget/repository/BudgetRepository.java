@@ -4,9 +4,11 @@ import com.team31.financetracker.budget.model.Budget;
 import com.team31.financetracker.budget.model.BudgetStatus;
 import com.team31.financetracker.budget.model.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface BudgetRepository extends JpaRepository<Budget, Long> {
@@ -19,4 +21,8 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             Category category,
             BudgetStatus status
     );
+
+    @Modifying
+    @Query(value = "DELETE FROM budgets WHERE status IN ('COMPLETED', 'EXCEEDED') AND created_at < :cutoffDate", nativeQuery = true)
+    int purgeOldBudgets(@Param("cutoffDate") LocalDateTime cutoffDate);
 }

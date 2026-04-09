@@ -6,8 +6,10 @@ import com.team31.financetracker.budget.model.Category;
 import com.team31.financetracker.budget.repository.BudgetRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -70,5 +72,11 @@ public class BudgetService {
                         HttpStatus.NOT_FOUND,
                         "No active budget found for this user and category"
                 ));
+    }
+
+    @Transactional
+    public int purgeOldBudgets(int olderThanDays) {
+        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(olderThanDays);
+        return budgetRepository.purgeOldBudgets(cutoffDate);
     }
 }

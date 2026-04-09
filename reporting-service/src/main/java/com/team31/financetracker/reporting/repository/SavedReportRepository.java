@@ -31,4 +31,14 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
                    "report_config = report_config || jsonb_build_object('archiveReason', :reason, 'archivedAt', :at) " +
                    "WHERE id = :id AND status = 'GENERATED'", nativeQuery = true)
     int archiveReportNative(@Param("id") Long id, @Param("reason") String reason, @Param("at") String at);
+
+    @Query(value = "SELECT EXISTS(SELECT 1 FROM users WHERE id = :userId)", nativeQuery = true)
+    boolean existsUserById(@Param("userId") Long userId);
+
+    @Query(value = "SELECT report_type, COUNT(*) FROM saved_reports " +
+                   "WHERE user_id = :userId AND status = 'GENERATED' " +
+                   "GROUP BY report_type", nativeQuery = true)
+    List<Object[]> countGeneratedReportsByType(@Param("userId") Long userId);
+
+    long countByUserId(Long userId);
 }

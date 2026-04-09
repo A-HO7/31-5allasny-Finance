@@ -5,7 +5,12 @@ import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
+
+import com.team31.financetracker.reporting.model.ReportType;
 
 @Service
 public class SavedReportService {
@@ -24,6 +29,12 @@ public class SavedReportService {
         return repository.findAll();
     }
 
+    public List<SavedReport> searchReports(ReportType reportType, LocalDate startDate, LocalDate endDate) {
+        LocalDateTime start = (startDate != null) ? startDate.atStartOfDay() : null;
+        LocalDateTime end = (endDate != null) ? endDate.atTime(LocalTime.MAX) : null;
+        return repository.searchReports(reportType, start, end);
+    }
+
     public SavedReport getSavedReportById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("SavedReport not found with id: " + id));
     }
@@ -32,7 +43,6 @@ public class SavedReportService {
     public SavedReport updateSavedReport(Long id, SavedReport updatedReport) {
         SavedReport existing = getSavedReportById(id);
         
-        // Manual check for strictly required fields per specification
         if (updatedReport.getUserId() == null || updatedReport.getName() == null || 
             updatedReport.getReportType() == null || updatedReport.getPeriodStart() == null || 
             updatedReport.getPeriodEnd() == null || updatedReport.getStatus() == null) {

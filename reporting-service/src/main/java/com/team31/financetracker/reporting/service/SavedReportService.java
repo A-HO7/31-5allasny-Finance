@@ -9,6 +9,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import com.team31.financetracker.reporting.dto.UserReportSummaryDTO;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.model.ReportStatus;
@@ -76,5 +79,28 @@ public class SavedReportService {
         }
 
         repository.archiveReportNative(id, reason, LocalDateTime.now().toString());
+    }
+
+    public UserReportSummaryDTO getUserReportSummary(Long userId) {
+        // Step a: Verify user exists via cross-service native SQL check
+        if (!repository.existsUserById(userId)) {
+            throw new RuntimeException("User not found with id: " + userId);
+        }
+
+        // Step b & c: Query grouped counts, build typeBreakdown map
+        List<Object[]> rows = repository.countGeneratedReportsByType(userId);
+        Map<String, Integer> typeBreakdown = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            String type = (String) row[0];
+            Integer count = ((Number) row[1]).intValue();
+            typeBreakdown.put(type, count);
+        }
+
+        // Step d: Calculate totals
+        long totalReports = repository.countByUserId(userId);
+        long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
+
+        // Step e: Build and return DTO
+        return new UserReportSummaryDTO(userId, totalReports, generatedCount, typeBreakdown);
     }
 }

@@ -79,4 +79,13 @@ public class SavedReportController {
             return ResponseEntity.notFound().build();
         }
     }
+
+    @GetMapping("/user/{userId}/summary")
+    public ResponseEntity<?> getUserReportSummary(@PathVariable Long userId) {
+        try {
+            return ResponseEntity.ok(service.getUserReportSummary(userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
 }

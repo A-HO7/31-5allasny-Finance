@@ -8,6 +8,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.user.model.Role;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class UserService {
@@ -53,5 +54,18 @@ public class UserService {
     //Search with Filter (S1-F1)
     public List<User> searchUsers(String name, String email, Role role) {
         return userRepository.searchUsers(name, email, role != null ? role.name() : null);
+    }
+
+    //Update Preferences (S1-F2)
+    public User updatePreferences(Long id, Map<String, Object> newPreferences) {
+        User user = getUserById(id);
+        Map<String, Object> existing = user.getPreferences();
+        if (existing == null) {
+            user.setPreferences(newPreferences);
+        } else {
+            existing.putAll(newPreferences); // merges, overwrites same keys, adds new keys
+            user.setPreferences(existing);
+        }
+        return userRepository.save(user);
     }
 }

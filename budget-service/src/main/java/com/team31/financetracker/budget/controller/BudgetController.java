@@ -1,5 +1,7 @@
 package com.team31.financetracker.budget.controller;
 
+import com.team31.financetracker.budget.dto.BatchBudgetCreateRequest;
+import com.team31.financetracker.budget.dto.BatchBudgetCreateResponse;
 import com.team31.financetracker.budget.model.Budget;
 import com.team31.financetracker.budget.model.Category;
 import com.team31.financetracker.budget.service.BudgetService;
@@ -33,6 +35,12 @@ public class BudgetController {
     @ResponseStatus(HttpStatus.CREATED)
     public Budget createBudget(@RequestBody Budget budget) {
         return budgetService.createBudget(budget);
+    }
+
+    @PostMapping("/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public BatchBudgetCreateResponse createBudgetsBatch(@RequestBody BatchBudgetCreateRequest request) {
+        return budgetService.createBudgetsBatch(request);
     }
 
     @GetMapping

@@ -6,7 +6,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.format.annotation.DateTimeFormat;
+import java.time.LocalDate;
 import java.util.List;
+
+import com.team31.financetracker.reporting.model.ReportType;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -26,6 +30,14 @@ public class SavedReportController {
     @GetMapping
     public ResponseEntity<List<SavedReport>> getAllSavedReports() {
         return ResponseEntity.ok(service.getAllSavedReports());
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<SavedReport>> searchReports(
+            @RequestParam(required = false) ReportType reportType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(service.searchReports(reportType, startDate, endDate));
     }
 
     @GetMapping("/{id}")

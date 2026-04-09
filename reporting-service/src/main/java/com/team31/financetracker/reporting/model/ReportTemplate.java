@@ -22,7 +22,6 @@ public class ReportTemplate {
     private String code;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TemplateType templateType;
 

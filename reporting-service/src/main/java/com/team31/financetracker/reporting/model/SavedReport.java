@@ -26,7 +26,6 @@ public class SavedReport {
     private String name;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private ReportType reportType;
 
@@ -37,7 +36,6 @@ public class SavedReport {
     private LocalDate periodEnd;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private ReportStatus status = ReportStatus.PENDING;
 

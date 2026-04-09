@@ -19,11 +19,11 @@ public class ReportTemplateUsage {
     private LocalDateTime appliedAt;
 
     @ManyToOne(optional = false)
-    @JoinColumn(name = "saved_report_id", nullable = false)
+    @JoinColumn(name = "report_id", nullable = false)
     private SavedReport savedReport;
 
     @ManyToOne(optional = false)
-    @JoinColumn(name = "report_template_id", nullable = false)
+    @JoinColumn(name = "template_id", nullable = false)
     private ReportTemplate reportTemplate;
 
     @PrePersist

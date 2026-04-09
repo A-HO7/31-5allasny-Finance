@@ -39,7 +39,7 @@ public class SavedReport {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
-    private ReportStatus status;
+    private ReportStatus status = ReportStatus.PENDING;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")

@@ -1,0 +1,57 @@
+package com.team31.financetracker.reporting.controller;
+
+import com.team31.financetracker.reporting.model.SavedReport;
+import com.team31.financetracker.reporting.service.SavedReportService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/reports")
+public class SavedReportController {
+
+    private final SavedReportService service;
+
+    public SavedReportController(SavedReportService service) {
+        this.service = service;
+    }
+
+    @PostMapping
+    public ResponseEntity<SavedReport> createSavedReport(@RequestBody SavedReport savedReport) {
+        return new ResponseEntity<>(service.createSavedReport(savedReport), HttpStatus.CREATED);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<SavedReport>> getAllSavedReports() {
+        return ResponseEntity.ok(service.getAllSavedReports());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<SavedReport> getSavedReportById(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getSavedReportById(id));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateSavedReport(@PathVariable Long id, @RequestBody SavedReport savedReport) {
+        try {
+            SavedReport updated = service.updateSavedReport(id, savedReport);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSavedReport(@PathVariable Long id) {
+        try {
+            service.deleteSavedReport(id);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+}

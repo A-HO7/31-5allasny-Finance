@@ -11,6 +11,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 import com.team31.financetracker.reporting.model.ReportType;
+import com.team31.financetracker.reporting.model.ReportStatus;
 
 @Service
 public class SavedReportService {
@@ -64,5 +65,16 @@ public class SavedReportService {
     public void deleteSavedReport(Long id) {
         SavedReport existing = getSavedReportById(id);
         repository.delete(existing);
+    }
+
+    @Transactional
+    public void archiveReport(Long id, String reason) {
+        SavedReport report = getSavedReportById(id); // Throws RuntimeException (404)
+        
+        if (report.getStatus() != ReportStatus.GENERATED) {
+            throw new IllegalArgumentException("Only GENERATED reports can be archived. Current status: " + report.getStatus());
+        }
+
+        repository.archiveReportNative(id, reason, LocalDateTime.now().toString());
     }
 }

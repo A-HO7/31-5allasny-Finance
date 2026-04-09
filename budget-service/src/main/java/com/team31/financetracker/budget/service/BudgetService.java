@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 @Service
 public class BudgetService {
 
@@ -15,6 +17,40 @@ public class BudgetService {
 
     public BudgetService(BudgetRepository budgetRepository) {
         this.budgetRepository = budgetRepository;
+    }
+
+    public Budget createBudget(Budget budget) {
+        return budgetRepository.save(budget);
+    }
+
+    public List<Budget> getAllBudgets() {
+        return budgetRepository.findAll();
+    }
+
+    public Budget getBudgetById(Long id) {
+        return budgetRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
+    }
+
+    public Budget updateBudget(Long id, Budget updatedBudget) {
+        Budget existingBudget = getBudgetById(id);
+
+        existingBudget.setUserId(updatedBudget.getUserId());
+        existingBudget.setCategory(updatedBudget.getCategory());
+        existingBudget.setBudgetAmount(updatedBudget.getBudgetAmount());
+        existingBudget.setSpentAmount(updatedBudget.getSpentAmount());
+        existingBudget.setPeriod(updatedBudget.getPeriod());
+        existingBudget.setStartDate(updatedBudget.getStartDate());
+        existingBudget.setEndDate(updatedBudget.getEndDate());
+        existingBudget.setStatus(updatedBudget.getStatus());
+        existingBudget.setMetadata(updatedBudget.getMetadata());
+
+        return budgetRepository.save(existingBudget);
+    }
+
+    public void deleteBudget(Long id) {
+        Budget existingBudget = getBudgetById(id);
+        budgetRepository.delete(existingBudget);
     }
 
     public Budget getActiveBudgetForUserByCategory(Long userId, Category category) {

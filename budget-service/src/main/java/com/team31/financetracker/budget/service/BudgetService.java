@@ -32,6 +32,43 @@ public class BudgetService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
     }
 
+    public List<Budget> searchBudgetsByMetadata(String key, String operator, String value) {
+        if (key == null || key.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "key must not be empty");
+        }
+
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "value must not be empty");
+        }
+
+        return switch (operator) {
+            case "eq" -> budgetRepository.findByMetadataKeyEquals(key, value);
+            case "gt" -> {
+                validateNumericValue(value, operator);
+                yield budgetRepository.findByMetadataKeyGreaterThan(key, value);
+            }
+            case "lt" -> {
+                validateNumericValue(value, operator);
+                yield budgetRepository.findByMetadataKeyLessThan(key, value);
+            }
+            default -> throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid operator. Allowed values: eq, gt, lt"
+            );
+        };
+    }
+
+    private void validateNumericValue(String value, String operator) {
+        try {
+            Double.parseDouble(value);
+        } catch (NumberFormatException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "value must be numeric when operator is " + operator
+            );
+        }
+    }
+
     public Budget updateBudget(Long id, Budget updatedBudget) {
         Budget existingBudget = getBudgetById(id);
 

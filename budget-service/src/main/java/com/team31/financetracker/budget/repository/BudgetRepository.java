@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface BudgetRepository extends JpaRepository<Budget, Long> {
@@ -19,4 +20,29 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             Category category,
             BudgetStatus status
     );
+
+        @Query(value = """
+            SELECT *
+            FROM budgets
+            WHERE jsonb_extract_path_text(metadata, :key) = :value
+            """, nativeQuery = true)
+        List<Budget> findByMetadataKeyEquals(@Param("key") String key, @Param("value") String value);
+
+        @Query(value = """
+            SELECT *
+            FROM budgets
+            WHERE jsonb_extract_path_text(metadata, :key) IS NOT NULL
+              AND jsonb_extract_path_text(metadata, :key) ~ '^-?\\d+(\\.\\d+)?$'
+              AND CAST(jsonb_extract_path_text(metadata, :key) AS double precision) > CAST(:value AS double precision)
+            """, nativeQuery = true)
+        List<Budget> findByMetadataKeyGreaterThan(@Param("key") String key, @Param("value") String value);
+
+        @Query(value = """
+            SELECT *
+            FROM budgets
+            WHERE jsonb_extract_path_text(metadata, :key) IS NOT NULL
+              AND jsonb_extract_path_text(metadata, :key) ~ '^-?\\d+(\\.\\d+)?$'
+              AND CAST(jsonb_extract_path_text(metadata, :key) AS double precision) < CAST(:value AS double precision)
+            """, nativeQuery = true)
+        List<Budget> findByMetadataKeyLessThan(@Param("key") String key, @Param("value") String value);
 }

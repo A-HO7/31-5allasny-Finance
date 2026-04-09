@@ -38,6 +38,15 @@ public class BudgetController {
         return budgetService.getAllBudgets();
     }
 
+    @GetMapping("/metadata/search")
+    public List<Budget> searchBudgetsByMetadata(
+            @RequestParam String key,
+            @RequestParam String operator,
+            @RequestParam String value
+    ) {
+        return budgetService.searchBudgetsByMetadata(key, operator, value);
+    }
+
     @GetMapping("/{id}")
     public Budget getBudgetById(@PathVariable Long id) {
         return budgetService.getBudgetById(id);

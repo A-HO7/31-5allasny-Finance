@@ -8,6 +8,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -115,5 +120,28 @@ public class BudgetService {
                         HttpStatus.NOT_FOUND,
                         "No active budget found for this user and category"
                 ));
+    }
+    public Budget updateBudgetMetadata(Long budgetId, Map<String, Object> incomingMetadata) {
+        // Check if the budget exists
+        Budget budget = budgetRepository.findById(budgetId)
+                .orElseThrow(() ->
+                        new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
+
+        // Validate input
+        if (incomingMetadata == null || incomingMetadata.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata must not be empty");
+        }
+
+        // Merge metadata
+        Map<String, Object> existingMetadata = budget.getMetadata();
+        if (existingMetadata == null) {
+            existingMetadata = new HashMap<>();
+        }
+
+        existingMetadata.putAll(incomingMetadata);
+        budget.setMetadata(existingMetadata);
+
+        // Save and return updated budget
+        return budgetRepository.save(budget);
     }
 }

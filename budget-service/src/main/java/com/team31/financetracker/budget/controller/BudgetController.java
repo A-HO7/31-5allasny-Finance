@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
+import java.util.Map;
 import java.util.List;
 
 @RestController
@@ -82,5 +82,12 @@ public class BudgetController {
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate endDate
     ) {
         return budgetService.getBudgetPerformance(userId, startDate, endDate);
+    }
+    @PutMapping("/{budgetId}/metadata")
+    public Budget updateBudgetMetadata(
+            @PathVariable Long budgetId,
+            @RequestBody Map<String, Object> metadata
+    ) {
+        return budgetService.updateBudgetMetadata(budgetId, metadata);
     }
 }

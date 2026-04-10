@@ -1,6 +1,7 @@
 package com.team31.financetracker.reporting.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -41,12 +42,12 @@ public class SavedReport {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private Map<String, Object> reportConfig;
+    private Map<String, Object> reportConfig = new java.util.LinkedHashMap<>();
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @JsonIgnore
+    @JsonManagedReference
     @OneToMany(mappedBy = "savedReport", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReportTemplateUsage> reportTemplateUsages = new ArrayList<>();
 

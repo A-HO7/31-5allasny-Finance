@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ReportTemplateUsageRepository extends JpaRepository<ReportTemplateUsage, Long> {
+    boolean existsBySavedReportIdAndReportTemplateId(Long reportId, Long templateId);
 }

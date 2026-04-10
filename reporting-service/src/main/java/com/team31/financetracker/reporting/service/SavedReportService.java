@@ -23,6 +23,9 @@ import com.team31.financetracker.reporting.repository.ReportTemplateRepository;
 import com.team31.financetracker.reporting.repository.ReportTemplateUsageRepository;
 import java.time.temporal.ChronoUnit;
 
+import com.team31.financetracker.reporting.dto.ReportDetailsDTO;
+import java.util.stream.Collectors;
+
 @Service
 public class SavedReportService {
 
@@ -196,5 +199,36 @@ public class SavedReportService {
         templateRepository.save(template);
 
         return report;
+    }
+    public ReportDetailsDTO getReportDetails(Long reportId) {
+        SavedReport report = repository.findById(reportId)
+                .orElseThrow(() -> new RuntimeException("Report not found with id: " + reportId));
+
+        List<ReportTemplateUsage> usages = report.getReportTemplateUsages();
+
+        List<ReportDetailsDTO.AppliedTemplateDTO> appliedTemplates = usages.stream()
+                .map(usage -> new ReportDetailsDTO.AppliedTemplateDTO(
+                        usage.getReportTemplate().getCode(),
+                        usage.getReportTemplate().getTemplateType().name(),
+                        usage.getPagesGenerated(),
+                        usage.getAppliedAt()
+                ))
+                .collect(java.util.stream.Collectors.toList());
+
+        Double totalPages = usages.stream()
+                .mapToDouble(ReportTemplateUsage::getPagesGenerated)
+                .sum();
+
+        return new ReportDetailsDTO(
+                report.getId(),
+                report.getUserId(),
+                report.getName(),
+                report.getReportType(),
+                report.getStatus(),
+                report.getReportConfig(),
+                appliedTemplates,
+                totalPages,
+                usages.size()
+        );
     }
 }

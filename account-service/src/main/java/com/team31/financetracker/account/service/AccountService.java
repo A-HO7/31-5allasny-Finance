@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
@@ -15,7 +16,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -80,6 +80,15 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
+    }
+    public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
+        List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
+        return results.stream().map(row -> new TopAccountDTO(
+                ((Number) row[0]).longValue(),
+                (String) row[1],
+                ((Number) row[2]).doubleValue(),
+                ((Number) row[3]).longValue()
+        )).toList();
     }
 
     @Transactional
@@ -150,3 +159,4 @@ public class AccountService {
         return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
     }
 }
+

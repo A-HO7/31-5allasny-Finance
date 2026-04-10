@@ -70,11 +70,15 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
-        if (!accountRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-        }
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+
+        if (resultRaw == null) {
+            return new AccountSummaryDTO(id, account.getName(), 0.0, 0.0, 0.0, 0L);
+        }
+
         Object[] row = (Object[]) resultRaw;
 
         Long accountId = ((Number) row[0]).longValue();

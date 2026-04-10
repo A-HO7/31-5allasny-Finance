@@ -35,6 +35,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+    @Query(value = "SELECT DISTINCT a.* FROM accounts a " +
+            "JOIN account_statements s ON a.id = s.account_id " +
+            "WHERE s.expiry_date < CURRENT_TIMESTAMP", nativeQuery = true)
+    List<Account> findAccountsWithExpiredStatementsNative();
 
     @Query(value = """
             SELECT a.*

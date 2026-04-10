@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.model.Account;
@@ -80,6 +81,25 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
+    }
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
+
+        return accounts.stream().map(account -> {
+                    List<AccountStatement> expired = account.getAccountStatements().stream()
+                            .filter(s -> s.getExpiryDate().isBefore(LocalDate.now()))
+                            .toList();
+
+                    return new AccountStatementAlertDTO(
+                            account.getId(),
+                            account.getName(),
+                            account.getStatus().name(),
+                            expired,
+                            expired.size()
+                    );
+                })
+                .filter(dto -> dto.expiredCount() > 0)
+                .toList();
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {

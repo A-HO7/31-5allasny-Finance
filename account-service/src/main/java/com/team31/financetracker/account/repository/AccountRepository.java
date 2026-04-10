@@ -34,4 +34,12 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+
+    @Query(value = """
+        SELECT COUNT(*) > 0
+        FROM users u
+        WHERE u.id = :userId
+          AND u.role = 'ADMIN'
+        """, nativeQuery = true)
+    boolean isAdminUser(@Param("userId") Long userId);
 }

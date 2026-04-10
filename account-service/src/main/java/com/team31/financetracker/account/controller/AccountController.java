@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.RequestDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
@@ -73,7 +74,14 @@ public class AccountController {
         return accountService.updateStatusById(id, status);
     }
 
-
+    @PutMapping("/{accountId}/statements/{statementId}/verify")
+    public Account verifyStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long statementId,
+            @RequestBody RequestDTO request
+    ) {
+        return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
+    }
 
 
 

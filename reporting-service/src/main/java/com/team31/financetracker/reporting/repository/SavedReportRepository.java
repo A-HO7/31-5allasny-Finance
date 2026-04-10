@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import com.team31.financetracker.reporting.model.ReportType;
+import com.team31.financetracker.reporting.model.ReportStatus;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,15 +16,15 @@ import java.util.List;
 
 @Repository
 public interface SavedReportRepository extends JpaRepository<SavedReport, Long> {
-
-    @Query("SELECT r FROM SavedReport r WHERE " +
-           "(:reportType IS NULL OR r.reportType = :reportType) AND " +
-           "(cast(:startDate as timestamp) IS NULL OR r.createdAt >= :startDate) AND " +
-           "(cast(:endDate as timestamp) IS NULL OR r.createdAt <= :endDate) " +
-           "ORDER BY r.createdAt DESC")
-    List<SavedReport> searchReports(@Param("reportType") ReportType reportType,
-                                    @Param("startDate") LocalDateTime startDate,
-                                    @Param("endDate") LocalDateTime endDate);
+    @Query(value = "SELECT * FROM saved_reports WHERE " +
+           "(CAST(:reportType AS VARCHAR) IS NULL OR report_type = CAST(:reportType AS VARCHAR)) AND " +
+           "(CAST(:start AS TIMESTAMP) IS NULL OR created_at >= CAST(:start AS TIMESTAMP)) AND " +
+           "(CAST(:end AS TIMESTAMP) IS NULL OR created_at < CAST(:end AS TIMESTAMP)) " +
+           "ORDER BY created_at DESC", 
+           nativeQuery = true)
+    List<SavedReport> searchReportsNative(@Param("reportType") String reportType,
+                                          @Param("start") LocalDateTime start,
+                                          @Param("end") LocalDateTime end);
 
     @Modifying
     @Transactional

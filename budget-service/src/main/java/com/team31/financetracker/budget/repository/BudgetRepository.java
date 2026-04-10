@@ -59,4 +59,5 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
               @Param("endDateTimeExclusive") java.time.LocalDateTime endDateTimeExclusive,
               @Param("category") Category category
             );
+
 }

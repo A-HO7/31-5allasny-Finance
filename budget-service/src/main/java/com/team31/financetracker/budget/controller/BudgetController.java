@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 import java.util.List;
-
+import com.team31.financetracker.budget.dto.BudgetAlertDTO;
+import com.team31.financetracker.budget.model.BudgetStatus;
 @RestController
 @RequestMapping("/api/budgets")
 public class BudgetController {
@@ -89,5 +90,12 @@ public class BudgetController {
             @RequestBody Map<String, Object> metadata
     ) {
         return budgetService.updateBudgetMetadata(budgetId, metadata);
+    }
+    @GetMapping("/near-limit")
+    public List<BudgetAlertDTO> getBudgetsNearLimit(
+            @RequestParam Double threshold,
+            @RequestParam(required = false) BudgetStatus status
+    ) {
+        return budgetService.getBudgetsNearLimit(threshold, status);
     }
 }

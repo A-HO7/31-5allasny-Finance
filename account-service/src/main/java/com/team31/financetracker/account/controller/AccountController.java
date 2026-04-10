@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -71,6 +72,14 @@ public class AccountController {
     @PutMapping("/{id}/status")
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
+    }
+
+    @PutMapping("/{id}/details")
+    public Account updateAccountDetails(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> details
+    ) {
+        return accountService.updateAccountDetails(id, details);
     }
 
 

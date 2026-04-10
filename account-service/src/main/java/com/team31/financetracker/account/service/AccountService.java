@@ -8,7 +8,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AccountService {
@@ -66,5 +68,20 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
+    }
+
+    public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        Map<String, Object> merged = new HashMap<>();
+        if (account.getAccountDetails() != null){
+            merged.putAll(account.getAccountDetails());
+        }
+        if (accountDetails != null) {
+            merged.putAll(accountDetails);
+        }
+        account.setAccountDetails(merged);
+        return accountRepository.save(account);
     }
 }

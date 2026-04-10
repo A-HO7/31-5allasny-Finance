@@ -35,6 +35,18 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+
+    @Query(value = """
+            SELECT a.*
+            FROM accounts a
+            WHERE a.account_details ->> :key = :value
+              AND (:status IS NULL OR a.status::text = :status)
+            """, nativeQuery = true)
+    List<Account> findByDetailKeyValueAndOptionalStatus(
+            @Param("key") String key,
+            @Param("value") String value,
+            @Param("status") String status
+    );
     @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
             "FROM accounts a " +
             "LEFT JOIN transactions t ON a.id = t.account_id " +

@@ -89,6 +89,14 @@ public class AccountController {
         return accountService.getSummary(id, startDate, endDate);
     }
 
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
     @PutMapping("/{accountId}/statements/{statementId}/verify")
     public Account verifyStatement(
             @PathVariable Long accountId,

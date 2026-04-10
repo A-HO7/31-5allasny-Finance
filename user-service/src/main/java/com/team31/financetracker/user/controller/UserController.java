@@ -4,6 +4,7 @@ import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.service.UserService;
 import org.springframework.web.bind.annotation.*;
+import com.team31.financetracker.user.dto.UserProfileDTO;
 
 
 import java.util.List;
@@ -80,5 +81,11 @@ public class UserController {
     @PutMapping("/{userId}/goals/{goalId}/primary")
     public User setPrimaryFinancialGoal(@PathVariable Long userId, @PathVariable Long goalId) {
         return userService.setPrimaryFinancialGoal(userId, goalId);
+    }
+
+    // Get User Profile with Goals (S1-F8)
+    @GetMapping("/{id}/profile")
+    public UserProfileDTO getUserProfile(@PathVariable Long id) {
+        return userService.getUserProfileWithGoals(id);
     }
 }

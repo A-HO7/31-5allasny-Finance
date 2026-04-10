@@ -21,4 +21,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("name") String name,
             @Param("email") String email,
             @Param("role") String role);
+
+    @Query(value = "SELECT * FROM users WHERE preferences ->> :key = :value", nativeQuery = true)
+    List<User> findByPreference(@Param("key") String key, @Param("value") String value);
 }

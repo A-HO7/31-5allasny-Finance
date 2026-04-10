@@ -68,4 +68,12 @@ public class UserService {
         }
         return userRepository.save(user);
     }
+
+    //Filter Users by Preference (S1-F5)
+    public List<User> filterByPreference(String key, String value) {
+        if (key == null || key.isBlank() || value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
+        }
+        return userRepository.findByPreference(key, value);
+    }
 }

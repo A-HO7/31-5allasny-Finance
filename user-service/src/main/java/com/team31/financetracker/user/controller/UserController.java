@@ -62,4 +62,11 @@ public class UserController {
     public User updatePreferences(@PathVariable Long id, @RequestBody Map<String, Object> preferences) {
         return userService.updatePreferences(id, preferences);
     }
+    //Filter Users by Preference (S1-F5)
+    @GetMapping("/preferences/search")
+    public List<User> filterByPreference(
+            @RequestParam String key,
+            @RequestParam String value) {
+        return userService.filterByPreference(key, value);
+    }
 }

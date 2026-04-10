@@ -85,6 +85,35 @@ public class AccountService {
     }
 
     @Transactional
+    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Integer rating) {
+        if (statementId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "statementId is required");
+        }
+        if (rating == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating is required");
+        }
+        if (rating < 1 || rating > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be between 1 and 5");
+        }
+        Account account = getById(accountId);
+        AccountStatement statement = accountStatementRepository.findById(statementId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
+        if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to this account");
+        }
+        if (!statement.isVerified()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement must be verified");
+        }
+        int prior = account.getTotalRatings() != null ? account.getTotalRatings() : 0;
+        double priorAvg = account.getRating() != null ? account.getRating() : 0.0;
+        int nextTotal = prior + 1;
+        double nextAvg = (priorAvg * prior + rating) / nextTotal;
+        account.setRating(nextAvg);
+        account.setTotalRatings(nextTotal);
+        accountRepository.save(account);
+    }
+  
+    @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
         if (newStatus == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");

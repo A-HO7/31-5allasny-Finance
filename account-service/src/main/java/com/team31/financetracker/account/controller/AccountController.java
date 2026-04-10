@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.RateAccountRequest;
 import com.team31.financetracker.account.dto.FreezeAccountRequest;
 
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
@@ -10,9 +11,11 @@ import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.http.HttpStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -105,6 +108,15 @@ public class AccountController {
         return accountService.getSummary(id, startDate, endDate);
     }
 
+    @PostMapping("/{id}/rate")
+    public ResponseEntity<Void> rateAccount(@PathVariable Long id, @RequestBody RateAccountRequest body) {
+        if (body == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required");
+        }
+        accountService.rateAccountAfterStatementReview(id, body.getStatementId(), body.getRating());
+        return ResponseEntity.ok().build();
+    }
+  
     @PutMapping("/{id}/details")
     public Account updateAccountDetails(
             @PathVariable Long id,

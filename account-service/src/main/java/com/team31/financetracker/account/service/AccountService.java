@@ -67,4 +67,9 @@ public class AccountService {
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
     }
+
+    public List<Account> searchByDetail(String key, String value, AccountStatus status) {
+        String statusValue = status == null ? null : status.name();
+        return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
+    }
 }

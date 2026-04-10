@@ -73,8 +73,13 @@ public class AccountController {
         return accountService.updateStatusById(id, status);
     }
 
-
-
-
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
 
 }

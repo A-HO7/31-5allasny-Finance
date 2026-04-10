@@ -12,6 +12,7 @@ import com.team31.financetracker.account.repository.AccountStatementRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -83,6 +84,20 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
 
+    @Transactional
+    public void freezeAccount(Long id, AccountStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+        Account account = getById(id);
+        if (newStatus == AccountStatus.FROZEN
+                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+        }
+        account.setStatus(newStatus);
+        accountRepository.save(account);
+    }
+  
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
         if (minBalance == null || maxBalance == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minBalance and maxBalance are required");
@@ -92,6 +107,7 @@ public class AccountService {
         }
         String statusParam = status != null ? status.name() : null;
         return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+    }
       
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();

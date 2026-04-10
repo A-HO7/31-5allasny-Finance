@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
 
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.RequestDTO;
@@ -112,6 +113,11 @@ public class AccountController {
         return accountService.updateAccountDetails(id, details);
     }
 
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
+        accountService.freezeAccount(id, body != null ? body.getStatus() : null);
+        return ResponseEntity.ok().build();
+    }
 
     @GetMapping("/details/search")
     public List<Account> searchByDetail(
@@ -121,6 +127,7 @@ public class AccountController {
     ) {
         return accountService.searchByDetail(key, value, status);
     }
+  
     @PutMapping("/{accountId}/statements/{statementId}/verify")
     public Account verifyStatement(
             @PathVariable Long accountId,

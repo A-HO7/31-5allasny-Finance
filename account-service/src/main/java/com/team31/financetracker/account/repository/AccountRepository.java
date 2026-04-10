@@ -37,6 +37,13 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByUserEmail(@Param("email") String email);
 
     @Query(value = """
+            SELECT COUNT(*) FROM transactions t
+            WHERE t.status::text = 'PENDING'
+            AND (t.account_id = :accountId OR t.to_account_id = :accountId)
+            """, nativeQuery = true)
+    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
+           
+    @Query(value = """
             SELECT * FROM accounts a
             WHERE a.balance >= :minBalance AND a.balance <= :maxBalance
             AND (:status IS NULL OR a.status = :status)

@@ -82,6 +82,19 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
 
+    public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        Map<String, Object> merged = new HashMap<>();
+        if (account.getAccountDetails() != null){
+            merged.putAll(account.getAccountDetails());
+        }
+        if (accountDetails != null) {
+            merged.putAll(accountDetails);
+        }
+        account.setAccountDetails(merged);
+        return accountRepository.save(account);
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);

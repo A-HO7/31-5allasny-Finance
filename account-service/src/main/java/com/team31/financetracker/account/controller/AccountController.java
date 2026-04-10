@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -88,6 +89,15 @@ public class AccountController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
         return accountService.getSummary(id, startDate, endDate);
     }
+
+    @PutMapping("/{id}/details")
+    public Account updateAccountDetails(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> details
+    ) {
+        return accountService.updateAccountDetails(id, details);
+    }
+
 
     @GetMapping("/details/search")
     public List<Account> searchByDetail(

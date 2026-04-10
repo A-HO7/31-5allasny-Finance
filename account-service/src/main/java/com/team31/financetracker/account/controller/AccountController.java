@@ -1,5 +1,7 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.RateAccountRequest;
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
 
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.RequestDTO;
@@ -9,9 +11,11 @@ import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.http.HttpStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,6 +33,14 @@ public class AccountController {
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("OK");
+    }
+
+    @GetMapping("/search")
+    public List<Account> searchAccounts(
+            @RequestParam(required = false) AccountStatus status,
+            @RequestParam Double minBalance,
+            @RequestParam Double maxBalance) {
+        return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
     }
 
     @GetMapping("{id}")
@@ -96,6 +108,15 @@ public class AccountController {
         return accountService.getSummary(id, startDate, endDate);
     }
 
+    @PostMapping("/{id}/rate")
+    public ResponseEntity<Void> rateAccount(@PathVariable Long id, @RequestBody RateAccountRequest body) {
+        if (body == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required");
+        }
+        accountService.rateAccountAfterStatementReview(id, body.getStatementId(), body.getRating());
+        return ResponseEntity.ok().build();
+    }
+  
     @PutMapping("/{id}/details")
     public Account updateAccountDetails(
             @PathVariable Long id,
@@ -104,6 +125,11 @@ public class AccountController {
         return accountService.updateAccountDetails(id, details);
     }
 
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
+        accountService.freezeAccount(id, body != null ? body.getStatus() : null);
+        return ResponseEntity.ok().build();
+    }
 
     @GetMapping("/details/search")
     public List<Account> searchByDetail(
@@ -113,6 +139,7 @@ public class AccountController {
     ) {
         return accountService.searchByDetail(key, value, status);
     }
+  
     @PutMapping("/{accountId}/statements/{statementId}/verify")
     public Account verifyStatement(
             @PathVariable Long accountId,

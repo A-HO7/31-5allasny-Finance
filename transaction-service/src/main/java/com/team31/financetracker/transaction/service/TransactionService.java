@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -29,6 +30,19 @@ public class TransactionService {
 
     public List<Transaction> getAllTransactions() {
         return transactionRepository.findAll();
+    }
+
+    public List<Transaction> searchByDateRangeAndOptionalStatus(
+            LocalDate startDate, LocalDate endDate, TransactionStatus status) {
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must not be after endDate");
+        }
+        var rangeStart = startDate.atStartOfDay();
+        var rangeEndExclusive = endDate.plusDays(1).atStartOfDay();
+        if (status != null) {
+            return transactionRepository.findByStatusAndTransactionDateRange(status, rangeStart, rangeEndExclusive);
+        }
+        return transactionRepository.findByTransactionDateRange(rangeStart, rangeEndExclusive);
     }
 
     public Transaction getTransactionById(Long id) {

@@ -82,6 +82,61 @@ public class AccountService {
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
     }
+
+    @Transactional
+    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Integer rating) {
+        if (statementId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "statementId is required");
+        }
+        if (rating == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating is required");
+        }
+        if (rating < 1 || rating > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be between 1 and 5");
+        }
+        Account account = getById(accountId);
+        AccountStatement statement = accountStatementRepository.findById(statementId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
+        if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to this account");
+        }
+        if (!statement.isVerified()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement must be verified");
+        }
+        int prior = account.getTotalRatings() != null ? account.getTotalRatings() : 0;
+        double priorAvg = account.getRating() != null ? account.getRating() : 0.0;
+        int nextTotal = prior + 1;
+        double nextAvg = (priorAvg * prior + rating) / nextTotal;
+        account.setRating(nextAvg);
+        account.setTotalRatings(nextTotal);
+        accountRepository.save(account);
+    }
+  
+    @Transactional
+    public void freezeAccount(Long id, AccountStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+        Account account = getById(id);
+        if (newStatus == AccountStatus.FROZEN
+                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+        }
+        account.setStatus(newStatus);
+        accountRepository.save(account);
+    }
+  
+    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
+        if (minBalance == null || maxBalance == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minBalance and maxBalance are required");
+        }
+        if (minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        String statusParam = status != null ? status.name() : null;
+        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+    }
+      
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
 
@@ -107,7 +162,7 @@ public class AccountService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         Map<String, Object> merged = new HashMap<>();
-        if (account.getAccountDetails() != null){
+        if (account.getAccountDetails() != null) {
             merged.putAll(account.getAccountDetails());
         }
         if (accountDetails != null) {
@@ -115,9 +170,13 @@ public class AccountService {
         }
         account.setAccountDetails(merged);
         return accountRepository.save(account);
+    }
+      
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
+    }
+
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
         return results.stream().map(row -> new TopAccountDTO(
@@ -173,6 +232,7 @@ public class AccountService {
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
     }
+      
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));

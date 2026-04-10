@@ -16,7 +16,7 @@ public class AccountStatement {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private StatementType type;
 
@@ -42,8 +42,8 @@ public class AccountStatement {
     private Account account;
 
     @PrePersist
-    void onUpload(){
-        if (uploadedAt == null){
+    protected void onCreate() {
+        if (uploadedAt == null) {
             uploadedAt = LocalDateTime.now();
         }
     }

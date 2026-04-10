@@ -17,6 +17,9 @@ public class ReportTemplateService {
     }
 
     public ReportTemplate createReportTemplate(ReportTemplate template) {
+        if (template.getCode() != null && repository.existsByCode(template.getCode())) {
+            throw new IllegalArgumentException("Template code must be unique");
+        }
         return repository.save(template);
     }
 

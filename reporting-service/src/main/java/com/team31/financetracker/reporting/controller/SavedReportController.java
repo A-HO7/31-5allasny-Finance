@@ -43,7 +43,11 @@ public class SavedReportController {
 
     @GetMapping("/{id}")
     public ResponseEntity<SavedReport> getSavedReportById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.getSavedReportById(id));
+        try {
+            return ResponseEntity.ok(service.getSavedReportById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")
@@ -69,9 +73,12 @@ public class SavedReportController {
     }
 
     @PutMapping("/{id}/archive")
-    public ResponseEntity<?> archiveReport(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+    public ResponseEntity<?> archiveReport(@PathVariable Long id, @RequestBody(required = false) java.util.Map<String, String> body) {
         try {
-            String reason = body.getOrDefault("reason", "No reason provided");
+            String reason = (body != null) ? body.get("reason") : null;
+            if (reason == null || reason.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Archive reason is required");
+            }
             service.archiveReport(id, reason);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
@@ -81,10 +88,10 @@ public class SavedReportController {
         }
     }
 
-    @GetMapping("/user/{userId}/summary")
-    public ResponseEntity<?> getUserReportSummary(@PathVariable Long userId) {
+    @GetMapping("/user/{id}/summary")
+    public ResponseEntity<?> getUserReportSummary(@PathVariable Long id) {
         try {
-            return ResponseEntity.ok(service.getUserReportSummary(userId));
+            return ResponseEntity.ok(service.getUserReportSummary(id));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

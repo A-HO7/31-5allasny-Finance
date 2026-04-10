@@ -82,6 +82,17 @@ public class AccountService {
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
     }
+
+    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
+        if (minBalance == null || maxBalance == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minBalance and maxBalance are required");
+        }
+        if (minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        String statusParam = status != null ? status.name() : null;
+        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+      
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
 
@@ -116,6 +127,7 @@ public class AccountService {
         account.setAccountDetails(merged);
         return accountRepository.save(account);
     }
+      
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
@@ -176,6 +188,7 @@ public class AccountService {
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
     }
+      
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));

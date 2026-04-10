@@ -76,9 +76,10 @@ public class AccountController {
         return accountService.updateStatusById(id, status);
     }
     @GetMapping("/{id}/summary")
-    public AccountSummaryDTO getSummary(@PathVariable Long id,
-                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
         return accountService.getSummary(id, startDate, endDate);
     }
 

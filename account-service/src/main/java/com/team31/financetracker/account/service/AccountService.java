@@ -70,9 +70,24 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
-        if (!accountRepository.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        Object[] result = (Object[]) accountRepository.getAccountSummaryNative(id, start, end);
-        return new AccountSummaryDTO((Long)result[0], (String)result[1], (Double)result[2],
-                (Double)result[3], (Double)result[2] - (Double)result[3], (Long)result[4]);
+        // Check if account exists; throw 404 if not [cite: 496]
+        if (!accountRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        }
+
+        Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+        Object[] row = (Object[]) resultRaw;
+
+        // Safe casting using the Number class to avoid ClassCastException
+        Long accountId = ((Number) row[0]).longValue();
+        String name = (String) row[1];
+        Double totalDeposits = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
+        Double totalWithdrawals = row[3] != null ? ((Number) row[3]).doubleValue() : 0.0;
+        Long transactionCount = ((Number) row[4]).longValue();
+
+        // Calculate netChange: totalDeposits - totalWithdrawals [cite: 489]
+        Double netChange = totalDeposits - totalWithdrawals;
+
+        return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
     }
 }

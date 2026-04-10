@@ -50,6 +50,32 @@ public class BudgetService {
         return budgetRepository.save(existingBudget);
     }
 
+    @Transactional
+    public int purgeOldBudgets(int olderThanDays) {
+        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(olderThanDays);
+        return budgetRepository.purgeOldBudgets(cutoffDate);
+    }
+
+    public com.team31.financetracker.budget.dto.BudgetPerformanceDTO getBudgetPerformance(Long userId, java.time.LocalDate startDate, java.time.LocalDate endDate) {
+        if (!budgetRepository.existsUserById(userId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
+        LocalDateTime start = startDate.atStartOfDay();
+        LocalDateTime end = endDate.atTime(23, 59, 59, 999999999);
+
+        com.team31.financetracker.budget.dto.PerformanceProjection projection =
+                budgetRepository.getBudgetPerformanceAggregates(userId, start, end);
+
+        com.team31.financetracker.budget.dto.BudgetPerformanceDTO dto = new com.team31.financetracker.budget.dto.BudgetPerformanceDTO();
+        dto.setUserId(userId);
+        dto.setTotalBudgets(projection.getTotalBudgets() != null ? projection.getTotalBudgets() : 0);
+        dto.setTotalBudgeted(projection.getTotalBudgeted() != null ? projection.getTotalBudgeted() : 0.0);
+        dto.setTotalSpent(projection.getTotalSpent() != null ? projection.getTotalSpent() : 0.0);
+        dto.setAverageUtilization(projection.getAverageUtilization() != null ? projection.getAverageUtilization() : 0.0);
+        dto.setExceededCount(projection.getExceededCount() != null ? projection.getExceededCount() : 0);
+
+        return dto;
     public List<com.team31.financetracker.budget.dto.OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
         List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
         return projections.stream().map(p -> {

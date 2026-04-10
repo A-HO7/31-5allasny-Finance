@@ -74,4 +74,13 @@ public class BudgetController {
     public Integer purgeOldBudgets(@RequestParam int olderThanDays) {
         return budgetService.purgeOldBudgets(olderThanDays);
     }
+
+    @GetMapping("/user/{userId}/summary")
+    public com.team31.financetracker.budget.dto.BudgetPerformanceDTO getBudgetPerformance(
+            @PathVariable Long userId,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate startDate,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate endDate
+    ) {
+        return budgetService.getBudgetPerformance(userId, startDate, endDate);
+    }
 }

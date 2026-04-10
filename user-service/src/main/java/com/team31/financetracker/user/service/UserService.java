@@ -8,6 +8,8 @@ import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
+import com.team31.financetracker.user.repository.FinancialGoalRepository;
+import com.team31.financetracker.user.model.FinancialGoal;
 
 import java.util.List;
 import java.util.Map;
@@ -15,9 +17,11 @@ import java.util.Map;
 @Service
 public class UserService {
     private final UserRepository userRepository;
+    private final FinancialGoalRepository financialGoalRepository;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, FinancialGoalRepository financialGoalRepository) {
         this.userRepository = userRepository;
+        this.financialGoalRepository = financialGoalRepository;
     }
 
     // Create
@@ -92,6 +96,30 @@ public class UserService {
         userRepository.voidPendingTransactionsNative(id);
 
         user.setStatus(UserStatus.DEACTIVATED);
+        return userRepository.save(user);
+    }
+
+    // Set Primary Financial Goal (S1-F7)
+    @Transactional
+    public User setPrimaryFinancialGoal(Long userId, Long goalId) {
+        User user = getUserById(userId);
+
+        FinancialGoal goal = financialGoalRepository.findById(goalId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial goal not found"));
+
+        if (!goal.getUser().getId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Goal does not belong to the user");
+        }
+
+        // Remove primary from all user's goals
+        for (FinancialGoal g : user.getFinancialGoals()) {
+            g.setPrimary(false);
+        }
+
+        // Set the target goal to primary
+        goal.setPrimary(true);
+
+        // Save via JPA cascade from User
         return userRepository.save(user);
     }
 }

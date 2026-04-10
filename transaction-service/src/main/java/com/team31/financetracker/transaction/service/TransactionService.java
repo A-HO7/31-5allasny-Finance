@@ -1,5 +1,6 @@
 package com.team31.financetracker.transaction.service;
 
+import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -7,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -25,6 +27,19 @@ public class TransactionService {
 
     public List<Transaction> getAllTransactions() {
         return transactionRepository.findAll();
+    }
+
+    public List<Transaction> searchByDateRangeAndOptionalStatus(
+            LocalDate startDate, LocalDate endDate, TransactionStatus status) {
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must not be after endDate");
+        }
+        var rangeStart = startDate.atStartOfDay();
+        var rangeEndExclusive = endDate.plusDays(1).atStartOfDay();
+        if (status != null) {
+            return transactionRepository.findByStatusAndTransactionDateRange(status, rangeStart, rangeEndExclusive);
+        }
+        return transactionRepository.findByTransactionDateRange(rangeStart, rangeEndExclusive);
     }
 
     public Transaction getTransactionById(Long id) {

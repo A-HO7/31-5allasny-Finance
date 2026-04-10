@@ -25,7 +25,7 @@ public class SavedReport {
     @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private ReportType reportType;
 
@@ -35,9 +35,9 @@ public class SavedReport {
     @Column(nullable = false)
     private LocalDate periodEnd;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
-    private ReportStatus status = ReportStatus.PENDING;
+    private ReportStatus status;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
@@ -52,7 +52,8 @@ public class SavedReport {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        if (this.status == null) this.status = ReportStatus.PENDING;
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
     }
 
     public Long getId() {

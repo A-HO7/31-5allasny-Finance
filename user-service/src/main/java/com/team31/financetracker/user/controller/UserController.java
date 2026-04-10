@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.controller;
 
+import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.service.UserService;
@@ -56,4 +57,10 @@ public class UserController {
 
         return userService.searchUsers(name, email, role);
     }
+
+     // Get User Transaction Summary (S1-F3)
+     @GetMapping("/{id}/transaction-summary")
+     public UserTransactionSummaryDTO getUserTransactionSummary(@PathVariable Long id) {
+         return userService.getUserTransactionSummary(id);
+     }
 }

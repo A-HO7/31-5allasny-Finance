@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.service;
 
+import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -54,4 +55,35 @@ public class UserService {
     public List<User> searchUsers(String name, String email, Role role) {
         return userRepository.searchUsers(name, email, role != null ? role.name() : null);
     }
+
+
+    // Get User Transaction Summary (S1-F3)
+    public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
+        User user = getUserById(userId);
+
+        Object[] result = userRepository.getUserTransactionSummary(userId);
+
+        if (result == null || result.length == 0) {
+            return new UserTransactionSummaryDTO(
+                    user.getId(),
+                    user.getName(),
+                    0L,
+                    0L,
+                    0L,
+                    0.0,
+                    0.0
+            );
+        }
+
+        return new UserTransactionSummaryDTO(
+                ((Number) result[0]).longValue(),
+                (String) result[1],
+                ((Number) result[2]).longValue(),
+                ((Number) result[3]).longValue(),
+                ((Number) result[4]).longValue(),
+                ((Number) result[5]).doubleValue(),
+                ((Number) result[6]).doubleValue()
+        );
+    }
+
 }

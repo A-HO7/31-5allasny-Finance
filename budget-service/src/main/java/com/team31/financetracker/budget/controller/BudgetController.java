@@ -38,6 +38,14 @@ public class BudgetController {
         return budgetService.getAllBudgets();
     }
 
+    @GetMapping("/overspent")
+    public java.util.List<com.team31.financetracker.budget.dto.OverspentBudgetDTO> getOverspentBudgets(
+            @RequestParam Double minOverspend,
+            @RequestParam Boolean warningNotSent
+    ) {
+        return budgetService.getOverspentBudgets(minOverspend, warningNotSent);
+    }
+
     @GetMapping("/{id}")
     public Budget getBudgetById(@PathVariable Long id) {
         return budgetService.getBudgetById(id);

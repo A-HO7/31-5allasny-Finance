@@ -66,4 +66,26 @@ public class SavedReportController {
             return ResponseEntity.notFound().build();
         }
     }
+
+    @PutMapping("/{id}/archive")
+    public ResponseEntity<?> archiveReport(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+        try {
+            String reason = body.getOrDefault("reason", "No reason provided");
+            service.archiveReport(id, reason);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/user/{userId}/summary")
+    public ResponseEntity<?> getUserReportSummary(@PathVariable Long userId) {
+        try {
+            return ResponseEntity.ok(service.getUserReportSummary(userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
 }

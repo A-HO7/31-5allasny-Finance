@@ -34,9 +34,32 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             @Param("endDate") LocalDateTime endDate
     );
 
+    @Query(value = "SELECT " +
+            "b.id AS budgetId, " +
+            "u.name AS userName, " +
+            "b.category AS category, " +
+            "b.budget_amount AS budgetAmount, " +
+            "b.spent_amount AS spentAmount, " +
+            "(((b.spent_amount - NULLIF(b.budget_amount, 0)) / NULLIF(b.budget_amount, 0)) * 100) AS overspendPercentage, " +
+            "COALESCE(CAST(b.metadata->>'warningSent' AS boolean), false) AS warningSent " +
+            "FROM budgets b " +
+            "JOIN users u ON b.user_id = u.id " +
+            "WHERE b.spent_amount > b.budget_amount " +
+            "AND (((b.spent_amount - NULLIF(b.budget_amount, 0)) / NULLIF(b.budget_amount, 0)) * 100) > :minOverspend " +
+            "AND (:warningNotSent = false OR b.metadata->>'warningSent' IS NULL OR b.metadata->>'warningSent' = 'false')", 
+            nativeQuery = true)
+    java.util.List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> findOverspentBudgets(
+            @Param("minOverspend") Double minOverspend,
+            @Param("warningNotSent") Boolean warningNotSent
+    );
+
     Optional<Budget> findFirstByUserIdAndCategoryAndStatusOrderByCreatedAtDesc(
             Long userId,
             Category category,
             BudgetStatus status
     );
+
+    @Modifying
+    @Query(value = "DELETE FROM budgets WHERE status IN ('COMPLETED', 'EXCEEDED') AND created_at < :cutoffDate", nativeQuery = true)
+    int purgeOldBudgets(@Param("cutoffDate") LocalDateTime cutoffDate);
 }

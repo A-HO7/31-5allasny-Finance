@@ -76,6 +76,8 @@ public class BudgetService {
         dto.setExceededCount(projection.getExceededCount() != null ? projection.getExceededCount() : 0);
 
         return dto;
+    }
+
     public List<com.team31.financetracker.budget.dto.OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
         List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
         return projections.stream().map(p -> {
@@ -113,11 +115,5 @@ public class BudgetService {
                         HttpStatus.NOT_FOUND,
                         "No active budget found for this user and category"
                 ));
-    }
-
-    @Transactional
-    public int purgeOldBudgets(int olderThanDays) {
-        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(olderThanDays);
-        return budgetRepository.purgeOldBudgets(cutoffDate);
     }
 }

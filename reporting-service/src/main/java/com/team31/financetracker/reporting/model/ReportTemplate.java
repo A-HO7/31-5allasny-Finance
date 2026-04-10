@@ -21,7 +21,7 @@ public class ReportTemplate {
     @Column(nullable = false, unique = true)
     private String code;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TemplateType templateType;
 
@@ -52,6 +52,8 @@ public class ReportTemplate {
     protected void setDefaults() {
         if (this.currentUses == null) this.currentUses = 0;
         if (this.active == null) this.active = true;
+        if (this.maxUses == null) this.maxUses = 100;
+        if (this.expiryDate == null) this.expiryDate = LocalDateTime.now().plusYears(1);
     }
 
     public Long getId() {

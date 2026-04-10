@@ -6,6 +6,7 @@ import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.repository.AccountRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -66,5 +67,19 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
+    }
+
+    @Transactional
+    public void freezeAccount(Long id, AccountStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+        Account account = getById(id);
+        if (newStatus == AccountStatus.FROZEN
+                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+        }
+        account.setStatus(newStatus);
+        accountRepository.save(account);
     }
 }

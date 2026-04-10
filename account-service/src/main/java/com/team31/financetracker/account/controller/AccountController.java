@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
@@ -73,8 +74,10 @@ public class AccountController {
         return accountService.updateStatusById(id, status);
     }
 
-
-
-
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
+        accountService.freezeAccount(id, body != null ? body.getStatus() : null);
+        return ResponseEntity.ok().build();
+    }
 
 }

@@ -34,4 +34,11 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+
+    @Query(value = """
+            SELECT COUNT(*) FROM transactions t
+            WHERE t.status::text = 'PENDING'
+            AND (t.account_id = :accountId OR t.to_account_id = :accountId)
+            """, nativeQuery = true)
+    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
 }

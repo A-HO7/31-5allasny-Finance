@@ -1,12 +1,17 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.RequestDTO;
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -29,7 +34,7 @@ public class AccountController {
     }
 
     @GetMapping("/user/{userId}")
-    public Account getAccountByUserId(@PathVariable Long userId) {
+    public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 
@@ -72,6 +77,17 @@ public class AccountController {
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
     }
+    @GetMapping("/reports/top-balance")
+    public List<TopAccountDTO> getTopBalanceAccounts(@RequestParam int limit) {
+        return accountService.getTopBalanceAccounts(limit);
+    }
+    @GetMapping("/{id}/summary")
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return accountService.getSummary(id, startDate, endDate);
+    }
 
     @GetMapping("/details/search")
     public List<Account> searchByDetail(
@@ -81,5 +97,15 @@ public class AccountController {
     ) {
         return accountService.searchByDetail(key, value, status);
     }
+    @PutMapping("/{accountId}/statements/{statementId}/verify")
+    public Account verifyStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long statementId,
+            @RequestBody RequestDTO request
+    ) {
+        return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
+    }
+
+
 
 }

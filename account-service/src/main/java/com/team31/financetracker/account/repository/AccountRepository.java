@@ -10,11 +10,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
-    Account findByUserId(Long userId);
+    List<Account> findByUserId(Long userId);
     List<Account> findByType(AccountType type);
     List<Account> findByStatus(AccountStatus status);
 
@@ -46,4 +47,30 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             @Param("value") String value,
             @Param("status") String status
     );
+    @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
+            "FROM accounts a " +
+            "LEFT JOIN transactions t ON a.id = t.account_id " +
+            "GROUP BY a.id, a.name, a.balance " +
+            "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
+    List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
+
+    @Query(value = """
+        SELECT COUNT(*) > 0
+        FROM users u
+        WHERE u.id = :userId
+          AND u.role = 'ADMIN'
+        """, nativeQuery = true)
+    boolean isAdminUser(@Param("userId") Long userId);
+
+    @Query(value = """
+    SELECT a.id, a.name, 
+           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits, 
+           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals, 
+           COUNT(t.id) as transactionCount 
+    FROM accounts a 
+    LEFT JOIN transactions t ON a.id = t.account_id 
+    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end 
+    GROUP BY a.id, a.name
+    """, nativeQuery = true)
+    Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

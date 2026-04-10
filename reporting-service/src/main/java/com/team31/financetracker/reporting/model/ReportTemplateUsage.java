@@ -1,5 +1,6 @@
 package com.team31.financetracker.reporting.model;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -18,6 +19,7 @@ public class ReportTemplateUsage {
     @Column(nullable = false, updatable = false)
     private LocalDateTime appliedAt;
 
+    @JsonBackReference
     @ManyToOne(optional = false)
     @JoinColumn(name = "report_id", nullable = false)
     private SavedReport savedReport;

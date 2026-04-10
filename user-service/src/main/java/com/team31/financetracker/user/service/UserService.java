@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.service;
 
+import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.repository.UserRepository;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.user.model.Role;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -84,6 +87,31 @@ public class UserService {
                 ((Number) result[5]).doubleValue(),
                 ((Number) result[6]).doubleValue()
         );
+    }
+
+    // Top Savers by Net Income (S1-F6)
+    public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
+        }
+
+        if (limit <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be greater than 0");
+        }
+
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+
+        List<Object[]> results = userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
+
+        return results.stream()
+                .map(result -> new TopSaverDTO(
+                        ((Number) result[0]).longValue(),
+                        (String) result[1],
+                        ((Number) result[2]).doubleValue(),
+                        ((Number) result[3]).longValue()
+                ))
+                .toList();
     }
 
 }

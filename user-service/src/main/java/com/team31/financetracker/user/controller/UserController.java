@@ -1,12 +1,15 @@
 package com.team31.financetracker.user.controller;
 
+import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.service.UserService;
+
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
-
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -63,4 +66,16 @@ public class UserController {
      public UserTransactionSummaryDTO getUserTransactionSummary(@PathVariable Long id) {
          return userService.getUserTransactionSummary(id);
      }
+
+
+     // Top Savers by Net Income (S1-F6)
+    @GetMapping("/reports/top-savers")
+    public List<TopSaverDTO> getTopSaversByNetIncome(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam int limit) {
+        return userService.getTopSaversByNetIncome(startDate, endDate, limit);
+    }
 }
+
+

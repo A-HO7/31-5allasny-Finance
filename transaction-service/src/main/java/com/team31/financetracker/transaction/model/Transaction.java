@@ -7,11 +7,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.team31.financetracker.transaction.Enums.TransactionCategory;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.Enums.TransactionType;
@@ -59,7 +61,6 @@ public class Transaction {
     @Column(nullable = true, length = 1024)
     private String description;
 
-
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionStatus status;
@@ -74,9 +75,10 @@ public class Transaction {
     @Column(nullable = true)
     private LocalDateTime completedAt;
 
+    @JsonManagedReference
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("splitOrder ASC")
     private List<TransactionSplit> transactionSplits = new ArrayList<>();
-
 
     @PrePersist
     public void prePersist() {

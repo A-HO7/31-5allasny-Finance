@@ -2,7 +2,10 @@ package com.team31.financetracker.transaction.model;
 
 import jakarta.persistence.*;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
+
+import java.util.HashMap;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -27,17 +30,27 @@ public class TransactionSplit {
     @Column(nullable = false)
     private String description;
 
+    @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionSplitsStatus status;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private java.util.Map<String, Object> metadata;
+    private java.util.Map<String, Object> metadata = new HashMap<>();
 
+    @JsonBackReference
     @ManyToOne(optional = false)
     @JoinColumn(name = "transaction_id")
     private Transaction transaction;
+
+    @PrePersist
+    public void prePersist() {
+        if (status == null)
+            status = TransactionSplitsStatus.PENDING;
+        if (metadata == null)
+            metadata = new HashMap<>();
+    }
 
     // Getters and setters
 

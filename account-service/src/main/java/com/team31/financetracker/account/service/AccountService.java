@@ -107,7 +107,7 @@ public class AccountService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         Map<String, Object> merged = new HashMap<>();
-        if (account.getAccountDetails() != null){
+        if (account.getAccountDetails() != null) {
             merged.putAll(account.getAccountDetails());
         }
         if (accountDetails != null) {
@@ -115,9 +115,12 @@ public class AccountService {
         }
         account.setAccountDetails(merged);
         return accountRepository.save(account);
+    }
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
+    }
+
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
         return results.stream().map(row -> new TopAccountDTO(

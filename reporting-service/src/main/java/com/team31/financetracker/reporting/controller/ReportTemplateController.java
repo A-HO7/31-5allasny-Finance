@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+import com.team31.financetracker.reporting.dto.TemplateUsageDTO;
+
 @RestController
 @RequestMapping("/api/reports/templates")
 public class ReportTemplateController {
@@ -60,6 +62,15 @@ public class ReportTemplateController {
             return ResponseEntity.noContent().build();
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/top-used")
+    public ResponseEntity<?> getTopUsedTemplates(@RequestParam int limit) {
+        try {
+            return ResponseEntity.ok(service.getTopUsedTemplates(limit));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 }

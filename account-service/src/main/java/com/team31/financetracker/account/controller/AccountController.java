@@ -1,6 +1,5 @@
 package com.team31.financetracker.account.controller;
 
-import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
@@ -76,6 +75,13 @@ public class AccountController {
     @GetMapping("/reports/top-balance")
     public List<TopAccountDTO> getTopBalanceAccounts(@RequestParam int limit) {
         return accountService.getTopBalanceAccounts(limit);
+    }
+    @GetMapping("/{id}/summary")
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return accountService.getSummary(id, startDate, endDate);
     }
 
 

@@ -40,4 +40,16 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             "GROUP BY a.id, a.name, a.balance " +
             "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
+
+    @Query(value = """
+    SELECT a.id, a.name, 
+           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits, 
+           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals, 
+           COUNT(t.id) as transactionCount 
+    FROM accounts a 
+    LEFT JOIN transactions t ON a.id = t.account_id 
+    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end 
+    GROUP BY a.id, a.name
+    """, nativeQuery = true)
+    Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

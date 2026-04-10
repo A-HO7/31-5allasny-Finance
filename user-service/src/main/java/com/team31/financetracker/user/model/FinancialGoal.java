@@ -1,6 +1,7 @@
 package com.team31.financetracker.user.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -28,6 +29,7 @@ public class FinancialGoal {
     @Column(nullable = false)
     private LocalDate deadline;
 
+    @JsonProperty("isPrimary")
     @Column(nullable = false)
     private Boolean isPrimary = false;
 

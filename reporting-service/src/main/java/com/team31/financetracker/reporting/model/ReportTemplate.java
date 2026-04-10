@@ -21,7 +21,7 @@ public class ReportTemplate {
     @Column(nullable = false, unique = true)
     private String code;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TemplateType templateType;
 
@@ -47,6 +47,12 @@ public class ReportTemplate {
     @JsonIgnore
     @OneToMany(mappedBy = "reportTemplate", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReportTemplateUsage> reportTemplateUsages = new ArrayList<>();
+
+    @PrePersist
+    protected void setDefaults() {
+        if (this.currentUses == null) this.currentUses = 0;
+        if (this.active == null) this.active = true;
+    }
 
     public Long getId() {
         return id;

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -38,4 +39,22 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             "JOIN account_statements s ON a.id = s.account_id " +
             "WHERE s.expiry_date < CURRENT_TIMESTAMP", nativeQuery = true)
     List<Account> findAccountsWithExpiredStatementsNative();
+    @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
+            "FROM accounts a " +
+            "LEFT JOIN transactions t ON a.id = t.account_id " +
+            "GROUP BY a.id, a.name, a.balance " +
+            "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
+    List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
+
+    @Query(value = """
+    SELECT a.id, a.name, 
+           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits, 
+           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals, 
+           COUNT(t.id) as transactionCount 
+    FROM accounts a 
+    LEFT JOIN transactions t ON a.id = t.account_id 
+    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end 
+    GROUP BY a.id, a.name
+    """, nativeQuery = true)
+    Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

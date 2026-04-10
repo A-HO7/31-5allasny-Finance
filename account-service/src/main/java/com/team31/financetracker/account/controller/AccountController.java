@@ -48,7 +48,7 @@ public class AccountController {
         return accountService.getAll();
     }
 
-    @PostMapping()
+    @PostMapping
     public Account createAccount(@RequestBody Account account) {
         return accountService.create(account);
     }
@@ -63,7 +63,15 @@ public class AccountController {
         accountService.delete(id);
     }
 
+    @GetMapping("/email")
+    public List<Account> getByUserEmail(@RequestParam String email) {
+        return accountService.getByUserEmail(email);
+    }
 
+    @PutMapping("/{id}/status")
+    public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
+        return accountService.updateStatusById(id, status);
+    }
 
 
 

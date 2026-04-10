@@ -67,4 +67,12 @@ public class AccountStatementService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
         accountStatementRepository.deleteById(id);
     }
+
+    public List<AccountStatement> getByUserId(Long userId) {
+        return accountStatementRepository.findByUserId(userId);
+    }
+
+    public int deleteExpiredBefore(java.time.LocalDate cutoffDate) {
+        return accountStatementRepository.deleteExpiredBefore(cutoffDate);
+    }
 }

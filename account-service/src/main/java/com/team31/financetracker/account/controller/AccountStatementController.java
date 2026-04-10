@@ -63,4 +63,13 @@ public class AccountStatementController {
         accountStatementService.delete(id);
     }
 
+    @GetMapping("/user/{userId}")
+    public List<AccountStatement> getByUserId(@PathVariable Long userId) {
+        return accountStatementService.getByUserId(userId);
+    }
+
+    @DeleteMapping("/expired")
+    public int deleteExpiredBefore(@RequestParam java.time.LocalDate cutoffDate) {
+        return accountStatementService.deleteExpiredBefore(cutoffDate);
+    }
 }

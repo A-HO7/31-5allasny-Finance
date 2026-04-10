@@ -59,4 +59,12 @@ public class AccountService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         accountRepository.deleteById(id);
     }
+
+    public List<Account> getByUserEmail(String email) {
+        return accountRepository.findByUserEmail(email);
+    }
+
+    public int updateStatusById(Long id, AccountStatus status) {
+        return accountRepository.updateStatusById(id, status.name());
+    }
 }

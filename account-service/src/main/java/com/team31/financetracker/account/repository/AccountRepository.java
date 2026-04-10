@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -34,4 +35,13 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+    @Query(value = "SELECT a.id, a.name, " +
+            "SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END) as totalDeposits, " +
+            "SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END) as totalWithdrawals, " +
+            "COUNT(t.id) as transactionCount " +
+            "FROM accounts a " +
+            "LEFT JOIN transactions t ON a.id = t.account_id " +
+            "WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end " +
+            "GROUP BY a.id, a.name", nativeQuery = true)
+    Object[] getAccountSummaryNative(Long accountId, LocalDateTime start, LocalDateTime end);
 }

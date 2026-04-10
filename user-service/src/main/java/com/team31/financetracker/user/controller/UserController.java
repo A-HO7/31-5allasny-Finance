@@ -69,4 +69,10 @@ public class UserController {
             @RequestParam String value) {
         return userService.filterByPreference(key, value);
     }
+
+    // Deactivate User (S1-F4)
+    @PutMapping("/{id}/deactivate")
+    public User deactivateUser(@PathVariable Long id) {
+        return userService.deactivateUser(id);
+    }
 }

@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import com.team31.financetracker.reporting.model.ReportType;
+import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -84,6 +85,18 @@ public class SavedReportController {
     public ResponseEntity<?> getUserReportSummary(@PathVariable Long userId) {
         try {
             return ResponseEntity.ok(service.getUserReportSummary(userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/generate/{userId}")
+    public ResponseEntity<?> generateReport(@PathVariable Long userId, @RequestBody GenerateReportRequestDTO request) {
+        try {
+            SavedReport newReport = service.generateReport(userId, request);
+            return new ResponseEntity<>(newReport, HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

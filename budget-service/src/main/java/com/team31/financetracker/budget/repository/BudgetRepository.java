@@ -16,7 +16,7 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     @Query(value = "SELECT COUNT(*) > 0 FROM users WHERE id = :userId", nativeQuery = true)
     boolean existsUserById(@Param("userId") Long userId);
 
-    @org.springframework.data.jpa.repository.Modifying
+    @Modifying
     @Query(value = "DELETE FROM budgets WHERE status IN ('COMPLETED', 'EXCEEDED') AND created_at < :cutoffDate", nativeQuery = true)
     int purgeOldBudgets(@Param("cutoffDate") LocalDateTime cutoffDate);
 
@@ -58,8 +58,4 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             Category category,
             BudgetStatus status
     );
-
-    @Modifying
-    @Query(value = "DELETE FROM budgets WHERE status IN ('COMPLETED', 'EXCEEDED') AND created_at < :cutoffDate", nativeQuery = true)
-    int purgeOldBudgets(@Param("cutoffDate") LocalDateTime cutoffDate);
 }

@@ -1,13 +1,25 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.RateAccountRequest;
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
+
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
+import com.team31.financetracker.account.dto.RequestDTO;
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.http.HttpStatus;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -23,13 +35,21 @@ public class AccountController {
         return ResponseEntity.ok("OK");
     }
 
+    @GetMapping("/search")
+    public List<Account> searchAccounts(
+            @RequestParam(required = false) AccountStatus status,
+            @RequestParam Double minBalance,
+            @RequestParam Double maxBalance) {
+        return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
+    }
+
     @GetMapping("{id}")
     public Account getAccountById(@PathVariable Long id) {
         return accountService.getById(id);
     }
 
     @GetMapping("/user/{userId}")
-    public Account getAccountByUserId(@PathVariable Long userId) {
+    public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 
@@ -72,8 +92,62 @@ public class AccountController {
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
     }
+    @GetMapping("/statements/expired")
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        return accountService.getAccountsWithExpiredStatements();
+    }
+    @GetMapping("/reports/top-balance")
+    public List<TopAccountDTO> getTopBalanceAccounts(@RequestParam int limit) {
+        return accountService.getTopBalanceAccounts(limit);
+    }
+    @GetMapping("/{id}/summary")
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return accountService.getSummary(id, startDate, endDate);
+    }
 
+    @PostMapping("/{id}/rate")
+    public ResponseEntity<Void> rateAccount(@PathVariable Long id, @RequestBody RateAccountRequest body) {
+        if (body == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required");
+        }
+        accountService.rateAccountAfterStatementReview(id, body.getStatementId(), body.getRating());
+        return ResponseEntity.ok().build();
+    }
+  
+    @PutMapping("/{id}/details")
+    public Account updateAccountDetails(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> details
+    ) {
+        return accountService.updateAccountDetails(id, details);
+    }
 
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
+        accountService.freezeAccount(id, body != null ? body.getStatus() : null);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
+  
+    @PutMapping("/{accountId}/statements/{statementId}/verify")
+    public Account verifyStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long statementId,
+            @RequestBody RequestDTO request
+    ) {
+        return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
+    }
 
 
 

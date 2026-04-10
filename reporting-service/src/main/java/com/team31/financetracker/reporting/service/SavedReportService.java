@@ -16,14 +16,26 @@ import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.model.ReportStatus;
+import com.team31.financetracker.reporting.model.ReportTemplate;
+import com.team31.financetracker.reporting.model.ReportTemplateUsage;
+import com.team31.financetracker.reporting.model.TemplateType;
+import com.team31.financetracker.reporting.repository.ReportTemplateRepository;
+import com.team31.financetracker.reporting.repository.ReportTemplateUsageRepository;
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class SavedReportService {
 
     private final SavedReportRepository repository;
+    private final ReportTemplateRepository templateRepository;
+    private final ReportTemplateUsageRepository usageRepository;
 
-    public SavedReportService(SavedReportRepository repository) {
+    public SavedReportService(SavedReportRepository repository, 
+                              ReportTemplateRepository templateRepository, 
+                              ReportTemplateUsageRepository usageRepository) {
         this.repository = repository;
+        this.templateRepository = templateRepository;
+        this.usageRepository = usageRepository;
     }
 
     public SavedReport createSavedReport(SavedReport savedReport) {
@@ -143,5 +155,46 @@ public class SavedReportService {
         newReport.setReportConfig(config);
 
         return repository.save(newReport);
+    }
+
+    @Transactional
+    public SavedReport applyTemplateToReport(Long reportId, Long templateId) {
+        SavedReport report = getSavedReportById(reportId);
+        if (report.getStatus() != ReportStatus.PENDING) {
+            throw new IllegalArgumentException("cannot apply template to a generated/archived report");
+        }
+
+        ReportTemplate template = templateRepository.findById(templateId)
+                .orElseThrow(() -> new RuntimeException("ReportTemplate not found with id: " + templateId));
+
+        if (!template.getActive()) {
+            throw new IllegalArgumentException("ReportTemplate is not active.");
+        }
+        if (template.getExpiryDate() != null && template.getExpiryDate().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("ReportTemplate has expired.");
+        }
+        if (template.getCurrentUses() >= template.getMaxUses()) {
+            throw new IllegalArgumentException("ReportTemplate has reached its maximum usage limit.");
+        }
+
+        if (usageRepository.existsBySavedReportIdAndReportTemplateId(reportId, templateId)) {
+            throw new IllegalArgumentException("template already applied");
+        }
+
+        long days = ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd());
+        double calculatedPages = (template.getTemplateType() == TemplateType.SUMMARY) ? (days / 7.0) : (days / 1.0);
+        double pagesGenerated = Math.min(calculatedPages, template.getMaxPages());
+
+        ReportTemplateUsage usage = new ReportTemplateUsage();
+        usage.setSavedReport(report);
+        usage.setReportTemplate(template);
+        usage.setPagesGenerated(pagesGenerated);
+        usage.setAppliedAt(LocalDateTime.now());
+        usageRepository.save(usage);
+
+        template.setCurrentUses(template.getCurrentUses() + 1);
+        templateRepository.save(template);
+
+        return report;
     }
 }

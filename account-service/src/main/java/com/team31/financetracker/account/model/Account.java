@@ -22,25 +22,25 @@ public class Account {
     @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private AccountType type;
 
     @Column(nullable = false)
-    private String currency = "EGP";
+    private String currency;
 
     @Column(nullable = false)
-    private Double balance = 0.0;
+    private Double balance;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AccountStatus  status;
 
     @Column(nullable = false)
-    private Double rating = 0.0;
+    private Double rating;
 
     @Column(nullable = false)
-    private Integer totalRatings = 0;
+    private Integer totalRatings;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
@@ -50,13 +50,24 @@ public class Account {
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "account", cascade = CascadeType.ALL)
-    @JsonIgnore
     private List<AccountStatement> accountStatements;
 
     @PrePersist
     void onCreate(){
         if (createdAt == null){
             createdAt = LocalDateTime.now();
+        }
+        if (totalRatings == null){
+            totalRatings = 0;
+        }
+        if (rating == null){
+            rating = 0.0;
+        }
+        if (balance == null){
+            balance = 0.0;
+        }
+        if (currency == null){
+            currency = "EGP";
         }
     }
 

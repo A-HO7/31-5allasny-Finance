@@ -14,7 +14,7 @@ import java.util.List;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
-    Account findByUserId(Long userId);
+    List<Account> findByUserId(Long userId);
     List<Account> findByType(AccountType type);
     List<Account> findByStatus(AccountStatus status);
 

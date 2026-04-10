@@ -30,7 +30,7 @@ public class AccountController {
     }
 
     @GetMapping("/user/{userId}")
-    public Account getAccountByUserId(@PathVariable Long userId) {
+    public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 

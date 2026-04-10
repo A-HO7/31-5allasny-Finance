@@ -39,7 +39,7 @@ public class AccountService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
     }
 
-    public Account getByUserId(Long userId) {
+    public List<Account> getByUserId(Long userId) {
         return accountRepository.findByUserId(userId);
     }
 

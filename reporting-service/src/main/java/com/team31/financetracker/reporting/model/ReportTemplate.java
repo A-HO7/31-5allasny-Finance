@@ -50,8 +50,10 @@ public class ReportTemplate {
 
     @PrePersist
     protected void setDefaults() {
-        if (this.currentUses == null) this.currentUses = 0;
-        if (this.active == null) this.active = true;
+        if (this.currentUses == null)
+            this.currentUses = 0;
+        if (this.active == null)
+            this.active = true;
     }
 
     public Long getId() {

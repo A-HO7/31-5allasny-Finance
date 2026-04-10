@@ -30,9 +30,9 @@ public class SavedReportService {
     private final ReportTemplateRepository templateRepository;
     private final ReportTemplateUsageRepository usageRepository;
 
-    public SavedReportService(SavedReportRepository repository, 
-                              ReportTemplateRepository templateRepository, 
-                              ReportTemplateUsageRepository usageRepository) {
+    public SavedReportService(SavedReportRepository repository,
+            ReportTemplateRepository templateRepository,
+            ReportTemplateUsageRepository usageRepository) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
@@ -59,10 +59,10 @@ public class SavedReportService {
     @Transactional
     public SavedReport updateSavedReport(Long id, SavedReport updatedReport) {
         SavedReport existing = getSavedReportById(id);
-        
-        if (updatedReport.getUserId() == null || updatedReport.getName() == null || 
-            updatedReport.getReportType() == null || updatedReport.getPeriodStart() == null || 
-            updatedReport.getPeriodEnd() == null || updatedReport.getStatus() == null) {
+
+        if (updatedReport.getUserId() == null || updatedReport.getName() == null ||
+                updatedReport.getReportType() == null || updatedReport.getPeriodStart() == null ||
+                updatedReport.getPeriodEnd() == null || updatedReport.getStatus() == null) {
             throw new IllegalArgumentException("Missing required fields for SavedReport update process.");
         }
 
@@ -73,7 +73,7 @@ public class SavedReportService {
         existing.setPeriodEnd(updatedReport.getPeriodEnd());
         existing.setStatus(updatedReport.getStatus());
         existing.setReportConfig(updatedReport.getReportConfig());
-        
+
         return repository.save(existing);
     }
 
@@ -86,9 +86,10 @@ public class SavedReportService {
     @Transactional
     public void archiveReport(Long id, String reason) {
         SavedReport report = getSavedReportById(id); // Throws RuntimeException (404)
-        
+
         if (report.getStatus() != ReportStatus.GENERATED) {
-            throw new IllegalArgumentException("Only GENERATED reports can be archived. Current status: " + report.getStatus());
+            throw new IllegalArgumentException(
+                    "Only GENERATED reports can be archived. Current status: " + report.getStatus());
         }
 
         repository.archiveReportNative(id, reason, LocalDateTime.now().toString());
@@ -125,7 +126,8 @@ public class SavedReportService {
         if (!request.getPeriodStart().isBefore(request.getPeriodEnd())) {
             throw new IllegalArgumentException("periodStart must be before periodEnd");
         }
-        if (repository.existsOverlappingGeneratedReport(userId, request.getReportType(), request.getPeriodStart(), request.getPeriodEnd())) {
+        if (repository.existsOverlappingGeneratedReport(userId, request.getReportType(), request.getPeriodStart(),
+                request.getPeriodEnd())) {
             throw new IllegalArgumentException("report already exists");
         }
 
@@ -136,7 +138,7 @@ public class SavedReportService {
         newReport.setPeriodStart(request.getPeriodStart());
         newReport.setPeriodEnd(request.getPeriodEnd());
         newReport.setStatus(ReportStatus.GENERATED);
-        
+
         Map<String, Object> config = new LinkedHashMap<>();
         newReport.setReportConfig(config);
 

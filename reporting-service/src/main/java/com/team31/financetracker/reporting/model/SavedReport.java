@@ -53,8 +53,10 @@ public class SavedReport {
 
     @PrePersist
     protected void onCreate() {
-        if (this.status == null) this.status = ReportStatus.PENDING;
-        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.status == null)
+            this.status = ReportStatus.PENDING;
+        if (this.createdAt == null)
+            this.createdAt = LocalDateTime.now();
     }
 
     public Long getId() {

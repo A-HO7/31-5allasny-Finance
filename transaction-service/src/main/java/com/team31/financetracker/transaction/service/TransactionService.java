@@ -1,6 +1,7 @@
 package com.team31.financetracker.transaction.service;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -10,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TransactionService {
@@ -72,6 +74,31 @@ public class TransactionService {
     public void deleteTransaction(Long id) {
         Transaction existingTransaction = getTransactionById(id);
         transactionRepository.delete(existingTransaction);
+    }
+
+    public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must not be after endDate");
+        }
+
+        var rangeStart = startDate.atStartOfDay();
+        var rangeEndExclusive = endDate.plusDays(1).atStartOfDay();
+
+        Map<String, Object> result = transactionRepository.getTransactionAnalytics(rangeStart, rangeEndExclusive);
+
+        Integer totalTransactions = ((Number) result.get("totalTransactions")).intValue();
+        Integer completedTransactions = ((Number) result.get("completedTransactions")).intValue();
+        Integer voidedTransactions = ((Number) result.get("voidedTransactions")).intValue();
+        Double totalIncome = ((Number) result.get("totalIncome")).doubleValue();
+        Double totalExpenses = ((Number) result.get("totalExpenses")).doubleValue();
+
+        Double savingsRate = 0.0;
+        if (totalIncome > 0) {
+            savingsRate = ((totalIncome - totalExpenses) / totalIncome) * 100;
+        }
+
+        return new TransactionAnalyticsDTO(totalTransactions, completedTransactions, voidedTransactions,
+                totalIncome, totalExpenses, savingsRate);
     }
 
     private void ensureSplitBackReferences(Transaction transaction) {

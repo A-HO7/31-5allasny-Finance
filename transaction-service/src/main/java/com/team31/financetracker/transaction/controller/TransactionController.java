@@ -1,6 +1,7 @@
 package com.team31.financetracker.transaction.controller;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.service.TransactionService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -46,6 +47,13 @@ public class TransactionController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         return transactionService.searchByDateRangeAndOptionalStatus(startDate, endDate, status);
+    }
+
+    @GetMapping("/analytics")
+    public TransactionAnalyticsDTO getAnalytics(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return transactionService.getAnalytics(startDate, endDate);
     }
 
     @GetMapping("/{id}")

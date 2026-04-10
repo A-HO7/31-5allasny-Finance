@@ -68,5 +68,22 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("limitValue") int limitValue
         );
 
+    @Query(value = """
+            SELECT
+                u.id,
+                u.name,
+                COUNT(t.id) AS completed_transaction_count
+            FROM users u
+            INNER JOIN transactions t ON u.id = t.user_id AND t.status = 'COMPLETED'
+            WHERE u.preferences IS NOT NULL
+              AND (u.preferences->>'currency') = :currency
+            GROUP BY u.id, u.name
+            HAVING COUNT(t.id) >= :minTransactions
+            ORDER BY u.id
+            """, nativeQuery = true)
+    List<Object[]> findUsersByCurrencyPreferenceAndMinCompletedTransactions(
+            @Param("currency") String currency,
+            @Param("minTransactions") int minTransactions
+    );
 
 }

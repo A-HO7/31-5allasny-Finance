@@ -19,8 +19,12 @@ public class ReportTemplateController {
     }
 
     @PostMapping
-    public ResponseEntity<ReportTemplate> createReportTemplate(@RequestBody ReportTemplate template) {
-        return new ResponseEntity<>(service.createReportTemplate(template), HttpStatus.CREATED);
+    public ResponseEntity<?> createReportTemplate(@RequestBody ReportTemplate template) {
+        try {
+            return new ResponseEntity<>(service.createReportTemplate(template), HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     @GetMapping
@@ -30,7 +34,11 @@ public class ReportTemplateController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ReportTemplate> getReportTemplateById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.getReportTemplateById(id));
+        try {
+            return ResponseEntity.ok(service.getReportTemplateById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")

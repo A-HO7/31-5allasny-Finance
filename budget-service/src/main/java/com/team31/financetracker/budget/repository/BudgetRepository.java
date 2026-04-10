@@ -58,8 +58,4 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             Category category,
             BudgetStatus status
     );
-
-    @Modifying
-    @Query(value = "DELETE FROM budgets WHERE status IN ('COMPLETED', 'EXCEEDED') AND created_at < :cutoffDate", nativeQuery = true)
-    int purgeOldBudgets(@Param("cutoffDate") LocalDateTime cutoffDate);
 }

@@ -1,6 +1,8 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.model.Account;
+import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.repository.AccountRepository;
@@ -8,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -66,5 +69,24 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
+    }
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
+
+        return accounts.stream().map(account -> {
+                    List<AccountStatement> expired = account.getAccountStatements().stream()
+                            .filter(s -> s.getExpiryDate().isBefore(LocalDate.now()))
+                            .toList();
+
+                    return new AccountStatementAlertDTO(
+                            account.getId(),
+                            account.getName(),
+                            account.getStatus().name(),
+                            expired,
+                            expired.size()
+                    );
+                })
+                .filter(dto -> dto.expiredCount() > 0)
+                .toList();
     }
 }

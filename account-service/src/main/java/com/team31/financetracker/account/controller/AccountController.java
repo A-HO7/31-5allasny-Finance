@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
@@ -71,6 +72,10 @@ public class AccountController {
     @PutMapping("/{id}/status")
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
+    }
+    @GetMapping("/statements/expired")
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        return accountService.getAccountsWithExpiredStatements();
     }
 
 

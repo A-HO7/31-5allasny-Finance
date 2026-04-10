@@ -120,6 +120,14 @@ public class SavedReportController {
             return ResponseEntity.notFound().build();
         }
     }
+    @GetMapping("/{reportId}/details")
+    public ResponseEntity<?> getReportDetails(@PathVariable Long reportId) {
+        try {
+            return ResponseEntity.ok(service.getReportDetails(reportId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
 
     @PutMapping("/{id}/regenerate")
     public ResponseEntity<?> regenerateReport(@PathVariable Long id) {

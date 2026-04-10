@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
@@ -14,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -124,5 +126,27 @@ public class AccountService {
 
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    }
+    public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+
+        if (resultRaw == null) {
+            return new AccountSummaryDTO(id, account.getName(), 0.0, 0.0, 0.0, 0L);
+        }
+
+        Object[] row = (Object[]) resultRaw;
+
+        Long accountId = ((Number) row[0]).longValue();
+        String name = (String) row[1];
+        Double totalDeposits = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
+        Double totalWithdrawals = row[3] != null ? ((Number) row[3]).doubleValue() : 0.0;
+        Long transactionCount = ((Number) row[4]).longValue();
+
+        Double netChange = totalDeposits - totalWithdrawals;
+
+        return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
     }
 }

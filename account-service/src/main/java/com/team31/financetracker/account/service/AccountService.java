@@ -67,4 +67,15 @@ public class AccountService {
     public int updateStatusById(Long id, AccountStatus status) {
         return accountRepository.updateStatusById(id, status.name());
     }
+
+    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
+        if (minBalance == null || maxBalance == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minBalance and maxBalance are required");
+        }
+        if (minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        String statusParam = status != null ? status.name() : null;
+        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+    }
 }

@@ -23,6 +23,14 @@ public class AccountController {
         return ResponseEntity.ok("OK");
     }
 
+    @GetMapping("/search")
+    public List<Account> searchAccounts(
+            @RequestParam(required = false) AccountStatus status,
+            @RequestParam Double minBalance,
+            @RequestParam Double maxBalance) {
+        return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
+    }
+
     @GetMapping("{id}")
     public Account getAccountById(@PathVariable Long id) {
         return accountService.getById(id);

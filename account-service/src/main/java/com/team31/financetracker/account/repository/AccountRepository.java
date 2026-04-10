@@ -34,4 +34,15 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+
+    @Query(value = """
+            SELECT * FROM accounts a
+            WHERE a.balance >= :minBalance AND a.balance <= :maxBalance
+            AND (:status IS NULL OR a.status = :status)
+            ORDER BY a.balance DESC
+            """, nativeQuery = true)
+    List<Account> searchByStatusAndBalanceRange(
+            @Param("status") String status,
+            @Param("minBalance") Double minBalance,
+            @Param("maxBalance") Double maxBalance);
 }

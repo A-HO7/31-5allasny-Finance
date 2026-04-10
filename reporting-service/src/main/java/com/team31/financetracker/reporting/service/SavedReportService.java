@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import com.team31.financetracker.reporting.dto.UserReportSummaryDTO;
+import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.model.ReportStatus;
@@ -102,5 +103,31 @@ public class SavedReportService {
 
         // Step e: Build and return DTO
         return new UserReportSummaryDTO(userId, totalReports, generatedCount, typeBreakdown);
+    }
+
+    @Transactional
+    public SavedReport generateReport(Long userId, GenerateReportRequestDTO request) {
+        if (!repository.existsUserById(userId)) {
+            throw new RuntimeException("User not found with id: " + userId);
+        }
+        if (!request.getPeriodStart().isBefore(request.getPeriodEnd())) {
+            throw new IllegalArgumentException("periodStart must be before periodEnd");
+        }
+        if (repository.existsOverlappingGeneratedReport(userId, request.getReportType(), request.getPeriodStart(), request.getPeriodEnd())) {
+            throw new IllegalArgumentException("report already exists");
+        }
+
+        SavedReport newReport = new SavedReport();
+        newReport.setUserId(userId);
+        newReport.setName(request.getName());
+        newReport.setReportType(request.getReportType());
+        newReport.setPeriodStart(request.getPeriodStart());
+        newReport.setPeriodEnd(request.getPeriodEnd());
+        newReport.setStatus(ReportStatus.GENERATED);
+        
+        Map<String, Object> config = new LinkedHashMap<>();
+        newReport.setReportConfig(config);
+
+        return repository.save(newReport);
     }
 }

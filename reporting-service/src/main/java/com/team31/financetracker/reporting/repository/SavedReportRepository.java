@@ -41,4 +41,15 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
     List<Object[]> countGeneratedReportsByType(@Param("userId") Long userId);
 
     long countByUserId(Long userId);
+
+    @Query("SELECT COUNT(r) > 0 FROM SavedReport r " +
+           "WHERE r.userId = :userId " +
+           "AND r.reportType = :reportType " +
+           "AND r.status = com.team31.financetracker.reporting.model.ReportStatus.GENERATED " +
+           "AND r.periodStart <= :periodEnd " +
+           "AND r.periodEnd >= :periodStart")
+    boolean existsOverlappingGeneratedReport(@Param("userId") Long userId,
+                                             @Param("reportType") ReportType reportType,
+                                             @Param("periodStart") java.time.LocalDate periodStart,
+                                             @Param("periodEnd") java.time.LocalDate periodEnd);
 }

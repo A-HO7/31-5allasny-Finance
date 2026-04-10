@@ -92,7 +92,6 @@ public class AccountService {
                 .filter(dto -> dto.expiredCount() > 0)
                 .toList();
     }
-}
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
         return results.stream().map(row -> new TopAccountDTO(

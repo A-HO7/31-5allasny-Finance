@@ -34,4 +34,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
         WHERE u.email = :email
     """, nativeQuery = true)
     List<Account> findByUserEmail(@Param("email") String email);
+    @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
+            "FROM accounts a " +
+            "LEFT JOIN transactions t ON a.id = t.account_id " +
+            "GROUP BY a.id, a.name, a.balance " +
+            "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
+    List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
 }

@@ -10,10 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
-
+import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import java.util.HashMap;
 import java.util.Map;
-
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -143,5 +143,31 @@ public class BudgetService {
 
         // Save and return updated budget
         return budgetRepository.save(budget);
+    }
+    public List<BudgetAlertDTO> getBudgetsNearLimit(Double threshold, BudgetStatus status) {
+        if (threshold == null || threshold < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "threshold must be >= 0");
+        }
+
+        List<Object[]> rows = budgetRepository.findBudgetsNearLimit(
+                threshold,
+                status != null ? status.name() : null
+        );
+
+        List<BudgetAlertDTO> result = new ArrayList<>();
+
+        for (Object[] row : rows) {
+            BudgetAlertDTO dto = new BudgetAlertDTO();
+            dto.setBudgetId(((Number) row[0]).longValue());
+            dto.setUserName((String) row[1]);
+            dto.setCategory(Category.valueOf((String) row[2]));
+            dto.setBudgetAmount(((Number) row[3]).doubleValue());
+            dto.setSpentAmount(((Number) row[4]).doubleValue());
+            dto.setPercentUsed(((Number) row[5]).doubleValue());
+            dto.setRemainingAmount(((Number) row[6]).doubleValue());
+            result.add(dto);
+        }
+
+        return result;
     }
 }

@@ -21,4 +21,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             @Param("status") TransactionStatus status,
             @Param("start") LocalDateTime start,
             @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query(value = "SELECT * FROM transactions t WHERE t.metadata @> jsonb_build_object(:key, :value::jsonb)", nativeQuery = true)
+    List<Transaction> findByMetadataKeyValue(
+            @Param("key") String key,
+            @Param("value") String value);
 }

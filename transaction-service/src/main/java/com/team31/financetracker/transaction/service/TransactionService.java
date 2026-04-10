@@ -74,6 +74,16 @@ public class TransactionService {
         transactionRepository.delete(existingTransaction);
     }
 
+    public List<Transaction> searchByMetadataKeyValue(String key, String value) {
+        if (key == null || key.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata key cannot be empty");
+        }
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata value cannot be empty");
+        }
+        return transactionRepository.findByMetadataKeyValue(key.trim(), "\"" + value.trim() + "\"");
+    }
+
     private void ensureSplitBackReferences(Transaction transaction) {
         if (transaction.getTransactionSplits() == null) {
             return;

@@ -15,7 +15,7 @@ import java.util.List;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
-    Account findByUserId(Long userId);
+    List<Account> findByUserId(Long userId);
     List<Account> findByType(AccountType type);
     List<Account> findByStatus(AccountStatus status);
 
@@ -39,12 +39,32 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             "JOIN account_statements s ON a.id = s.account_id " +
             "WHERE s.expiry_date < CURRENT_TIMESTAMP", nativeQuery = true)
     List<Account> findAccountsWithExpiredStatementsNative();
+
+    @Query(value = """
+            SELECT a.*
+            FROM accounts a
+            WHERE a.account_details ->> :key = :value
+              AND (:status IS NULL OR a.status::text = :status)
+            """, nativeQuery = true)
+    List<Account> findByDetailKeyValueAndOptionalStatus(
+            @Param("key") String key,
+            @Param("value") String value,
+            @Param("status") String status
+    );
     @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
             "FROM accounts a " +
             "LEFT JOIN transactions t ON a.id = t.account_id " +
             "GROUP BY a.id, a.name, a.balance " +
             "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
+
+    @Query(value = """
+        SELECT COUNT(*) > 0
+        FROM users u
+        WHERE u.id = :userId
+          AND u.role = 'ADMIN'
+        """, nativeQuery = true)
+    boolean isAdminUser(@Param("userId") Long userId);
 
     @Query(value = """
     SELECT a.id, a.name, 

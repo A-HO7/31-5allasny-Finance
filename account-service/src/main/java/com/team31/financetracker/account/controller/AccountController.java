@@ -1,6 +1,8 @@
 package com.team31.financetracker.account.controller;
 
+
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
+import com.team31.financetracker.account.dto.RequestDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -34,7 +37,7 @@ public class AccountController {
     }
 
     @GetMapping("/user/{userId}")
-    public Account getAccountByUserId(@PathVariable Long userId) {
+    public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 
@@ -93,7 +96,31 @@ public class AccountController {
         return accountService.getSummary(id, startDate, endDate);
     }
 
+    @PutMapping("/{id}/details")
+    public Account updateAccountDetails(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> details
+    ) {
+        return accountService.updateAccountDetails(id, details);
+    }
 
+
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
+    @PutMapping("/{accountId}/statements/{statementId}/verify")
+    public Account verifyStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long statementId,
+            @RequestBody RequestDTO request
+    ) {
+        return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
+    }
 
 
 

@@ -16,7 +16,6 @@ import java.util.List;
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByUserId(Long userId);
-
     List<Account> findByType(AccountType type);
     List<Account> findByStatus(AccountStatus status);
 
@@ -30,7 +29,7 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     int updateStatusById(@Param("id") Long id, @Param("status") String status);
 
     @Query(value = """
-        SELECT a.* 
+        SELECT a.*
         FROM accounts a
         JOIN users u ON u.id = a.user_id
         WHERE u.email = :email
@@ -44,15 +43,15 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             """, nativeQuery = true)
     long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
 
-    @Query("""
-            SELECT a FROM Account a WHERE
-            (:minBalance IS NULL OR a.balance >= :minBalance) AND
-            (:maxBalance IS NULL OR a.balance <= :maxBalance) AND
-            (:status IS NULL OR a.status = :status)
-            ORDER BY a.balance DESC
-            """)
+    @Query(value = """
+            SELECT * FROM accounts
+            WHERE (:status IS NULL OR status = :status)
+            AND (:minBalance IS NULL OR balance >= :minBalance)
+            AND (:maxBalance IS NULL OR balance <= :maxBalance)
+            ORDER BY balance DESC
+            """, nativeQuery = true)
     List<Account> searchByStatusAndBalanceRange(
-            @Param("status") AccountStatus status,
+            @Param("status") String status,
             @Param("minBalance") Double minBalance,
             @Param("maxBalance") Double maxBalance);
 
@@ -89,13 +88,15 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     boolean isAdminUser(@Param("userId") Long userId);
 
     @Query(value = """
-    SELECT a.id, a.name, 
-           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits, 
-           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals, 
-           COUNT(t.id) as transactionCount 
-    FROM accounts a 
-    LEFT JOIN transactions t ON a.id = t.account_id 
-    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end 
+    SELECT a.id, a.name,
+           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits,
+           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals,
+           COUNT(t.id) as transactionCount
+    FROM accounts a
+    LEFT JOIN transactions t ON a.id = t.account_id
+      AND t.transaction_date BETWEEN :start AND :end
+      AND t.status::text <> 'VOIDED'
+    WHERE a.id = :accountId
     GROUP BY a.id, a.name
     """, nativeQuery = true)
     Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);

@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import com.team31.financetracker.reporting.model.ReportType;
+import com.team31.financetracker.reporting.model.ReportStatus;
 import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 import com.team31.financetracker.reporting.dto.ReportAnalyticsDTO;
 
@@ -37,9 +38,10 @@ public class SavedReportController {
     @GetMapping("/search")
     public ResponseEntity<List<SavedReport>> searchReports(
             @RequestParam(required = false) ReportType reportType,
+            @RequestParam(required = false) ReportStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return ResponseEntity.ok(service.searchReports(reportType, startDate, endDate));
+        return ResponseEntity.ok(service.searchReports(reportType, status, startDate, endDate));
     }
 
     @GetMapping("/{id}")

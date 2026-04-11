@@ -6,10 +6,18 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Optional;
 
 @Repository
 public interface ReportTemplateUsageRepository extends JpaRepository<ReportTemplateUsage, Long> {
-    boolean existsBySavedReportIdAndReportTemplateId(Long reportId, Long templateId);
 
+    @Query("SELECT u FROM ReportTemplateUsage u LEFT JOIN FETCH u.savedReport LEFT JOIN FETCH u.reportTemplate WHERE u.id = :id")
+    Optional<ReportTemplateUsage> findByIdWithRelations(@Param("id") Long id);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM ReportTemplateUsage u WHERE u.id = :id")
+    void deleteByIdCustom(@Param("id") Long id);
+
+    boolean existsBySavedReportIdAndReportTemplateId(Long reportId, Long templateId);
 }

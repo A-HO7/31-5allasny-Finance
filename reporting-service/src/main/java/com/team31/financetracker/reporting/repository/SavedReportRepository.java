@@ -16,15 +16,22 @@ import java.util.List;
 
 @Repository
 public interface SavedReportRepository extends JpaRepository<SavedReport, Long> {
-    @Query(value = "SELECT * FROM saved_reports WHERE " +
-           "(CAST(:reportType AS VARCHAR) IS NULL OR report_type = CAST(:reportType AS VARCHAR)) AND " +
-           "(CAST(:start AS TIMESTAMP) IS NULL OR created_at >= CAST(:start AS TIMESTAMP)) AND " +
-           "(CAST(:end AS TIMESTAMP) IS NULL OR created_at < CAST(:end AS TIMESTAMP)) " +
-           "ORDER BY created_at DESC", 
-           nativeQuery = true)
-    List<SavedReport> searchReportsNative(@Param("reportType") String reportType,
-                                          @Param("start") LocalDateTime start,
-                                          @Param("end") LocalDateTime end);
+    @Query("SELECT r FROM SavedReport r WHERE " +
+           "(:hasType = false OR r.reportType = :type) AND " +
+           "(:hasStatus = false OR r.status = :status) AND " +
+           "(:hasStart = false OR r.periodStart >= :startDate) AND " +
+           "(:hasEnd = false OR r.periodEnd <= :endDate) " +
+           "ORDER BY r.createdAt DESC")
+    List<SavedReport> searchReports(
+            @Param("hasType") boolean hasType,
+            @Param("type") ReportType type,
+            @Param("hasStatus") boolean hasStatus,
+            @Param("status") ReportStatus status,
+            @Param("hasStart") boolean hasStart,
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("hasEnd") boolean hasEnd,
+            @Param("endDate") java.time.LocalDate endDate);
+
 
 
 
@@ -58,9 +65,9 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
         "  COUNT(CASE WHEN status = 'ARCHIVED' THEN 1 END) AS archivedCount, " +
         "  COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS failedCount " +
         "FROM saved_reports " +
-        "WHERE (CAST(:startDate AS TIMESTAMP) IS NULL OR created_at >= CAST(:startDate AS TIMESTAMP)) " +
-        "  AND (CAST(:endDate AS TIMESTAMP) IS NULL OR created_at <= CAST(:endDate AS TIMESTAMP))",
+        "WHERE (:startDate IS NULL OR period_start >= CAST(:startDate AS DATE)) " +
+        "  AND (:endDate IS NULL OR period_end <= CAST(:endDate AS DATE))",
         nativeQuery = true)
-    List<Object[]> getReportAnalytics(@Param("startDate") LocalDateTime startDate,
-                                       @Param("endDate") LocalDateTime endDate);
+       List<Object[]> getReportAnalytics(@Param("startDate") String startDate,
+                                      @Param("endDate") String endDate);
 }

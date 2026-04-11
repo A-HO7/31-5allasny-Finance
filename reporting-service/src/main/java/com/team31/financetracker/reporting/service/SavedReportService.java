@@ -50,12 +50,20 @@ public class SavedReportService {
         return repository.findAll();
     }
 
-    public List<SavedReport> searchReports(ReportType reportType, LocalDate startDate, LocalDate endDate) {
-        String typeStr = (reportType != null) ? reportType.name() : null;
-        LocalDateTime start = (startDate != null) ? startDate.atStartOfDay() : null;
-        LocalDateTime end = (endDate != null) ? endDate.plusDays(1).atStartOfDay() : null;
+    public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
+                                           LocalDate startDate, LocalDate endDate) {
+        boolean hasType   = reportType != null;
+        boolean hasStatus = status != null;
+        boolean hasStart  = startDate != null;
+        boolean hasEnd    = endDate != null;
 
-        return repository.searchReportsNative(typeStr, start, end);
+        // Enums can't be null in JPQL — use a dummy safe default, flags prevent its use
+        ReportType safeType     = hasType   ? reportType : ReportType.CUSTOM;
+        ReportStatus safeStatus = hasStatus ? status     : ReportStatus.PENDING;
+        LocalDate safeStart     = hasStart  ? startDate  : LocalDate.of(1970, 1, 1);
+        LocalDate safeEnd       = hasEnd    ? endDate    : LocalDate.of(9999, 12, 31);
+
+        return repository.searchReports(hasType, safeType, hasStatus, safeStatus, hasStart, safeStart, hasEnd, safeEnd);
     }
 
     public SavedReport getSavedReportById(Long id) {
@@ -308,9 +316,8 @@ public class SavedReportService {
             throw new IllegalArgumentException("startDate must not be after endDate");
         }
 
-        // Step b: Convert LocalDate → LocalDateTime with full-day boundaries
-        LocalDateTime start = (startDate != null) ? startDate.atStartOfDay() : null;
-        LocalDateTime end   = (endDate   != null) ? endDate.atTime(LocalTime.MAX) : null;
+        String start = (startDate != null) ? startDate.toString() : null;
+        String end   = (endDate != null) ? endDate.toString() : null;
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);

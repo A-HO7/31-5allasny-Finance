@@ -30,13 +30,14 @@ public class ReportTemplateUsageService {
         if (usage.getPagesGenerated() == null) {
             usage.setPagesGenerated(1.0);
         }
-        return repository.save(usage);
+        return repository.saveAndFlush(usage);
     }
 
     public List<ReportTemplateUsage> getAllReportTemplateUsages() {
         return repository.findAll();
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ReportTemplateUsage getReportTemplateUsageById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("ReportTemplateUsage not found with id: " + id));
     }
@@ -53,6 +54,16 @@ public class ReportTemplateUsageService {
     @Transactional
     public void deleteReportTemplateUsage(Long id) {
         ReportTemplateUsage existing = getReportTemplateUsageById(id);
+        
+        // Decouple from parent collections to avoid JPA CascadeType.ALL + orphanRemoval conflict
+        if (existing.getSavedReport() != null && existing.getSavedReport().getReportTemplateUsages() != null) {
+            existing.getSavedReport().getReportTemplateUsages().removeIf(u -> u.getId().equals(id));
+        }
+        if (existing.getReportTemplate() != null && existing.getReportTemplate().getReportTemplateUsages() != null) {
+            existing.getReportTemplate().getReportTemplateUsages().removeIf(u -> u.getId().equals(id));
+        }
+
         repository.delete(existing);
+        repository.flush();
     }
-}
+ }

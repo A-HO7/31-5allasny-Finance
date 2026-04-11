@@ -105,7 +105,7 @@ public class TransactionService {
         return new TransactionAnalyticsDTO(totalTransactions, completedTransactions, voidedTransactions,
                 totalIncome, totalExpenses, savingsRate);
     }
-    
+
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
         if (key == null || key.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata key cannot be empty");
@@ -218,6 +218,39 @@ public class TransactionService {
         }
 
         return transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public void voidTransaction(Long id) {
+        Transaction transaction = getTransactionById(id);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PENDING or APPROVED transactions can be voided");
+        }
+
+        if (transaction.getStatus() == TransactionStatus.APPROVED) {
+            double amount = transaction.getAmount();
+            Long accountId = transaction.getAccountId();
+
+            switch (transaction.getType()) {
+                case INCOME ->
+                    // Credit was applied on approval — deduct it back
+                        transactionRepository.subtractFromAccountBalance(accountId, amount);
+                case EXPENSE ->
+                    // Deduction was applied on approval — add it back
+                        transactionRepository.addToAccountBalance(accountId, amount);
+                case TRANSFER -> {
+                    // Source was debited, destination was credited — reverse both
+                    transactionRepository.addToAccountBalance(accountId, amount);
+                    transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
+                }
+            }
+        }
+
+        transaction.setStatus(TransactionStatus.VOIDED);
+        transactionRepository.save(transaction);
     }
 
     private void ensureSplitBackReferences(Transaction transaction) {

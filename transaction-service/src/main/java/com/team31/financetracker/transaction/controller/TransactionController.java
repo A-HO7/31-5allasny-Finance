@@ -97,4 +97,10 @@ public class TransactionController {
             @RequestParam String value) {
         return transactionService.searchByMetadataKeyValue(key, value);
     }
+
+    @PutMapping("/{id}/void")
+    @ResponseStatus(HttpStatus.OK)
+    public void voidTransaction(@PathVariable Long id) {
+        transactionService.voidTransaction(id);
+    }
 }

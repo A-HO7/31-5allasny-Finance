@@ -14,10 +14,10 @@ import java.util.List;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    @Query(value = "SELECT * FROM users WHERE " +
-            "(:name IS NULL OR LOWER(name) LIKE LOWER(CONCAT('%', :name, '%'))) AND " +
-            "(:email IS NULL OR LOWER(email) LIKE LOWER(CONCAT('%', :email, '%'))) AND " +
-            "(:role IS NULL OR role = CAST(:role AS VARCHAR))",
+    @Query(value = "SELECT u.id, u.created_at, u.email, u.name, u.password, u.phone, u.preferences, u.role, u.status FROM users u WHERE " +
+            "(:name IS NULL OR LOWER(u.name) LIKE LOWER(CONCAT('%', :name, '%'))) AND " +
+            "(:email IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', :email, '%'))) AND " +
+            "(:role IS NULL OR u.role = CAST(:role AS role))",
             nativeQuery = true)
     List<User> searchUsers(
             @Param("name") String name,

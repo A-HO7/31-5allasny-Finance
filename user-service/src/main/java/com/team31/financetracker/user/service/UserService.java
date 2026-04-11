@@ -4,6 +4,7 @@ import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
 import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.User;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,11 @@ public class UserService {
 
     // Create
     public User createUser(User user) {
-        return userRepository.save(user);
+        try {
+            return userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
+        }
     }
 
     // Read All

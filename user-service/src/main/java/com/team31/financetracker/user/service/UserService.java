@@ -163,19 +163,15 @@ public class UserService {
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
         User user = getUserById(userId);
 
-        Object[] result = userRepository.getUserTransactionSummary(userId);
+        List<Object[]> results = userRepository.getUserTransactionSummary(userId);
 
-        if (result == null || result.length == 0) {
+        if (results == null || results.isEmpty()) {
             return new UserTransactionSummaryDTO(
-                    user.getId(),
-                    user.getName(),
-                    0L,
-                    0L,
-                    0L,
-                    0.0,
-                    0.0
+                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0
             );
         }
+
+        Object[] result = results.get(0);
 
         return new UserTransactionSummaryDTO(
                 ((Number) result[0]).longValue(),

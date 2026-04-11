@@ -2,6 +2,8 @@ package com.team31.financetracker.transaction.service;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.Enums.TransactionType;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
@@ -112,6 +114,39 @@ public class TransactionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata value cannot be empty");
         }
         return transactionRepository.findByMetadataKeyValue(key.trim(), "\"" + value.trim() + "\"");
+    }
+
+    @Transactional(readOnly = true)
+    public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
+        if (request.amount() == null || request.amount() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive");
+        }
+        if (request.accountId() == null || request.toAccountId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accountId and toAccountId are required");
+        }
+
+        long accountsFound = transactionRepository.countAccountsByIds(request.accountId(), request.toAccountId());
+        if (accountsFound != 2) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "One or both accounts not found");
+        }
+
+        double amount = request.amount();
+        double minAmount = amount * 0.8;
+        double maxAmount = amount * 1.2;
+        long similarCount = transactionRepository.countActiveSimilarAmountTransactions(minAmount, maxAmount);
+
+        double feePercentage;
+        if (similarCount <= 10) {
+            feePercentage = 0.5;
+        } else if (similarCount <= 25) {
+            feePercentage = 1.0;
+        } else {
+            feePercentage = 2.0;
+        }
+
+        double transferFee = amount * feePercentage / 100.0;
+        double netTransfer = amount - transferFee;
+        return new TransferEstimateDTO(amount, transferFee, netTransfer, feePercentage);
     }
 
     @Transactional

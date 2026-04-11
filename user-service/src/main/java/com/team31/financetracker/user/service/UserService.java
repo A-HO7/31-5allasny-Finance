@@ -1,23 +1,236 @@
 package com.team31.financetracker.user.service;
 
+import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
+import com.team31.financetracker.user.dto.TopSaverDTO;
+import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.User;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.user.model.Role;
+import com.team31.financetracker.user.model.UserStatus;
+import org.springframework.transaction.annotation.Transactional;
+import com.team31.financetracker.user.repository.FinancialGoalRepository;
+import com.team31.financetracker.user.model.FinancialGoal;
+import com.team31.financetracker.user.dto.UserProfileDTO;
+import com.team31.financetracker.user.dto.FinancialGoalDTO;
+import java.util.stream.Collectors;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class UserService {
     private final UserRepository userRepository;
+    private final FinancialGoalRepository financialGoalRepository;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, FinancialGoalRepository financialGoalRepository) {
         this.userRepository = userRepository;
+        this.financialGoalRepository = financialGoalRepository;
     }
 
+    // Create
     public User createUser(User user) {
-        return userRepository.save(user);
+        try {
+            return userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
+        }
     }
 
+    // Read All
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
+
+    // Read by ID
+    public User getUserById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+    }
+
+    // Update
+    public User updateUser(Long id, User userDetails) {
+        User existingUser = getUserById(id);
+        existingUser.setName(userDetails.getName());
+        existingUser.setEmail(userDetails.getEmail());
+        existingUser.setPhone(userDetails.getPhone());
+        existingUser.setPassword(userDetails.getPassword());
+        existingUser.setRole(userDetails.getRole());
+        return userRepository.save(existingUser);
+    }
+
+    // Delete
+    public void deleteUser(Long id) {
+        User user = getUserById(id);
+        userRepository.delete(user);
+    }
+
+    //Search with Filter (S1-F1)
+    public List<User> searchUsers(String name, String email, Role role) {
+        return userRepository.searchUsers(name, email, role != null ? role.name() : null);
+    }
+
+    //Update Preferences (S1-F2)
+    public User updatePreferences(Long id, Map<String, Object> newPreferences) {
+        User user = getUserById(id);
+        Map<String, Object> existing = user.getPreferences();
+        if (existing == null) {
+            user.setPreferences(newPreferences);
+        } else {
+            existing.putAll(newPreferences); // merges, overwrites same keys, adds new keys
+            user.setPreferences(existing);
+        }
+        return userRepository.save(user);
+    }
+
+    //Filter Users by Preference (S1-F5)
+    public List<User> filterByPreference(String key, String value) {
+        if (key == null || key.isBlank() || value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
+        }
+        return userRepository.findByPreference(key, value);
+    }
+
+    // Deactivate User (S1-F4)
+    @Transactional
+    public User deactivateUser(Long id) {
+        User user = getUserById(id);
+
+        int activeBudgets = userRepository.countActiveBudgetsNative(id);
+        if (activeBudgets > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate user with active budgets");
+        }
+
+        userRepository.voidPendingTransactionsNative(id);
+
+        user.setStatus(UserStatus.DEACTIVATED);
+        return userRepository.save(user);
+    }
+
+    // Set Primary Financial Goal (S1-F7)
+    @Transactional
+    public User setPrimaryFinancialGoal(Long userId, Long goalId) {
+        User user = getUserById(userId);
+
+        FinancialGoal goal = financialGoalRepository.findById(goalId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial goal not found"));
+
+        if (!goal.getUser().getId().equals(userId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Goal does not belong to the user");
+        }
+
+        // Remove primary from all user's goals
+        for (FinancialGoal g : user.getFinancialGoals()) {
+            g.setPrimary(false);
+        }
+
+        // Set the target goal to primary
+        goal.setPrimary(true);
+
+        // Save via JPA cascade from User
+        return userRepository.save(user);
+    }
+
+    // Get User Profile with Goals (S1-F8)
+    @Transactional(readOnly = true)
+    public UserProfileDTO getUserProfileWithGoals(Long id) {
+        User user = getUserById(id);
+
+        List<FinancialGoalDTO> goalDTOs = user.getFinancialGoals().stream()
+                .map(goal -> new FinancialGoalDTO(
+                        goal.getLabel(),
+                        goal.getTargetAmount(),
+                        goal.getCurrentAmount(),
+                        goal.getDeadline(),
+                        goal.getPrimary(),
+                        goal.getMetadata()
+                ))
+                .collect(Collectors.toList());
+
+        return new UserProfileDTO(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getPreferences(),
+                goalDTOs,
+                goalDTOs.size()
+        );
+    }
+
+
+    // Get User Transaction Summary (S1-F3)
+    public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
+        User user = getUserById(userId);
+
+        List<Object[]> results = userRepository.getUserTransactionSummary(userId);
+
+        if (results == null || results.isEmpty()) {
+            return new UserTransactionSummaryDTO(
+                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0
+            );
+        }
+
+        Object[] result = results.get(0);
+
+        return new UserTransactionSummaryDTO(
+                ((Number) result[0]).longValue(),
+                (String) result[1],
+                ((Number) result[2]).longValue(),
+                ((Number) result[3]).longValue(),
+                ((Number) result[4]).longValue(),
+                ((Number) result[5]).doubleValue(),
+                ((Number) result[6]).doubleValue()
+        );
+    }
+
+    // Top Savers by Net Income (S1-F6)
+    public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
+        }
+
+        if (limit <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be greater than 0");
+        }
+
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+
+        List<Object[]> results = userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
+
+        return results.stream()
+                .map(result -> new TopSaverDTO(
+                        ((Number) result[0]).longValue(),
+                        (String) result[1],
+                        ((Number) result[2]).doubleValue(),
+                        ((Number) result[3]).longValue()
+                ))
+                .toList();
+    }
+
+    // Find users by currency preference with minimum completed transactions (S1-F9)
+    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
+        if (currency == null || currency.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
+        }
+
+        String trimmed = currency.trim();
+        List<Object[]> rows = userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
+                trimmed, minTransactions);
+
+        return rows.stream()
+                .map(row -> new CurrencyPreferenceUserDTO(
+                        ((Number) row[0]).longValue(),
+                        (String) row[1],
+                        ((Number) row[2]).longValue()
+                ))
+                .toList();
+    }
+
 }

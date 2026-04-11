@@ -66,6 +66,11 @@ public class TransactionController {
         return transactionService.updateTransaction(id, transaction);
     }
 
+    @PutMapping("/{id}/complete")
+    public Transaction completeTransaction(@PathVariable Long id) {
+        return transactionService.completeTransaction(id);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteTransaction(@PathVariable Long id) {

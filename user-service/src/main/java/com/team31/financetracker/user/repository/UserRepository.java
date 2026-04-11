@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Modifying;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -50,6 +51,33 @@ public interface UserRepository extends JpaRepository<User, Long> {
             """, nativeQuery = true)
     Object[] getUserTransactionSummary(@Param("userId") Long userId);
 
+
+    
+    @Query(value = """
+            SELECT
+                u.id,
+                u.name,
+                COALESCE(
+                    SUM(CASE WHEN t.type = 'INCOME' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END) -
+                    SUM(CASE WHEN t.type = 'EXPENSE' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END),
+                    0
+                ) AS net_savings,
+                COUNT(t.id) AS transaction_count
+            FROM users u
+            JOIN transactions t ON u.id = t.user_id
+            WHERE t.status = 'COMPLETED'
+              AND t.transaction_date BETWEEN :startDate AND :endDate
+            GROUP BY u.id, u.name
+            ORDER BY net_savings DESC
+            LIMIT :limitValue
+            """, nativeQuery = true)
+
+        
+        List<Object[]> getTopSaversByNetIncome(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("limitValue") int limitValue
+        );
 
 
 }

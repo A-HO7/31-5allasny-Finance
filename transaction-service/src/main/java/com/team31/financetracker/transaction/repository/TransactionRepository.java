@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
@@ -21,6 +22,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT t FROM Transaction t WHERE t.status = :status AND t.transactionDate >= :start AND t.transactionDate < :endExclusive ORDER BY t.transactionDate DESC")
     List<Transaction> findByStatusAndTransactionDateRange(
             @Param("status") TransactionStatus status,
+            @Param("start") LocalDateTime start,
+            @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query(value = """
+            SELECT
+                COUNT(*) as totalTransactions,
+                COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completedTransactions,
+                COUNT(CASE WHEN status = 'VOIDED' THEN 1 END) as voidedTransactions,
+                COALESCE(SUM(CASE WHEN type = 'INCOME' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) as totalIncome,
+                COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) as totalExpenses
+            FROM transactions
+            WHERE transaction_date >= :start AND transaction_date < :endExclusive
+            """, nativeQuery = true)
+    Map<String, Object> getTransactionAnalytics(
             @Param("start") LocalDateTime start,
             @Param("endExclusive") LocalDateTime endExclusive);
 

@@ -1,6 +1,8 @@
 package com.team31.financetracker.reporting.model;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -16,10 +18,12 @@ public class ReportTemplateUsage {
     @Column(nullable = false)
     private Double pagesGenerated;
 
+    @JsonDeserialize(using = com.team31.financetracker.reporting.util.FlexibleLocalDateTimeDeserializer.class)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     @Column(nullable = false, updatable = false)
     private LocalDateTime appliedAt;
 
-    @JsonBackReference
+    @JsonIgnoreProperties("reportTemplateUsages")
     @ManyToOne(optional = false)
     @JoinColumn(name = "report_id", nullable = false)
     private SavedReport savedReport;

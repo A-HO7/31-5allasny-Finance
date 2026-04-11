@@ -12,6 +12,7 @@ import java.util.List;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
+import com.team31.financetracker.reporting.dto.ReportAnalyticsDTO;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -79,8 +80,8 @@ public class SavedReportController {
             if (reason == null || reason.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("Archive reason is required");
             }
-            service.archiveReport(id, reason);
-            return ResponseEntity.ok().build();
+            SavedReport archived = service.archiveReport(id, reason);
+            return ResponseEntity.ok(archived);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
@@ -138,6 +139,17 @@ public class SavedReportController {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/analytics")
+    public ResponseEntity<?> getReportAnalytics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            return ResponseEntity.ok(service.getReportAnalytics(startDate, endDate));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 }

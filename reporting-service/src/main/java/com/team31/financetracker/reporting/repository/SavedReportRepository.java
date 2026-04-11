@@ -26,12 +26,7 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
                                           @Param("start") LocalDateTime start,
                                           @Param("end") LocalDateTime end);
 
-    @Modifying
-    @Transactional
-    @Query(value = "UPDATE saved_reports SET status = 'ARCHIVED', " +
-                   "report_config = report_config || jsonb_build_object('archiveReason', :reason, 'archivedAt', :at) " +
-                   "WHERE id = :id AND status = 'GENERATED'", nativeQuery = true)
-    int archiveReportNative(@Param("id") Long id, @Param("reason") String reason, @Param("at") String at);
+
 
     @Query(value = "SELECT EXISTS(SELECT 1 FROM users WHERE id = :userId)", nativeQuery = true)
     boolean existsUserById(@Param("userId") Long userId);
@@ -53,4 +48,19 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
                                              @Param("reportType") ReportType reportType,
                                              @Param("periodStart") java.time.LocalDate periodStart,
                                              @Param("periodEnd") java.time.LocalDate periodEnd);
+
+    @Query(value =
+        "SELECT " +
+        "  COUNT(*) AS totalReports, " +
+        "  COUNT(CASE WHEN status = 'GENERATED' THEN 1 END) AS totalGenerated, " +
+        "  COALESCE(AVG(CASE WHEN status = 'GENERATED' " +
+        "    THEN (period_end - period_start) END), 0) AS averagePeriodDays, " +
+        "  COUNT(CASE WHEN status = 'ARCHIVED' THEN 1 END) AS archivedCount, " +
+        "  COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS failedCount " +
+        "FROM saved_reports " +
+        "WHERE (CAST(:startDate AS TIMESTAMP) IS NULL OR created_at >= CAST(:startDate AS TIMESTAMP)) " +
+        "  AND (CAST(:endDate AS TIMESTAMP) IS NULL OR created_at <= CAST(:endDate AS TIMESTAMP))",
+        nativeQuery = true)
+    List<Object[]> getReportAnalytics(@Param("startDate") LocalDateTime startDate,
+                                       @Param("endDate") LocalDateTime endDate);
 }

@@ -1,13 +1,16 @@
 package com.team31.financetracker.transaction.service;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.Enums.TransactionType;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -82,6 +85,27 @@ public class TransactionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata value cannot be empty");
         }
         return transactionRepository.findByMetadataKeyValue(key.trim(), "\"" + value.trim() + "\"");
+    }
+
+    @Transactional
+    public Transaction completeTransaction(Long id) {
+        Transaction transaction = getTransactionById(id);
+
+        if (transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transaction must be in APPROVED status");
+        }
+
+        transaction.setStatus(TransactionStatus.COMPLETED);
+        transaction.setCompletedAt(LocalDateTime.now());
+
+        if (transaction.getType() == TransactionType.EXPENSE) {
+            transactionRepository.updateBudgetSpentAmount(
+                    transaction.getAmount(),
+                    transaction.getCategory().name(),
+                    transaction.getTransactionDate().toLocalDate());
+        }
+
+        return transactionRepository.save(transaction);
     }
 
     private void ensureSplitBackReferences(Transaction transaction) {

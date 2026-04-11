@@ -316,9 +316,8 @@ public class SavedReportService {
             throw new IllegalArgumentException("startDate must not be after endDate");
         }
 
-        // Step b: Convert LocalDate → LocalDateTime with full-day boundaries
-        LocalDateTime start = (startDate != null) ? startDate.atStartOfDay() : null;
-        LocalDateTime end   = (endDate   != null) ? endDate.atTime(LocalTime.MAX) : null;
+        String start = (startDate != null) ? startDate.toString() : null;
+        String end   = (endDate != null) ? endDate.toString() : null;
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);

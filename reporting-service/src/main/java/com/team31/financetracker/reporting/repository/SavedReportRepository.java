@@ -65,9 +65,9 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
         "  COUNT(CASE WHEN status = 'ARCHIVED' THEN 1 END) AS archivedCount, " +
         "  COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS failedCount " +
         "FROM saved_reports " +
-        "WHERE (CAST(:startDate AS TIMESTAMP) IS NULL OR created_at >= CAST(:startDate AS TIMESTAMP)) " +
-        "  AND (CAST(:endDate AS TIMESTAMP) IS NULL OR created_at <= CAST(:endDate AS TIMESTAMP))",
+        "WHERE (:startDate IS NULL OR period_start >= CAST(:startDate AS DATE)) " +
+        "  AND (:endDate IS NULL OR period_end <= CAST(:endDate AS DATE))",
         nativeQuery = true)
-    List<Object[]> getReportAnalytics(@Param("startDate") LocalDateTime startDate,
-                                       @Param("endDate") LocalDateTime endDate);
+       List<Object[]> getReportAnalytics(@Param("startDate") String startDate,
+                                      @Param("endDate") String endDate);
 }

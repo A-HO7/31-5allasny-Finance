@@ -36,7 +36,11 @@ public class ReportTemplateUsageController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ReportTemplateUsage> getReportTemplateUsageById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.getReportTemplateUsageById(id));
+        try {
+            return ResponseEntity.ok(service.getReportTemplateUsageById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")

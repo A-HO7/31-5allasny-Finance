@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+import com.team31.financetracker.reporting.dto.TemplateUsageDTO;
+
 @RestController
 @RequestMapping("/api/reports/templates")
 public class ReportTemplateController {
@@ -19,8 +21,12 @@ public class ReportTemplateController {
     }
 
     @PostMapping
-    public ResponseEntity<ReportTemplate> createReportTemplate(@RequestBody ReportTemplate template) {
-        return new ResponseEntity<>(service.createReportTemplate(template), HttpStatus.CREATED);
+    public ResponseEntity<?> createReportTemplate(@RequestBody ReportTemplate template) {
+        try {
+            return new ResponseEntity<>(service.createReportTemplate(template), HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     @GetMapping
@@ -30,7 +36,11 @@ public class ReportTemplateController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ReportTemplate> getReportTemplateById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.getReportTemplateById(id));
+        try {
+            return ResponseEntity.ok(service.getReportTemplateById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")
@@ -52,6 +62,15 @@ public class ReportTemplateController {
             return ResponseEntity.noContent().build();
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/top-used")
+    public ResponseEntity<?> getTopUsedTemplates(@RequestParam int limit) {
+        try {
+            return ResponseEntity.ok(service.getTopUsedTemplates(limit));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 }

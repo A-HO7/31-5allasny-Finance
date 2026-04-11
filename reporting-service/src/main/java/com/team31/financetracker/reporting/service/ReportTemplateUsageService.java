@@ -21,13 +21,15 @@ public class ReportTemplateUsageService {
     }
 
     public ReportTemplateUsage createReportTemplateUsage(ReportTemplateUsage usage) {
-        if (usage.getSavedReport() == null || usage.getSavedReport().getId() == null || 
-            usage.getReportTemplate() == null || usage.getReportTemplate().getId() == null || 
-            usage.getPagesGenerated() == null) {
-             throw new IllegalArgumentException("Missing required bounds (SavedReport, ReportTemplate references) or pages limit for the usage bridge creation.");
+        if (usage.getSavedReport() != null && usage.getSavedReport().getId() != null) {
+            usage.setSavedReport(savedReportService.getSavedReportById(usage.getSavedReport().getId()));
         }
-        usage.setSavedReport(savedReportService.getSavedReportById(usage.getSavedReport().getId()));
-        usage.setReportTemplate(reportTemplateService.getReportTemplateById(usage.getReportTemplate().getId()));
+        if (usage.getReportTemplate() != null && usage.getReportTemplate().getId() != null) {
+            usage.setReportTemplate(reportTemplateService.getReportTemplateById(usage.getReportTemplate().getId()));
+        }
+        if (usage.getPagesGenerated() == null) {
+            usage.setPagesGenerated(1.0);
+        }
         return repository.save(usage);
     }
 
@@ -42,12 +44,9 @@ public class ReportTemplateUsageService {
     @Transactional
     public ReportTemplateUsage updateReportTemplateUsage(Long id, ReportTemplateUsage updatedUsage) {
         ReportTemplateUsage existing = getReportTemplateUsageById(id);
-        
-        if (updatedUsage.getPagesGenerated() == null) {
-            throw new IllegalArgumentException("Pages generated value missing.");
+        if (updatedUsage.getPagesGenerated() != null) {
+            existing.setPagesGenerated(updatedUsage.getPagesGenerated());
         }
-
-        existing.setPagesGenerated(updatedUsage.getPagesGenerated());
         return repository.save(existing);
     }
 

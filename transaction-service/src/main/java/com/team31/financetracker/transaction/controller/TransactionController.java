@@ -2,7 +2,11 @@ package com.team31.financetracker.transaction.controller;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.model.Transaction;
+import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.service.TransactionService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -34,6 +38,11 @@ public class TransactionController {
     @ResponseStatus(HttpStatus.CREATED)
     public Transaction createTransaction(@RequestBody Transaction transaction) {
         return transactionService.createTransaction(transaction);
+    }
+
+    @PostMapping("/estimate")
+    public TransferEstimateDTO estimateTransfer(@RequestBody TransferEstimateRequest request) {
+        return transactionService.estimateTransfer(request);
     }
 
     @GetMapping
@@ -71,6 +80,13 @@ public class TransactionController {
         return transactionService.completeTransaction(id);
     }
 
+    @PutMapping("/{transactionId}/approve")
+    public Transaction approveTransaction(
+            @PathVariable Long transactionId,
+            @RequestParam Long approverId) {
+        return transactionService.approveTransaction(transactionId, approverId);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteTransaction(@PathVariable Long id) {
@@ -82,5 +98,27 @@ public class TransactionController {
             @RequestParam String key,
             @RequestParam String value) {
         return transactionService.searchByMetadataKeyValue(key, value);
+    }
+
+
+    @PutMapping("/{id}/void")
+    @ResponseStatus(HttpStatus.OK)
+    public void voidTransaction(@PathVariable Long id) {
+        transactionService.voidTransaction(id);
+    }
+
+
+    @PostMapping("/{transactionId}/splits")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Transaction addSplitsToTransaction(
+            @PathVariable Long transactionId,
+            @RequestBody List<TransactionSplit> splits) {
+        return transactionService.addSplitsToTransaction(transactionId, splits);
+    }
+
+
+    @GetMapping("/{transactionId}/details")
+    public TransactionDetailsDTO getTransactionDetails(@PathVariable Long transactionId) {
+        return transactionService.getTransactionDetails(transactionId);
     }
 }

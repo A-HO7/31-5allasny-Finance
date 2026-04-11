@@ -11,19 +11,20 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
         @Query("SELECT t FROM Transaction t WHERE t.transactionDate >= :start AND t.transactionDate < :endExclusive ORDER BY t.transactionDate DESC")
         List<Transaction> findByTransactionDateRange(
-                        @Param("start") LocalDateTime start,
-                        @Param("endExclusive") LocalDateTime endExclusive);
+                @Param("start") LocalDateTime start,
+                @Param("endExclusive") LocalDateTime endExclusive);
 
         @Query("SELECT t FROM Transaction t WHERE t.status = :status AND t.transactionDate >= :start AND t.transactionDate < :endExclusive ORDER BY t.transactionDate DESC")
         List<Transaction> findByStatusAndTransactionDateRange(
-                        @Param("status") TransactionStatus status,
-                        @Param("start") LocalDateTime start,
-                        @Param("endExclusive") LocalDateTime endExclusive);
+                @Param("status") TransactionStatus status,
+                @Param("start") LocalDateTime start,
+                @Param("endExclusive") LocalDateTime endExclusive);
 
         @Query(value = """
                         SELECT
@@ -36,17 +37,40 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                         WHERE transaction_date >= :start AND transaction_date < :endExclusive
                         """, nativeQuery = true)
         Map<String, Object> getTransactionAnalytics(
-                        @Param("start") LocalDateTime start,
-                        @Param("endExclusive") LocalDateTime endExclusive);
+                @Param("start") LocalDateTime start,
+                @Param("endExclusive") LocalDateTime endExclusive);
 
         @Query(value = "SELECT * FROM transactions t WHERE t.metadata ->> :key = :value", nativeQuery = true)
         List<Transaction> findByMetadataKeyValue(
-                        @Param("key") String key,
-                        @Param("value") String value);
+                @Param("key") String key,
+                @Param("value") String value);
 
         @Modifying
         @Query(value = "UPDATE budgets SET spent_amount = spent_amount + :amount " +
-                        "WHERE category = :category AND :transactionDate >= start_date AND :transactionDate <= end_date", nativeQuery = true)
+                "WHERE category = :category AND :transactionDate >= start_date AND :transactionDate <= end_date", nativeQuery = true)
         void updateBudgetSpentAmount(@Param("amount") Double amount, @Param("category") String category,
-                        @Param("transactionDate") LocalDate transactionDate);
+                                     @Param("transactionDate") LocalDate transactionDate);
+
+        @Query(value = "SELECT COUNT(*) FROM accounts WHERE id IN (:accountId, :toAccountId)", nativeQuery = true)
+        long countAccountsByIds(@Param("accountId") Long accountId, @Param("toAccountId") Long toAccountId);
+
+        @Query(value = """
+                        SELECT COUNT(*) FROM transactions
+                        WHERE status IN ('PENDING', 'APPROVED')
+                        AND amount >= :minAmount AND amount <= :maxAmount
+                        """, nativeQuery = true)
+        long countActiveSimilarAmountTransactions(
+                @Param("minAmount") Double minAmount,
+                @Param("maxAmount") Double maxAmount);
+
+        @Query(value = "SELECT \"role\" FROM users WHERE id = :userId", nativeQuery = true)
+        Optional<String> findUserRoleById(@Param("userId") Long userId);
+
+        @Modifying
+        @Query(value = "UPDATE accounts SET balance = balance + :amount WHERE id = :accountId", nativeQuery = true)
+        int addToAccountBalance(@Param("accountId") Long accountId, @Param("amount") Double amount);
+
+        @Modifying
+        @Query(value = "UPDATE accounts SET balance = balance - :amount WHERE id = :accountId", nativeQuery = true)
+        int subtractFromAccountBalance(@Param("accountId") Long accountId, @Param("amount") Double amount);
 }

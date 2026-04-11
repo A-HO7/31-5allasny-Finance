@@ -200,6 +200,34 @@ public class SavedReportService {
 
         return report;
     }
+
+    @Transactional
+    public SavedReport regenerateReport(Long id) {
+        SavedReport report = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Report not found with id: " + id));
+
+        if (report.getStatus() != ReportStatus.FAILED) {
+            throw new IllegalArgumentException("Only FAILED reports can be regenerated. Current status: " + report.getStatus());
+        }
+
+        report.setStatus(ReportStatus.GENERATED);
+
+        Map<String, Object> config = report.getReportConfig();
+        if (config == null) {
+            config = new java.util.LinkedHashMap<>();
+        }
+
+        int retryAttempt = 0;
+        if (config.get("retryAttempt") != null) {
+            retryAttempt = ((Number) config.get("retryAttempt")).intValue();
+        }
+        config.put("retryAttempt", retryAttempt + 1);
+        config.put("generationStatus", "success");
+
+        report.setReportConfig(config);
+
+        return repository.save(report);
+    }
     public ReportDetailsDTO getReportDetails(Long reportId) {
         SavedReport report = repository.findById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found with id: " + reportId));

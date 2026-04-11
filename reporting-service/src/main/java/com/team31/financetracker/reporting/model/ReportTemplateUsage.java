@@ -19,7 +19,7 @@ public class ReportTemplateUsage {
     private Double pagesGenerated;
 
     @JsonDeserialize(using = com.team31.financetracker.reporting.util.FlexibleLocalDateTimeDeserializer.class)
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     @Column(nullable = false, updatable = false)
     private LocalDateTime appliedAt;
 
@@ -28,6 +28,7 @@ public class ReportTemplateUsage {
     @JoinColumn(name = "report_id", nullable = false)
     private SavedReport savedReport;
 
+    @JsonIgnoreProperties("reportTemplateUsages")
     @ManyToOne(optional = false)
     @JoinColumn(name = "template_id", nullable = false)
     private ReportTemplate reportTemplate;

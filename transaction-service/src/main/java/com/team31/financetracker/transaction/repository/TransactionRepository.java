@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
@@ -61,4 +62,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
         long countActiveSimilarAmountTransactions(
                         @Param("minAmount") Double minAmount,
                         @Param("maxAmount") Double maxAmount);
+        @Query(value = "SELECT \"role\" FROM users WHERE id = :userId", nativeQuery = true)
+        Optional<String> findUserRoleById(@Param("userId") Long userId);
+
+        @Modifying
+        @Query(value = "UPDATE accounts SET balance = balance + :amount WHERE id = :accountId", nativeQuery = true)
+        int addToAccountBalance(@Param("accountId") Long accountId, @Param("amount") Double amount);
+
+        @Modifying
+        @Query(value = "UPDATE accounts SET balance = balance - :amount WHERE id = :accountId", nativeQuery = true)
+        int subtractFromAccountBalance(@Param("accountId") Long accountId, @Param("amount") Double amount);
 }

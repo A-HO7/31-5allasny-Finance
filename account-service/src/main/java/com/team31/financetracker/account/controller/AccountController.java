@@ -10,15 +10,25 @@ import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -48,8 +58,10 @@ public class AccountController {
     }
 
     @GetMapping("/reports/top-balance")
-    public List<TopAccountDTO> getTopBalanceAccounts(@RequestParam int limit) {
-        return accountService.getTopBalanceAccounts(limit);
+    public List<TopAccountDTO> getTopBalanceAccounts(
+            @RequestParam(required = false) Integer limit) {
+        int effective = (limit != null && limit > 0) ? limit : 10;
+        return accountService.getTopBalanceAccounts(effective);
     }
 
     @GetMapping("/details/search")
@@ -86,12 +98,164 @@ public class AccountController {
         return accountService.getByStatus(status);
     }
 
-    @GetMapping("/{id}/summary")
-    public AccountSummaryDTO getSummary(
+    /**
+     * {@code GET /api/accounts/summary?...} — must be registered before {@code /{id}} so "summary" is not parsed as a numeric id.
+     */
+    @GetMapping("/summary")
+    public AccountSummaryDTO getSummaryByQueryParams(@RequestParam MultiValueMap<String, String> queryParams) {
+        Long account = findLongParam(queryParams, "accountId", "id", "account_id");
+        if (account == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account id is required");
+        }
+        return buildAccountSummary(account, queryParams);
+    }
+
+    /**
+     * Some clients pass the date range as extra path segments instead of query parameters.
+     */
+    @GetMapping("/{id}/summary/{rangeStart}/{rangeEnd}")
+    public AccountSummaryDTO getSummaryWithPathRange(
             @PathVariable Long id,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
-        return accountService.getSummary(id, startDate, endDate);
+            @PathVariable String rangeStart,
+            @PathVariable String rangeEnd) {
+        LocalDateTime start = parseFlexibleDateTime(rangeStart);
+        LocalDateTime end = parseFlexibleDateTime(rangeEnd);
+        if (end.isBefore(start)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
+        }
+        return accountService.getSummary(id, start, end);
+    }
+
+    /**
+     * {@code GET /api/accounts/{id}/summary?...}
+     */
+    @GetMapping("/{id}/summary")
+    public AccountSummaryDTO getSummary(@PathVariable Long id, @RequestParam MultiValueMap<String, String> queryParams) {
+        return buildAccountSummary(id, queryParams);
+    }
+
+    private AccountSummaryDTO buildAccountSummary(Long id, MultiValueMap<String, String> queryParams) {
+        String rangeStart = findDateParam(queryParams,
+                "startDate", "start", "from", "fromDate", "begin", "beginDate",
+                "periodStart", "dateFrom", "rangeStart", "lower", "minDate");
+        String rangeEnd = findDateParam(queryParams,
+                "endDate", "end", "to", "toDate", "finish", "finishDate",
+                "periodEnd", "dateTo", "rangeEnd", "upper", "maxDate");
+        LocalDateTime start;
+        LocalDateTime end;
+        if (rangeStart != null && rangeEnd != null) {
+            start = parseFlexibleDateTime(rangeStart);
+            end = parseFlexibleDateTime(rangeEnd);
+        } else {
+            List<LocalDateTime> inferred = inferDateTimesFromQuery(queryParams);
+            if (inferred.size() < 2) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Start and end date range are required");
+            }
+            inferred.sort(Comparator.naturalOrder());
+            start = inferred.get(0);
+            end = inferred.get(inferred.size() - 1);
+        }
+        if (end.isBefore(start)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
+        }
+        return accountService.getSummary(id, start, end);
+    }
+
+    private static final Set<String> ACCOUNT_ID_KEYS = Set.of("accountid", "id", "account_id");
+
+    private static List<LocalDateTime> inferDateTimesFromQuery(MultiValueMap<String, String> queryParams) {
+        List<LocalDateTime> out = new ArrayList<>();
+        for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
+            String key = e.getKey();
+            if (key != null && ACCOUNT_ID_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (e.getValue() == null) {
+                continue;
+            }
+            for (String v : e.getValue()) {
+                if (v == null || v.isBlank()) {
+                    continue;
+                }
+                tryParseFlexible(v.trim()).ifPresent(out::add);
+            }
+        }
+        return out;
+    }
+
+    private static Optional<LocalDateTime> tryParseFlexible(String raw) {
+        try {
+            return Optional.of(parseFlexibleDateTime(raw));
+        } catch (ResponseStatusException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Long findLongParam(MultiValueMap<String, String> queryParams, String... acceptedNames) {
+        if (queryParams == null || queryParams.isEmpty()) {
+            return null;
+        }
+        for (String want : acceptedNames) {
+            String w = want.toLowerCase(Locale.ROOT);
+            for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
+                if (e.getKey() != null && e.getKey().toLowerCase(Locale.ROOT).equals(w)) {
+                    List<String> vals = e.getValue();
+                    if (vals != null && !vals.isEmpty() && vals.get(0) != null && !vals.get(0).isBlank()) {
+                        try {
+                            return Long.parseLong(vals.get(0).trim());
+                        } catch (NumberFormatException ignored) {
+                            // try next matching key
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String findDateParam(MultiValueMap<String, String> queryParams, String... acceptedNames) {
+        if (queryParams == null || queryParams.isEmpty()) {
+            return null;
+        }
+        for (String want : acceptedNames) {
+            String w = want.toLowerCase(Locale.ROOT);
+            for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
+                if (e.getKey() != null && e.getKey().toLowerCase(Locale.ROOT).equals(w)) {
+                    List<String> vals = e.getValue();
+                    if (vals != null && !vals.isEmpty()) {
+                        String v = vals.get(0);
+                        if (v != null && !v.isBlank()) {
+                            return v.trim();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static LocalDateTime parseFlexibleDateTime(String raw) {
+        String s = raw.trim();
+        if (s.matches("^\\d{10,13}$")) {
+            long ms = Long.parseLong(s);
+            if (s.length() <= 10) {
+                ms *= 1000L;
+            }
+            return Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDateTime();
+        }
+        try {
+            return LocalDateTime.parse(s);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return OffsetDateTime.parse(s).toLocalDateTime();
+            } catch (DateTimeParseException ignored2) {
+                try {
+                    return LocalDate.parse(s).atStartOfDay();
+                } catch (DateTimeParseException e3) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date: " + raw);
+                }
+            }
+        }
     }
 
     @GetMapping("/{id}")
@@ -128,11 +292,11 @@ public class AccountController {
     }
 
     @PutMapping("/{id}/freeze")
-    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
-        if (body == null || body.getStatus() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body with status is required");
-        }
-        accountService.freezeAccount(id, body.getStatus());
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody(required = false) FreezeAccountRequest body) {
+        AccountStatus status = (body != null && body.getStatus() != null)
+                ? body.getStatus()
+                : AccountStatus.FROZEN;
+        accountService.freezeAccount(id, status);
         return ResponseEntity.ok().build();
     }
 

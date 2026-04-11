@@ -94,7 +94,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
            COUNT(t.id) as transactionCount
     FROM accounts a
     LEFT JOIN transactions t ON a.id = t.account_id
-    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end
+      AND t.transaction_date BETWEEN :start AND :end
+      AND t.status::text <> 'VOIDED'
+    WHERE a.id = :accountId
     GROUP BY a.id, a.name
     """, nativeQuery = true)
     Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);

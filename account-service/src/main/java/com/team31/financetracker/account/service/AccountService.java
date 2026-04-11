@@ -79,12 +79,30 @@ public class AccountService {
 
     public Account update(Long id, Account updated) {
         Account existing = getById(id);
-        existing.setName(updated.getName());
-        existing.setType(updated.getType());
-        existing.setCurrency(updated.getCurrency());
-        existing.setBalance(updated.getBalance());
-        existing.setStatus(updated.getStatus());
-        existing.setAccountDetails(updated.getAccountDetails());
+        if (updated.getName() != null) {
+            existing.setName(updated.getName());
+        }
+        if (updated.getType() != null) {
+            existing.setType(updated.getType());
+        }
+        if (updated.getCurrency() != null) {
+            existing.setCurrency(updated.getCurrency());
+        }
+        if (updated.getBalance() != null) {
+            existing.setBalance(updated.getBalance());
+        }
+        if (updated.getStatus() != null) {
+            existing.setStatus(updated.getStatus());
+        }
+        if (updated.getRating() != null) {
+            existing.setRating(updated.getRating());
+        }
+        if (updated.getTotalRatings() != null) {
+            existing.setTotalRatings(updated.getTotalRatings());
+        }
+        if (updated.getAccountDetails() != null) {
+            existing.setAccountDetails(updated.getAccountDetails());
+        }
         return accountRepository.save(existing);
     }
 
@@ -112,22 +130,21 @@ public class AccountService {
 
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
+        Account account = getById(id);
         if (newStatus == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
         }
-        Account account = getById(id);
-        if (newStatus == AccountStatus.FROZEN) {
-            long pending = accountRepository.countPendingTransactionsForAccount(id);
-            if (pending > 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot freeze account with pending transactions");
-            }
+        if (newStatus == AccountStatus.FROZEN
+                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
         }
         account.setStatus(newStatus);
         accountRepository.save(account);
     }
 
     @Transactional
-    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Integer rating) {
+    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Double rating) {
+        Account account = getById(accountId);
         if (statementId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "statementId is required");
         }
@@ -137,7 +154,10 @@ public class AccountService {
         if (rating < 1 || rating > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be between 1 and 5");
         }
-        Account account = getById(accountId);
+        if (Math.abs(rating - Math.rint(rating)) > 1e-6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be a whole number between 1 and 5");
+        }
+        int ratingInt = (int) Math.rint(rating);
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
         if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
@@ -149,7 +169,7 @@ public class AccountService {
         int prior = account.getTotalRatings() != null ? account.getTotalRatings() : 0;
         double priorAvg = account.getRating() != null ? account.getRating() : 0.0;
         int nextTotal = prior + 1;
-        double nextAvg = (priorAvg * prior + rating) / nextTotal;
+        double nextAvg = (priorAvg * prior + ratingInt) / nextTotal;
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);

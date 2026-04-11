@@ -128,4 +128,16 @@ public class SavedReportController {
             return ResponseEntity.notFound().build();
         }
     }
+
+    @PutMapping("/{id}/regenerate")
+    public ResponseEntity<?> regenerateReport(@PathVariable Long id) {
+        try {
+            SavedReport updated = service.regenerateReport(id);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
 }

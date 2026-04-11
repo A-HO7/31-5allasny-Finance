@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
+import java.util.List;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -58,4 +58,21 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             Category category,
             BudgetStatus status
     );
+    @Query(value = """
+    SELECT
+        b.id AS budget_id,
+        u.name AS user_name,
+        b.category AS category,
+        b.budget_amount AS budget_amount,
+        b.spent_amount AS spent_amount,
+        (b.spent_amount / b.budget_amount) * 100 AS percent_used,
+        (b.budget_amount - b.spent_amount) AS remaining_amount
+    FROM budgets b
+    JOIN users u ON b.user_id = u.id
+    WHERE (b.spent_amount / b.budget_amount) >= :threshold
+      AND (:status IS NULL OR b.status = CAST(:status AS varchar))
+    ORDER BY percent_used DESC
+    """, nativeQuery = true)
+    List<Object[]> findBudgetsNearLimit(@Param("threshold") Double threshold,
+                                        @Param("status") String status);
 }

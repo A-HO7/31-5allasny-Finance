@@ -74,6 +74,30 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
 
+    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
+        if (minBalance != null && maxBalance != null && minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        String statusParam = status != null ? status.name() : null;
+        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+    }
+
+    @Transactional
+    public void freezeAccount(Long id, AccountStatus newStatus) {
+        if (newStatus == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+        Account account = getById(id);
+        if (newStatus == AccountStatus.FROZEN) {
+            long pending = accountRepository.countPendingTransactionsForAccount(id);
+            if (pending > 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot freeze account with pending transactions");
+            }
+        }
+        account.setStatus(newStatus);
+        accountRepository.save(account);
+    }
+
     @Transactional
     public void rateAccountAfterStatementReview(Long accountId, Long statementId, Integer rating) {
         if (statementId == null) {

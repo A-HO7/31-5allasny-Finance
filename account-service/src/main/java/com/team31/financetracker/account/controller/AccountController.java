@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
 import com.team31.financetracker.account.dto.RateAccountRequest;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
@@ -26,7 +27,15 @@ public class AccountController {
         return ResponseEntity.ok("OK");
     }
 
-    @GetMapping("{id}")
+    @GetMapping("/search")
+    public List<Account> searchAccounts(
+            @RequestParam(required = false) AccountStatus status,
+            @RequestParam(required = false) Double minBalance,
+            @RequestParam(required = false) Double maxBalance) {
+        return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
+    }
+
+    @GetMapping("/{id}")
     public Account getAccountById(@PathVariable Long id) {
         return accountService.getById(id);
     }
@@ -36,12 +45,12 @@ public class AccountController {
         return accountService.getByUserId(userId);
     }
 
-    @GetMapping("type/{type}")
+    @GetMapping("/type/{type}")
     public List<Account> getAccountsByType(@PathVariable AccountType type) {
         return accountService.getByType(type);
     }
 
-    @GetMapping("status/{status}")
+    @GetMapping("/status/{status}")
     public List<Account> getAccountsByStatus(@PathVariable AccountStatus status) {
         return accountService.getByStatus(status);
     }
@@ -56,12 +65,12 @@ public class AccountController {
         return accountService.create(account);
     }
 
-    @PutMapping("{id}")
+    @PutMapping("/{id}")
     public Account updateAccount(@PathVariable Long id, @RequestBody Account account) {
         return accountService.update(id, account);
     }
 
-    @DeleteMapping("{id}")
+    @DeleteMapping("/{id}")
     public void deleteAccount(@PathVariable Long id) {
         accountService.delete(id);
     }
@@ -74,6 +83,15 @@ public class AccountController {
     @PutMapping("/{id}/status")
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
+    }
+
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
+        if (body == null || body.getStatus() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body with status is required");
+        }
+        accountService.freezeAccount(id, body.getStatus());
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{id}/rate")

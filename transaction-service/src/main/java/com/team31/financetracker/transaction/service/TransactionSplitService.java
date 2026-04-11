@@ -24,6 +24,9 @@ public class TransactionSplitService {
 
     public TransactionSplit createTransactionSplit(TransactionSplit split) {
         split.setId(null);
+        if (split.getAmount() != null && split.getAmount() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive");
+        }
         split.setTransaction(resolveTransaction(split));
         return transactionSplitRepository.save(split);
     }
@@ -40,13 +43,23 @@ public class TransactionSplitService {
     public TransactionSplit updateTransactionSplit(Long id, TransactionSplit updatedSplit) {
         TransactionSplit existingSplit = getTransactionSplitById(id);
 
-        existingSplit.setSplitOrder(updatedSplit.getSplitOrder());
-        existingSplit.setRecipientName(updatedSplit.getRecipientName());
-        existingSplit.setAmount(updatedSplit.getAmount());
-        existingSplit.setDescription(updatedSplit.getDescription());
-        existingSplit.setStatus(updatedSplit.getStatus());
-        existingSplit.setMetadata(updatedSplit.getMetadata());
-        existingSplit.setTransaction(resolveTransaction(updatedSplit));
+        if (updatedSplit.getSplitOrder() != null) existingSplit.setSplitOrder(updatedSplit.getSplitOrder());
+        if (updatedSplit.getRecipientName() != null) existingSplit.setRecipientName(updatedSplit.getRecipientName());
+        
+        if (updatedSplit.getAmount() != null) {
+            if (updatedSplit.getAmount() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive");
+            }
+            existingSplit.setAmount(updatedSplit.getAmount());
+        }
+        
+        if (updatedSplit.getDescription() != null) existingSplit.setDescription(updatedSplit.getDescription());
+        if (updatedSplit.getStatus() != null) existingSplit.setStatus(updatedSplit.getStatus());
+        if (updatedSplit.getMetadata() != null) existingSplit.setMetadata(updatedSplit.getMetadata());
+
+        if (updatedSplit.getTransaction() != null && updatedSplit.getTransaction().getId() != null) {
+            existingSplit.setTransaction(resolveTransaction(updatedSplit));
+        }
 
         return transactionSplitRepository.save(existingSplit);
     }

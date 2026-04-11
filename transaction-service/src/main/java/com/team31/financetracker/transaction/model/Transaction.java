@@ -15,7 +15,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.team31.financetracker.transaction.Enums.TransactionCategory;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.Enums.TransactionType;
@@ -28,6 +28,7 @@ import java.util.Map;
 
 @Entity
 @Table(name = "transactions")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Transaction {
 
     @Id
@@ -80,7 +81,7 @@ public class Transaction {
     @Column(nullable = true)
     private LocalDateTime completedAt;
 
-    @JsonManagedReference
+    @JsonIgnoreProperties("transaction")
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("splitOrder ASC")
     private List<TransactionSplit> transactionSplits = new ArrayList<>();

@@ -24,6 +24,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             @Param("start") LocalDateTime start,
             @Param("endExclusive") LocalDateTime endExclusive);
 
+    @Query(value = "SELECT * FROM transactions t WHERE t.metadata @> jsonb_build_object(:key, :value::jsonb)", nativeQuery = true)
+    List<Transaction> findByMetadataKeyValue(
+            @Param("key") String key,
+            @Param("value") String value);
     @Modifying
     @Query(value = "UPDATE budgets SET spent_amount = spent_amount + :amount " +
             "WHERE category = :category AND :transactionDate >= start_date AND :transactionDate <= end_date", nativeQuery = true)

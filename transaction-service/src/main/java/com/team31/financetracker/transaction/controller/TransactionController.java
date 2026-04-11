@@ -68,4 +68,11 @@ public class TransactionController {
     public void deleteTransaction(@PathVariable Long id) {
         transactionService.deleteTransaction(id);
     }
+
+    @GetMapping("/metadata/search")
+    public List<Transaction> searchByMetadata(
+            @RequestParam String key,
+            @RequestParam String value) {
+        return transactionService.searchByMetadataKeyValue(key, value);
+    }
 }

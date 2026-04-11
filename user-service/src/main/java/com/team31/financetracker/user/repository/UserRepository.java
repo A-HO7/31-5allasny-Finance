@@ -32,4 +32,24 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Modifying
     @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE user_id = :userId AND status = 'PENDING'", nativeQuery = true)
     void voidPendingTransactionsNative(@Param("userId") Long userId);
+
+
+    @Query(value = """
+            SELECT
+                u.id,
+                u.name,
+                COUNT(t.id) AS total_transactions,
+                COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END) AS completed_transactions,
+                COUNT(CASE WHEN t.status = 'VOIDED' THEN 1 END) AS voided_transactions,
+                COALESCE(SUM(CASE WHEN t.type = 'INCOME' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) AS total_income,
+                COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) AS total_expenses
+            FROM users u
+            LEFT JOIN transactions t ON u.id = t.user_id
+            WHERE u.id = :userId
+            GROUP BY u.id, u.name
+            """, nativeQuery = true)
+    Object[] getUserTransactionSummary(@Param("userId") Long userId);
+
+
+
 }

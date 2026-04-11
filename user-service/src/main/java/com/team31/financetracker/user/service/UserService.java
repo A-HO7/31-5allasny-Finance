@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.service;
 
+import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
 import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.User;
@@ -208,6 +209,25 @@ public class UserService {
                         (String) result[1],
                         ((Number) result[2]).doubleValue(),
                         ((Number) result[3]).longValue()
+                ))
+                .toList();
+    }
+
+    // Find users by currency preference with minimum completed transactions (S1-F9)
+    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
+        if (currency == null || currency.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
+        }
+
+        String trimmed = currency.trim();
+        List<Object[]> rows = userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
+                trimmed, minTransactions);
+
+        return rows.stream()
+                .map(row -> new CurrencyPreferenceUserDTO(
+                        ((Number) row[0]).longValue(),
+                        (String) row[1],
+                        ((Number) row[2]).longValue()
                 ))
                 .toList();
     }

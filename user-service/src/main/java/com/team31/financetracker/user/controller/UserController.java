@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.controller;
 
+import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
 import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.model.Role;
@@ -107,6 +108,14 @@ public class UserController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam int limit) {
         return userService.getTopSaversByNetIncome(startDate, endDate, limit);
+    }
+
+    // Find users by currency preference with minimum completed transactions (S1-F9)
+    @GetMapping("/preferences/currency")
+    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(
+            @RequestParam String currency,
+            @RequestParam int minTransactions) {
+        return userService.findUsersByCurrencyPreference(currency, minTransactions);
     }
 }
 

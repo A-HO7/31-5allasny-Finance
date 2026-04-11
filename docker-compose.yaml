@@ -70,7 +70,7 @@ services:
     depends_on:
       - finance-db
 
-  reporting-service:
+  reportingg-service:
     build: ./reporting-service
     container_name: reporting-service
     ports:

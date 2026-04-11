@@ -115,6 +115,56 @@ public class TransactionService {
     }
 
     @Transactional
+    public Transaction approveTransaction(Long transactionId, Long approverId) {
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
+        if (transaction.getStatus() != TransactionStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Can only approve a pending transaction");
+        }
+
+        String role = transactionRepository.findUserRoleById(approverId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        if (!"ADMIN".equals(role)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Approver must be an admin");
+        }
+
+        double amount = transaction.getAmount();
+        Long accountId = transaction.getAccountId();
+        switch (transaction.getType()) {
+            case INCOME -> {
+                int updated = transactionRepository.addToAccountBalance(accountId, amount);
+                if (updated != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+            }
+            case EXPENSE -> {
+                int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                if (updated != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+            }
+            case TRANSFER -> {
+                if (transaction.getToAccountId() == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transfer requires a destination account");
+                }
+                int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                if (from != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+                int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
+                if (to != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
+                }
+            }
+        }
+
+        transaction.setApproverId(approverId);
+        transaction.setStatus(TransactionStatus.APPROVED);
+        return transactionRepository.save(transaction);
+    }
+
+    @Transactional
     public Transaction completeTransaction(Long id) {
         Transaction transaction = getTransactionById(id);
 

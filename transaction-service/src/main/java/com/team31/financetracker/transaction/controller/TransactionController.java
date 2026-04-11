@@ -71,6 +71,13 @@ public class TransactionController {
         return transactionService.completeTransaction(id);
     }
 
+    @PutMapping("/{transactionId}/approve")
+    public Transaction approveTransaction(
+            @PathVariable Long transactionId,
+            @RequestParam Long approverId) {
+        return transactionService.approveTransaction(transactionId, approverId);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteTransaction(@PathVariable Long id) {

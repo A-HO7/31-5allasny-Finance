@@ -1,24 +1,31 @@
 package com.team31.financetracker.account.controller;
 
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.dto.FreezeAccountRequest;
 import com.team31.financetracker.account.dto.RateAccountRequest;
+import com.team31.financetracker.account.dto.RequestDTO;
+import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
     private final AccountService accountService;
 
-    public AccountController (AccountService accountService){
+    public AccountController(AccountService accountService) {
         this.accountService = accountService;
     }
 
@@ -35,13 +42,37 @@ public class AccountController {
         return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
     }
 
-    @GetMapping("/{id}")
-    public Account getAccountById(@PathVariable Long id) {
-        return accountService.getById(id);
+    @GetMapping("/statements/expired")
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        return accountService.getAccountsWithExpiredStatements();
+    }
+
+    @GetMapping("/reports/top-balance")
+    public List<TopAccountDTO> getTopBalanceAccounts(@RequestParam int limit) {
+        return accountService.getTopBalanceAccounts(limit);
+    }
+
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
+
+    @GetMapping
+    public List<Account> getAllAccounts() {
+        return accountService.getAll();
+    }
+
+    @GetMapping("/email")
+    public List<Account> getByUserEmail(@RequestParam String email) {
+        return accountService.getByUserEmail(email);
     }
 
     @GetMapping("/user/{userId}")
-    public Account getAccountByUserId(@PathVariable Long userId) {
+    public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 
@@ -55,9 +86,17 @@ public class AccountController {
         return accountService.getByStatus(status);
     }
 
-    @GetMapping
-    public List<Account> getAllAccounts() {
-        return accountService.getAll();
+    @GetMapping("/{id}/summary")
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return accountService.getSummary(id, startDate, endDate);
+    }
+
+    @GetMapping("/{id}")
+    public Account getAccountById(@PathVariable Long id) {
+        return accountService.getById(id);
     }
 
     @PostMapping
@@ -70,14 +109,17 @@ public class AccountController {
         return accountService.update(id, account);
     }
 
+    @PutMapping("/{id}/details")
+    public Account updateAccountDetails(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> details
+    ) {
+        return accountService.updateAccountDetails(id, details);
+    }
+
     @DeleteMapping("/{id}")
     public void deleteAccount(@PathVariable Long id) {
         accountService.delete(id);
-    }
-
-    @GetMapping("/email")
-    public List<Account> getByUserEmail(@RequestParam String email) {
-        return accountService.getByUserEmail(email);
     }
 
     @PutMapping("/{id}/status")
@@ -103,4 +145,12 @@ public class AccountController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{accountId}/statements/{statementId}/verify")
+    public Account verifyStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long statementId,
+            @RequestBody RequestDTO request
+    ) {
+        return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
+    }
 }

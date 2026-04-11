@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import com.team31.financetracker.reporting.model.ReportType;
+import com.team31.financetracker.reporting.model.ReportStatus;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,22 +16,17 @@ import java.util.List;
 
 @Repository
 public interface SavedReportRepository extends JpaRepository<SavedReport, Long> {
+    @Query(value = "SELECT * FROM saved_reports WHERE " +
+           "(CAST(:reportType AS VARCHAR) IS NULL OR report_type = CAST(:reportType AS VARCHAR)) AND " +
+           "(CAST(:start AS TIMESTAMP) IS NULL OR created_at >= CAST(:start AS TIMESTAMP)) AND " +
+           "(CAST(:end AS TIMESTAMP) IS NULL OR created_at < CAST(:end AS TIMESTAMP)) " +
+           "ORDER BY created_at DESC", 
+           nativeQuery = true)
+    List<SavedReport> searchReportsNative(@Param("reportType") String reportType,
+                                          @Param("start") LocalDateTime start,
+                                          @Param("end") LocalDateTime end);
 
-    @Query("SELECT r FROM SavedReport r WHERE " +
-           "(:reportType IS NULL OR r.reportType = :reportType) AND " +
-           "(cast(:startDate as timestamp) IS NULL OR r.createdAt >= :startDate) AND " +
-           "(cast(:endDate as timestamp) IS NULL OR r.createdAt <= :endDate) " +
-           "ORDER BY r.createdAt DESC")
-    List<SavedReport> searchReports(@Param("reportType") ReportType reportType,
-                                    @Param("startDate") LocalDateTime startDate,
-                                    @Param("endDate") LocalDateTime endDate);
 
-    @Modifying
-    @Transactional
-    @Query(value = "UPDATE saved_reports SET status = 'ARCHIVED', " +
-                   "report_config = report_config || jsonb_build_object('archiveReason', :reason, 'archivedAt', :at) " +
-                   "WHERE id = :id AND status = 'GENERATED'", nativeQuery = true)
-    int archiveReportNative(@Param("id") Long id, @Param("reason") String reason, @Param("at") String at);
 
     @Query(value = "SELECT EXISTS(SELECT 1 FROM users WHERE id = :userId)", nativeQuery = true)
     boolean existsUserById(@Param("userId") Long userId);
@@ -52,4 +48,19 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
                                              @Param("reportType") ReportType reportType,
                                              @Param("periodStart") java.time.LocalDate periodStart,
                                              @Param("periodEnd") java.time.LocalDate periodEnd);
+
+    @Query(value =
+        "SELECT " +
+        "  COUNT(*) AS totalReports, " +
+        "  COUNT(CASE WHEN status = 'GENERATED' THEN 1 END) AS totalGenerated, " +
+        "  COALESCE(AVG(CASE WHEN status = 'GENERATED' " +
+        "    THEN (period_end - period_start) END), 0) AS averagePeriodDays, " +
+        "  COUNT(CASE WHEN status = 'ARCHIVED' THEN 1 END) AS archivedCount, " +
+        "  COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS failedCount " +
+        "FROM saved_reports " +
+        "WHERE (CAST(:startDate AS TIMESTAMP) IS NULL OR created_at >= CAST(:startDate AS TIMESTAMP)) " +
+        "  AND (CAST(:endDate AS TIMESTAMP) IS NULL OR created_at <= CAST(:endDate AS TIMESTAMP))",
+        nativeQuery = true)
+    List<Object[]> getReportAnalytics(@Param("startDate") LocalDateTime startDate,
+                                       @Param("endDate") LocalDateTime endDate);
 }

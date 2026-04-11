@@ -1,13 +1,26 @@
 package com.team31.financetracker.transaction.service;
 
+import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
+import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
+import com.team31.financetracker.transaction.Enums.TransactionType;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
@@ -25,6 +38,19 @@ public class TransactionService {
 
     public List<Transaction> getAllTransactions() {
         return transactionRepository.findAll();
+    }
+
+    public List<Transaction> searchByDateRangeAndOptionalStatus(
+            LocalDate startDate, LocalDate endDate, TransactionStatus status) {
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must not be after endDate");
+        }
+        var rangeStart = startDate.atStartOfDay();
+        var rangeEndExclusive = endDate.plusDays(1).atStartOfDay();
+        if (status != null) {
+            return transactionRepository.findByStatusAndTransactionDateRange(status, rangeStart, rangeEndExclusive);
+        }
+        return transactionRepository.findByTransactionDateRange(rangeStart, rangeEndExclusive);
     }
 
     public Transaction getTransactionById(Long id) {
@@ -58,6 +84,254 @@ public class TransactionService {
         Transaction existingTransaction = getTransactionById(id);
         transactionRepository.delete(existingTransaction);
     }
+
+    public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startDate must not be after endDate");
+        }
+
+        var rangeStart = startDate.atStartOfDay();
+        var rangeEndExclusive = endDate.plusDays(1).atStartOfDay();
+
+        Map<String, Object> result = transactionRepository.getTransactionAnalytics(rangeStart, rangeEndExclusive);
+
+        Integer totalTransactions = ((Number) result.get("totalTransactions")).intValue();
+        Integer completedTransactions = ((Number) result.get("completedTransactions")).intValue();
+        Integer voidedTransactions = ((Number) result.get("voidedTransactions")).intValue();
+        Double totalIncome = ((Number) result.get("totalIncome")).doubleValue();
+        Double totalExpenses = ((Number) result.get("totalExpenses")).doubleValue();
+
+        Double savingsRate = 0.0;
+        if (totalIncome > 0) {
+            savingsRate = ((totalIncome - totalExpenses) / totalIncome) * 100;
+        }
+
+        return new TransactionAnalyticsDTO(totalTransactions, completedTransactions, voidedTransactions,
+                totalIncome, totalExpenses, savingsRate);
+    }
+
+    public List<Transaction> searchByMetadataKeyValue(String key, String value) {
+        if (key == null || key.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata key cannot be empty");
+        }
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata value cannot be empty");
+        }
+        return transactionRepository.findByMetadataKeyValue(key.trim(), "\"" + value.trim() + "\"");
+    }
+
+    @Transactional(readOnly = true)
+    public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
+        if (request.amount() == null || request.amount() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive");
+        }
+        if (request.accountId() == null || request.toAccountId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accountId and toAccountId are required");
+        }
+
+        long accountsFound = transactionRepository.countAccountsByIds(request.accountId(), request.toAccountId());
+        if (accountsFound != 2) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "One or both accounts not found");
+        }
+
+        double amount = request.amount();
+        double minAmount = amount * 0.8;
+        double maxAmount = amount * 1.2;
+        long similarCount = transactionRepository.countActiveSimilarAmountTransactions(minAmount, maxAmount);
+
+        double feePercentage;
+        if (similarCount <= 10) {
+            feePercentage = 0.5;
+        } else if (similarCount <= 25) {
+            feePercentage = 1.0;
+        } else {
+            feePercentage = 2.0;
+        }
+
+        double transferFee = amount * feePercentage / 100.0;
+        double netTransfer = amount - transferFee;
+        return new TransferEstimateDTO(amount, transferFee, netTransfer, feePercentage);
+    }
+
+    @Transactional
+    public Transaction approveTransaction(Long transactionId, Long approverId) {
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
+        if (transaction.getStatus() != TransactionStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Can only approve a pending transaction");
+        }
+
+        String role = transactionRepository.findUserRoleById(approverId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        if (!"ADMIN".equals(role)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Approver must be an admin");
+        }
+
+        double amount = transaction.getAmount();
+        Long accountId = transaction.getAccountId();
+        switch (transaction.getType()) {
+            case INCOME -> {
+                int updated = transactionRepository.addToAccountBalance(accountId, amount);
+                if (updated != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+            }
+            case EXPENSE -> {
+                int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                if (updated != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+            }
+            case TRANSFER -> {
+                if (transaction.getToAccountId() == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transfer requires a destination account");
+                }
+                int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                if (from != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+                int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
+                if (to != 1) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
+                }
+            }
+        }
+
+        transaction.setApproverId(approverId);
+        transaction.setStatus(TransactionStatus.APPROVED);
+        return transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public Transaction completeTransaction(Long id) {
+        Transaction transaction = getTransactionById(id);
+
+        if (transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transaction must be in APPROVED status");
+        }
+
+        transaction.setStatus(TransactionStatus.COMPLETED);
+        transaction.setCompletedAt(LocalDateTime.now());
+
+        if (transaction.getType() == TransactionType.EXPENSE) {
+            transactionRepository.updateBudgetSpentAmount(
+                    transaction.getAmount(),
+                    transaction.getCategory().name(),
+                    transaction.getTransactionDate().toLocalDate());
+        }
+
+        return transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public void voidTransaction(Long id) {
+        Transaction transaction = getTransactionById(id);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PENDING or APPROVED transactions can be voided");
+        }
+
+        if (transaction.getStatus() == TransactionStatus.APPROVED) {
+            double amount = transaction.getAmount();
+            Long accountId = transaction.getAccountId();
+
+            switch (transaction.getType()) {
+                case INCOME ->
+                        transactionRepository.subtractFromAccountBalance(accountId, amount);
+                case EXPENSE ->
+                        transactionRepository.addToAccountBalance(accountId, amount);
+                case TRANSFER -> {
+                    transactionRepository.addToAccountBalance(accountId, amount);
+                    transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
+                }
+            }
+        }
+
+        transaction.setStatus(TransactionStatus.VOIDED);
+        transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> newSplits) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot add splits to a COMPLETED or VOIDED transaction");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            if (split.getRecipientName() == null || split.getRecipientName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a recipientName");
+            }
+            if (split.getDescription() == null || split.getDescription().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a description");
+            }
+            if (split.getAmount() == null || split.getAmount() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split amount must be positive");
+            }
+        }
+
+        List<TransactionSplit> existingSplits = transaction.getTransactionSplits();
+        int nextOrder = existingSplits.stream()
+                .mapToInt(TransactionSplit::getSplitOrder)
+                .max()
+                .orElse(0) + 1;
+
+        double existingTotal = existingSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        double newTotal = newSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        if (existingTotal + newTotal > transaction.getAmount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Total split amounts exceed the transaction amount");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            split.setSplitOrder(nextOrder++);
+            split.setStatus(TransactionSplitsStatus.PENDING);
+            split.setTransaction(transaction);
+            transaction.getTransactionSplits().add(split);
+        }
+
+        return transactionRepository.save(transaction);
+    }
+
+    public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        List<TransactionDetailsDTO.SplitDTO> splitDTOs = transaction.getTransactionSplits()
+                .stream()
+                .sorted(Comparator.comparingInt(TransactionSplit::getSplitOrder))
+                .map(s -> new TransactionDetailsDTO.SplitDTO(
+                        s.getId(),
+                        s.getSplitOrder(),
+                        s.getRecipientName(),
+                        s.getAmount(),
+                        s.getDescription(),
+                        s.getStatus(),
+                        s.getMetadata()))
+                .collect(Collectors.toList());
+
+        return new TransactionDetailsDTO(
+                transaction.getId(),
+                transaction.getAccountId(),
+                transaction.getUserId(),
+                transaction.getStatus() != null ? transaction.getStatus().name() : null,
+                transaction.getAmount(),
+                transaction.getMetadata(),
+                splitDTOs);
+    }
+
 
     private void ensureSplitBackReferences(Transaction transaction) {
         if (transaction.getTransactionSplits() == null) {

@@ -12,6 +12,7 @@ import java.util.List;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
+import com.team31.financetracker.reporting.dto.ReportAnalyticsDTO;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -43,7 +44,11 @@ public class SavedReportController {
 
     @GetMapping("/{id}")
     public ResponseEntity<SavedReport> getSavedReportById(@PathVariable Long id) {
-        return ResponseEntity.ok(service.getSavedReportById(id));
+        try {
+            return ResponseEntity.ok(service.getSavedReportById(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")
@@ -69,11 +74,14 @@ public class SavedReportController {
     }
 
     @PutMapping("/{id}/archive")
-    public ResponseEntity<?> archiveReport(@PathVariable Long id, @RequestBody java.util.Map<String, String> body) {
+    public ResponseEntity<?> archiveReport(@PathVariable Long id, @RequestBody(required = false) java.util.Map<String, String> body) {
         try {
-            String reason = body.getOrDefault("reason", "No reason provided");
-            service.archiveReport(id, reason);
-            return ResponseEntity.ok().build();
+            String reason = (body != null) ? body.get("reason") : null;
+            if (reason == null || reason.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Archive reason is required");
+            }
+            SavedReport archived = service.archiveReport(id, reason);
+            return ResponseEntity.ok(archived);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
@@ -81,10 +89,10 @@ public class SavedReportController {
         }
     }
 
-    @GetMapping("/user/{userId}/summary")
-    public ResponseEntity<?> getUserReportSummary(@PathVariable Long userId) {
+    @GetMapping("/user/{id}/summary")
+    public ResponseEntity<?> getUserReportSummary(@PathVariable Long id) {
         try {
-            return ResponseEntity.ok(service.getUserReportSummary(userId));
+            return ResponseEntity.ok(service.getUserReportSummary(id));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
@@ -111,6 +119,37 @@ public class SavedReportController {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+    @GetMapping("/{reportId}/details")
+    public ResponseEntity<?> getReportDetails(@PathVariable Long reportId) {
+        try {
+            return ResponseEntity.ok(service.getReportDetails(reportId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PutMapping("/{id}/regenerate")
+    public ResponseEntity<?> regenerateReport(@PathVariable Long id) {
+        try {
+            SavedReport updated = service.regenerateReport(id);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/analytics")
+    public ResponseEntity<?> getReportAnalytics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            return ResponseEntity.ok(service.getReportAnalytics(startDate, endDate));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 }

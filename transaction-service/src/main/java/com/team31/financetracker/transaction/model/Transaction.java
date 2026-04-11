@@ -3,15 +3,19 @@ package com.team31.financetracker.transaction.model;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.team31.financetracker.transaction.Enums.TransactionCategory;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.Enums.TransactionType;
@@ -42,7 +46,8 @@ public class Transaction {
     @Column(nullable = true)
     private Long approverId;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
+    // @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionType type;
 
@@ -52,15 +57,16 @@ public class Transaction {
     @Column(nullable = false)
     private String currency;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
+    // @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionCategory category;
 
     @Column(nullable = true, length = 1024)
     private String description;
 
-
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
+    // @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionStatus status;
 
@@ -74,9 +80,10 @@ public class Transaction {
     @Column(nullable = true)
     private LocalDateTime completedAt;
 
+    @JsonManagedReference
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("splitOrder ASC")
     private List<TransactionSplit> transactionSplits = new ArrayList<>();
-
 
     @PrePersist
     public void prePersist() {
@@ -88,6 +95,9 @@ public class Transaction {
         }
         if (metadata == null) {
             metadata = new HashMap<>();
+        }
+        if (currency == null) {
+            currency = "EGP";
         }
     }
 

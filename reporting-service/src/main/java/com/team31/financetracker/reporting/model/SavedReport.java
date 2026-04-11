@@ -1,7 +1,9 @@
 package com.team31.financetracker.reporting.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.team31.financetracker.reporting.util.FlexibleLocalDateTimeDeserializer;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -26,17 +28,19 @@ public class SavedReport {
     @Column(nullable = false)
     private String name;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ReportType reportType;
 
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     @Column(nullable = false)
     private LocalDate periodStart;
 
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     @Column(nullable = false)
     private LocalDate periodEnd;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ReportStatus status;
 
@@ -44,17 +48,20 @@ public class SavedReport {
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> reportConfig = new java.util.LinkedHashMap<>();
 
+    @JsonDeserialize(using = FlexibleLocalDateTimeDeserializer.class)
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @JsonManagedReference
-    @OneToMany(mappedBy = "savedReport", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties("savedReport")
+    @OneToMany(mappedBy = "savedReport", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<ReportTemplateUsage> reportTemplateUsages = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
         if (this.status == null) this.status = ReportStatus.PENDING;
         if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.name == null) this.name = "Untitled Report";
     }
 
     public Long getId() {

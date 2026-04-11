@@ -128,11 +128,11 @@ public class AccountController {
     }
 
     @PutMapping("/{id}/freeze")
-    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody FreezeAccountRequest body) {
-        if (body == null || body.getStatus() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body with status is required");
-        }
-        accountService.freezeAccount(id, body.getStatus());
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody(required = false) FreezeAccountRequest body) {
+        AccountStatus status = (body != null && body.getStatus() != null)
+                ? body.getStatus()
+                : AccountStatus.FROZEN;
+        accountService.freezeAccount(id, status);
         return ResponseEntity.ok().build();
     }
 

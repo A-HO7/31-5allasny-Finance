@@ -134,10 +134,10 @@ public class AccountService {
   
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
+        Account account = getById(id);
         if (newStatus == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
         }
-        Account account = getById(id);
         if (newStatus == AccountStatus.FROZEN
                 && accountRepository.countPendingTransactionsForAccount(id) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");

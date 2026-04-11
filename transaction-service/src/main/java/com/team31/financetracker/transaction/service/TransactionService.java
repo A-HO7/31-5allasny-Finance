@@ -1,7 +1,9 @@
 package com.team31.financetracker.transaction.service;
 
+import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.Enums.TransactionType;
@@ -15,8 +17,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
@@ -105,7 +109,7 @@ public class TransactionService {
         return new TransactionAnalyticsDTO(totalTransactions, completedTransactions, voidedTransactions,
                 totalIncome, totalExpenses, savingsRate);
     }
-    
+
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
         if (key == null || key.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata key cannot be empty");
@@ -219,6 +223,115 @@ public class TransactionService {
 
         return transactionRepository.save(transaction);
     }
+
+    @Transactional
+    public void voidTransaction(Long id) {
+        Transaction transaction = getTransactionById(id);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PENDING or APPROVED transactions can be voided");
+        }
+
+        if (transaction.getStatus() == TransactionStatus.APPROVED) {
+            double amount = transaction.getAmount();
+            Long accountId = transaction.getAccountId();
+
+            switch (transaction.getType()) {
+                case INCOME ->
+                        transactionRepository.subtractFromAccountBalance(accountId, amount);
+                case EXPENSE ->
+                        transactionRepository.addToAccountBalance(accountId, amount);
+                case TRANSFER -> {
+                    transactionRepository.addToAccountBalance(accountId, amount);
+                    transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
+                }
+            }
+        }
+
+        transaction.setStatus(TransactionStatus.VOIDED);
+        transactionRepository.save(transaction);
+    }
+
+    @Transactional
+    public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> newSplits) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot add splits to a COMPLETED or VOIDED transaction");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            if (split.getRecipientName() == null || split.getRecipientName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a recipientName");
+            }
+            if (split.getDescription() == null || split.getDescription().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a description");
+            }
+            if (split.getAmount() == null || split.getAmount() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split amount must be positive");
+            }
+        }
+
+        List<TransactionSplit> existingSplits = transaction.getTransactionSplits();
+        int nextOrder = existingSplits.stream()
+                .mapToInt(TransactionSplit::getSplitOrder)
+                .max()
+                .orElse(0) + 1;
+
+        double existingTotal = existingSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        double newTotal = newSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        if (existingTotal + newTotal > transaction.getAmount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Total split amounts exceed the transaction amount");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            split.setSplitOrder(nextOrder++);
+            split.setStatus(TransactionSplitsStatus.PENDING);
+            split.setTransaction(transaction);
+            transaction.getTransactionSplits().add(split);
+        }
+
+        return transactionRepository.save(transaction);
+    }
+
+    public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        List<TransactionDetailsDTO.SplitDTO> splitDTOs = transaction.getTransactionSplits()
+                .stream()
+                .sorted(Comparator.comparingInt(TransactionSplit::getSplitOrder))
+                .map(s -> new TransactionDetailsDTO.SplitDTO(
+                        s.getId(),
+                        s.getSplitOrder(),
+                        s.getRecipientName(),
+                        s.getAmount(),
+                        s.getDescription(),
+                        s.getStatus(),
+                        s.getMetadata()))
+                .collect(Collectors.toList());
+
+        return new TransactionDetailsDTO(
+                transaction.getId(),
+                transaction.getAccountId(),
+                transaction.getUserId(),
+                transaction.getStatus() != null ? transaction.getStatus().name() : null,
+                transaction.getAmount(),
+                transaction.getMetadata(),
+                splitDTOs);
+    }
+
 
     private void ensureSplitBackReferences(Transaction transaction) {
         if (transaction.getTransactionSplits() == null) {

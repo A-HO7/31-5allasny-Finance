@@ -1,5 +1,6 @@
 package com.team31.financetracker.transaction.service;
 
+import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
@@ -220,6 +221,7 @@ public class TransactionService {
         return transactionRepository.save(transaction);
     }
 
+
     @Transactional
     public void voidTransaction(Long id) {
         Transaction transaction = getTransactionById(id);
@@ -236,13 +238,10 @@ public class TransactionService {
 
             switch (transaction.getType()) {
                 case INCOME ->
-                    // Credit was applied on approval — deduct it back
                         transactionRepository.subtractFromAccountBalance(accountId, amount);
                 case EXPENSE ->
-                    // Deduction was applied on approval — add it back
                         transactionRepository.addToAccountBalance(accountId, amount);
                 case TRANSFER -> {
-                    // Source was debited, destination was credited — reverse both
                     transactionRepository.addToAccountBalance(accountId, amount);
                     transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
                 }
@@ -252,6 +251,60 @@ public class TransactionService {
         transaction.setStatus(TransactionStatus.VOIDED);
         transactionRepository.save(transaction);
     }
+
+
+    @Transactional
+    public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> newSplits) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot add splits to a COMPLETED or VOIDED transaction");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            if (split.getRecipientName() == null || split.getRecipientName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a recipientName");
+            }
+            if (split.getDescription() == null || split.getDescription().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split must have a description");
+            }
+            if (split.getAmount() == null || split.getAmount() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each split amount must be positive");
+            }
+        }
+
+        List<TransactionSplit> existingSplits = transaction.getTransactionSplits();
+        int nextOrder = existingSplits.stream()
+                .mapToInt(TransactionSplit::getSplitOrder)
+                .max()
+                .orElse(0) + 1;
+
+        double existingTotal = existingSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        double newTotal = newSplits.stream()
+                .mapToDouble(TransactionSplit::getAmount)
+                .sum();
+        if (existingTotal + newTotal > transaction.getAmount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Total split amounts exceed the transaction amount");
+        }
+
+        for (TransactionSplit split : newSplits) {
+            split.setSplitOrder(nextOrder++);
+            split.setStatus(TransactionSplitsStatus.PENDING);
+            split.setTransaction(transaction);
+            transaction.getTransactionSplits().add(split);
+        }
+
+        return transactionRepository.save(transaction);
+    }
+
 
     private void ensureSplitBackReferences(Transaction transaction) {
         if (transaction.getTransactionSplits() == null) {

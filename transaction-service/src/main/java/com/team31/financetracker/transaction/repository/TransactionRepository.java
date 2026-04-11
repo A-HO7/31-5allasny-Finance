@@ -49,4 +49,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                         "WHERE category = :category AND :transactionDate >= start_date AND :transactionDate <= end_date", nativeQuery = true)
         void updateBudgetSpentAmount(@Param("amount") Double amount, @Param("category") String category,
                         @Param("transactionDate") LocalDate transactionDate);
+
+        @Query(value = "SELECT COUNT(*) FROM accounts WHERE id IN (:accountId, :toAccountId)", nativeQuery = true)
+        long countAccountsByIds(@Param("accountId") Long accountId, @Param("toAccountId") Long toAccountId);
+
+        @Query(value = """
+                        SELECT COUNT(*) FROM transactions
+                        WHERE status IN ('PENDING', 'APPROVED')
+                        AND amount >= :minAmount AND amount <= :maxAmount
+                        """, nativeQuery = true)
+        long countActiveSimilarAmountTransactions(
+                        @Param("minAmount") Double minAmount,
+                        @Param("maxAmount") Double maxAmount);
 }

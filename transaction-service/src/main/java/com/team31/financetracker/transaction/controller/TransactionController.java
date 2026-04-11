@@ -2,6 +2,8 @@ package com.team31.financetracker.transaction.controller;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
+import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.service.TransactionService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -34,6 +36,11 @@ public class TransactionController {
     @ResponseStatus(HttpStatus.CREATED)
     public Transaction createTransaction(@RequestBody Transaction transaction) {
         return transactionService.createTransaction(transaction);
+    }
+
+    @PostMapping("/estimate")
+    public TransferEstimateDTO estimateTransfer(@RequestBody TransferEstimateRequest request) {
+        return transactionService.estimateTransfer(request);
     }
 
     @GetMapping

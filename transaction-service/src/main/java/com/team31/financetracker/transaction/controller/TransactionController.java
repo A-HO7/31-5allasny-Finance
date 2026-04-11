@@ -2,6 +2,7 @@ package com.team31.financetracker.transaction.controller;
 
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.model.Transaction;
@@ -113,5 +114,11 @@ public class TransactionController {
             @PathVariable Long transactionId,
             @RequestBody List<TransactionSplit> splits) {
         return transactionService.addSplitsToTransaction(transactionId, splits);
+    }
+
+
+    @GetMapping("/{transactionId}/details")
+    public TransactionDetailsDTO getTransactionDetails(@PathVariable Long transactionId) {
+        return transactionService.getTransactionDetails(transactionId);
     }
 }

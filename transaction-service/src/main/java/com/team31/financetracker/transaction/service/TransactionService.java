@@ -3,6 +3,7 @@ package com.team31.financetracker.transaction.service;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
+import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.Enums.TransactionType;
@@ -16,8 +17,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
@@ -221,7 +224,6 @@ public class TransactionService {
         return transactionRepository.save(transaction);
     }
 
-
     @Transactional
     public void voidTransaction(Long id) {
         Transaction transaction = getTransactionById(id);
@@ -251,7 +253,6 @@ public class TransactionService {
         transaction.setStatus(TransactionStatus.VOIDED);
         transactionRepository.save(transaction);
     }
-
 
     @Transactional
     public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> newSplits) {
@@ -303,6 +304,32 @@ public class TransactionService {
         }
 
         return transactionRepository.save(transaction);
+    }
+
+    public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
+        Transaction transaction = getTransactionById(transactionId);
+
+        List<TransactionDetailsDTO.SplitDTO> splitDTOs = transaction.getTransactionSplits()
+                .stream()
+                .sorted(Comparator.comparingInt(TransactionSplit::getSplitOrder))
+                .map(s -> new TransactionDetailsDTO.SplitDTO(
+                        s.getId(),
+                        s.getSplitOrder(),
+                        s.getRecipientName(),
+                        s.getAmount(),
+                        s.getDescription(),
+                        s.getStatus(),
+                        s.getMetadata()))
+                .collect(Collectors.toList());
+
+        return new TransactionDetailsDTO(
+                transaction.getId(),
+                transaction.getAccountId(),
+                transaction.getUserId(),
+                transaction.getStatus() != null ? transaction.getStatus().name() : null,
+                transaction.getAmount(),
+                transaction.getMetadata(),
+                splitDTOs);
     }
 
 

@@ -16,6 +16,7 @@ import java.util.List;
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByUserId(Long userId);
+
     List<Account> findByType(AccountType type);
     List<Account> findByStatus(AccountStatus status);
 
@@ -42,18 +43,19 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             AND (t.account_id = :accountId OR t.to_account_id = :accountId)
             """, nativeQuery = true)
     long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
-           
-    @Query(value = """
-            SELECT * FROM accounts a
-            WHERE a.balance >= :minBalance AND a.balance <= :maxBalance
-            AND (:status IS NULL OR a.status = :status)
+
+    @Query("""
+            SELECT a FROM Account a WHERE
+            (:minBalance IS NULL OR a.balance >= :minBalance) AND
+            (:maxBalance IS NULL OR a.balance <= :maxBalance) AND
+            (:status IS NULL OR a.status = :status)
             ORDER BY a.balance DESC
-            """, nativeQuery = true)
+            """)
     List<Account> searchByStatusAndBalanceRange(
-            @Param("status") String status,
+            @Param("status") AccountStatus status,
             @Param("minBalance") Double minBalance,
             @Param("maxBalance") Double maxBalance);
-           
+
     @Query(value = "SELECT DISTINCT a.* FROM accounts a " +
             "JOIN account_statements s ON a.id = s.account_id " +
             "WHERE s.expiry_date < CURRENT_TIMESTAMP", nativeQuery = true)
@@ -70,7 +72,7 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             @Param("value") String value,
             @Param("status") String status
     );
-           
+
     @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
             "FROM accounts a " +
             "LEFT JOIN transactions t ON a.id = t.account_id " +

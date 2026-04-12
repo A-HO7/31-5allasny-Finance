@@ -2,7 +2,7 @@ package com.team31.financetracker.transaction.model;
 
 import jakarta.persistence.*;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 
 import java.util.HashMap;
@@ -12,6 +12,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "transaction_splits")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TransactionSplit {
 
     @Id
@@ -31,7 +32,6 @@ public class TransactionSplit {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionSplitsStatus status;
 
@@ -39,10 +39,23 @@ public class TransactionSplit {
     @Column(columnDefinition = "jsonb")
     private java.util.Map<String, Object> metadata = new HashMap<>();
 
-    @JsonBackReference
+    @JsonIgnoreProperties("transactionSplits")
     @ManyToOne(optional = false)
     @JoinColumn(name = "transaction_id")
     private Transaction transaction;
+
+    @com.fasterxml.jackson.annotation.JsonProperty("transactionId")
+    public void setTransactionId(Long id) {
+        if (this.transaction == null) {
+            this.transaction = new Transaction();
+        }
+        this.transaction.setId(id);
+    }
+    
+    @com.fasterxml.jackson.annotation.JsonProperty("transaction_id")
+    public void setTransactionIdSnakeCase(Long id) {
+        setTransactionId(id);
+    }
 
     @PrePersist
     public void prePersist() {
@@ -50,6 +63,8 @@ public class TransactionSplit {
             status = TransactionSplitsStatus.PENDING;
         if (metadata == null)
             metadata = new HashMap<>();
+        if (splitOrder == null)
+            splitOrder = 1;
     }
 
     // Getters and setters

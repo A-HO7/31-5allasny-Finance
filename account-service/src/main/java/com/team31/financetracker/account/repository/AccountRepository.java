@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
@@ -23,10 +24,11 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Transactional
     @Query(value = """
     UPDATE accounts
-    SET status = :status
+    SET status = :status::text
     WHERE id = :id
     """, nativeQuery = true)
     int updateStatusById(@Param("id") Long id, @Param("status") String status);
+
 
     @Query(value = """
         SELECT a.*
@@ -37,10 +39,18 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByUserEmail(@Param("email") String email);
 
     @Query(value = """
-            SELECT COUNT(*) FROM transactions t
-            WHERE t.status::text = 'PENDING'
-            AND (t.account_id = :accountId OR t.to_account_id = :accountId)
-            """, nativeQuery = true)
+    SELECT COUNT(*) > 0 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+      AND table_name = 'transactions'
+    """, nativeQuery = true)
+    boolean doesTransactionsTableExist();
+
+    @Query(value = """
+    SELECT COUNT(*) FROM transactions t
+    WHERE CAST(t.status AS text) = 'PENDING'
+    AND (t.account_id = :accountId OR t.to_account_id = :accountId)
+    """, nativeQuery = true)
     long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
 
     @Query(value = """
@@ -80,12 +90,18 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
 
     @Query(value = """
-        SELECT COUNT(*) > 0
-        FROM users u
-        WHERE u.id = :userId
-          AND u.role = 'ADMIN'
-        """, nativeQuery = true)
-    boolean isAdminUser(@Param("userId") Long userId);
+    SELECT COUNT(*) 
+    FROM users 
+    WHERE id = :userId AND role = 'ADMIN'
+    """, nativeQuery = true)
+    int isAdminUser(@Param("userId") Long userId);
+
+    @Query(value = """
+    SELECT role 
+    FROM users 
+    WHERE id = :userId
+    """, nativeQuery = true)
+    String getUserRoleNative(@Param("userId") Long userId);
 
     @Query(value = """
     SELECT a.id, a.name,
@@ -94,10 +110,15 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
            COUNT(t.id) as transactionCount
     FROM accounts a
     LEFT JOIN transactions t ON a.id = t.account_id
-      AND t.transaction_date BETWEEN :start AND :end
-      AND t.status::text <> 'VOIDED'
+         AND t.status = 'COMPLETED'
+         AND t.transaction_date BETWEEN :start AND :end
     WHERE a.id = :accountId
     GROUP BY a.id, a.name
     """, nativeQuery = true)
-    Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+    Object getAccountSummaryNative(@Param("accountId") Long accountId,
+                                   @Param("start") LocalDateTime start,
+                                   @Param("end") LocalDateTime end);
+
+    @Query("SELECT a FROM Account a LEFT JOIN FETCH a.accountStatements WHERE a.id = :id")
+    Optional<Account> findByIdWithStatements(@Param("id") Long id);
 }

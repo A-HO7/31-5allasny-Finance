@@ -6,5 +6,5 @@ public record AccountSummaryDTO(
         Double totalDeposits,
         Double totalWithdrawals,
         Double netChange,
-        Long transactionCount
+        Long totalTransactions
 ) {}

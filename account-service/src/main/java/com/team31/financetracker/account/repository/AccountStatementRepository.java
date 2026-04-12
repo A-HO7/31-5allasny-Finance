@@ -25,6 +25,7 @@ public interface AccountStatementRepository extends JpaRepository<AccountStateme
             WHERE a.user_id = :userId
             """, nativeQuery = true)
     List<AccountStatement> findByUserId(@Param("userId") Long userId);
+    List<AccountStatement> findByAccountId(Long accountId);
 
     @Modifying
     @Transactional
@@ -33,5 +34,7 @@ public interface AccountStatementRepository extends JpaRepository<AccountStateme
             WHERE expiry_date < :cutoffDate
             """, nativeQuery = true)
     int deleteExpiredBefore(@Param("cutoffDate") java.time.LocalDate cutoffDate);
+
+
 
 }

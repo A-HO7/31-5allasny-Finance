@@ -1,8 +1,8 @@
 package com.team31.financetracker.account.service;
 
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
-import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
@@ -11,7 +11,9 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -121,25 +123,16 @@ public class AccountService {
     }
 
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
-        if (minBalance != null && maxBalance != null && minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        // Return all if no balance provided (TC_S2_69)
+        if (minBalance == null || maxBalance == null) {
+            return (status != null) ? accountRepository.findByStatus(status) : accountRepository.findAll();
         }
-        String statusParam = status != null ? status.name() : null;
-        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
-    }
 
-    @Transactional
-    public void freezeAccount(Long id, AccountStatus newStatus) {
-        Account account = getById(id);
-        if (newStatus == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        if (minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); // 400 requirement
         }
-        if (newStatus == AccountStatus.FROZEN
-                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
-        }
-        account.setStatus(newStatus);
-        accountRepository.save(account);
+
+        return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
     }
 
     @Transactional
@@ -175,6 +168,33 @@ public class AccountService {
         accountRepository.save(account);
     }
 
+    @Transactional
+    public void freezeAccount(Long id, AccountStatus newStatus) {
+        // 1. Fetch
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        // 2. Validate
+        if (newStatus == null) {
+            newStatus = AccountStatus.FROZEN;
+        }
+
+        // 3. Logic for Frozen
+        if (newStatus == AccountStatus.FROZEN) {
+            // Use the count query
+            long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
+            if (pendingCount > 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+            }
+        }
+
+        // 4. Update
+        account.setStatus(newStatus);
+
+        // 5. Force Push to DB
+        accountRepository.saveAndFlush(account);
+    }
+      
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
 
@@ -196,17 +216,16 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        Account account = getById(id); // Use getById to ensure 404 (TC_S2_23)
 
-        Map<String, Object> merged = new HashMap<>();
-        if (account.getAccountDetails() != null) {
-            merged.putAll(account.getAccountDetails());
-        }
+        Map<String, Object> existing = account.getAccountDetails();
+        if (existing == null) existing = new HashMap<>();
+
         if (accountDetails != null) {
-            merged.putAll(accountDetails);
+            existing.putAll(accountDetails); // Merge
         }
-        account.setAccountDetails(merged);
+
+        account.setAccountDetails(existing);
         return accountRepository.save(account);
     }
 
@@ -241,7 +260,11 @@ public class AccountService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
         }
 
-        if (verifiedBy == null || !accountRepository.isAdminUser(verifiedBy)) {
+        if (verifiedBy == null || verifiedBy <= 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
+        }
+        String role = accountRepository.getUserRoleNative(verifiedBy);
+        if (!"ADMIN".equals(role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to verify this statement");
         }
 
@@ -254,10 +277,16 @@ public class AccountService {
 
         statement.setVerified(true);
         statement.setMetadata(metadata);
-        accountStatementRepository.save(statement);
+        accountStatementRepository.saveAndFlush(statement);
 
-        return accountRepository.findById(accountId)
+        // Re-fetch with statements eagerly loaded
+        Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        // Force initialize inside transaction so Jackson can serialize it
+        result.getAccountStatements().size();
+
+        return result;
     }
 
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {

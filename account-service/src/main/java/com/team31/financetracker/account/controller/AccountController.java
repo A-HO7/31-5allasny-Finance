@@ -1,20 +1,24 @@
 package com.team31.financetracker.account.controller;
 
-import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
-import com.team31.financetracker.account.dto.AccountSummaryDTO;
-import com.team31.financetracker.account.dto.FreezeAccountRequest;
 import com.team31.financetracker.account.dto.RateAccountRequest;
+import com.team31.financetracker.account.dto.FreezeAccountRequest;
+
+import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.RequestDTO;
+import com.team31.financetracker.account.dto.AccountSummaryDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
+import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.account.service.AccountStatementService;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,9 +38,11 @@ import java.util.Set;
 @RequestMapping("/api/accounts")
 public class AccountController {
     private final AccountService accountService;
+    private final AccountStatementService accountStatementService;
 
-    public AccountController(AccountService accountService) {
+    public AccountController (AccountService accountService, AccountStatementService accountStatementService){
         this.accountService = accountService;
+        this.accountStatementService = accountStatementService;
     }
 
     @GetMapping("/health")
@@ -50,27 +56,6 @@ public class AccountController {
             @RequestParam(required = false) Double minBalance,
             @RequestParam(required = false) Double maxBalance) {
         return accountService.searchByStatusAndBalanceRange(status, minBalance, maxBalance);
-    }
-
-    @GetMapping("/statements/expired")
-    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
-        return accountService.getAccountsWithExpiredStatements();
-    }
-
-    @GetMapping("/reports/top-balance")
-    public List<TopAccountDTO> getTopBalanceAccounts(
-            @RequestParam(required = false) Integer limit) {
-        int effective = (limit != null && limit > 0) ? limit : 10;
-        return accountService.getTopBalanceAccounts(effective);
-    }
-
-    @GetMapping("/details/search")
-    public List<Account> searchByDetail(
-            @RequestParam String key,
-            @RequestParam String value,
-            @RequestParam(required = false) AccountStatus status
-    ) {
-        return accountService.searchByDetail(key, value, status);
     }
 
     @GetMapping
@@ -98,9 +83,6 @@ public class AccountController {
         return accountService.getByStatus(status);
     }
 
-    /**
-     * {@code GET /api/accounts/summary?...} — must be registered before {@code /{id}} so "summary" is not parsed as a numeric id.
-     */
     @GetMapping("/summary")
     public AccountSummaryDTO getSummaryByQueryParams(@RequestParam MultiValueMap<String, String> queryParams) {
         Long account = findLongParam(queryParams, "accountId", "id", "account_id");
@@ -110,9 +92,6 @@ public class AccountController {
         return buildAccountSummary(account, queryParams);
     }
 
-    /**
-     * Some clients pass the date range as extra path segments instead of query parameters.
-     */
     @GetMapping("/{id}/summary/{rangeStart}/{rangeEnd}")
     public AccountSummaryDTO getSummaryWithPathRange(
             @PathVariable Long id,
@@ -126,11 +105,10 @@ public class AccountController {
         return accountService.getSummary(id, start, end);
     }
 
-    /**
-     * {@code GET /api/accounts/{id}/summary?...}
-     */
     @GetMapping("/{id}/summary")
-    public AccountSummaryDTO getSummary(@PathVariable Long id, @RequestParam MultiValueMap<String, String> queryParams) {
+    public AccountSummaryDTO getSummary(
+            @PathVariable Long id,
+            @RequestParam MultiValueMap<String, String> queryParams) {
         return buildAccountSummary(id, queryParams);
     }
 
@@ -141,20 +119,25 @@ public class AccountController {
         String rangeEnd = findDateParam(queryParams,
                 "endDate", "end", "to", "toDate", "finish", "finishDate",
                 "periodEnd", "dateTo", "rangeEnd", "upper", "maxDate");
+
         LocalDateTime start;
         LocalDateTime end;
+
         if (rangeStart != null && rangeEnd != null) {
             start = parseFlexibleDateTime(rangeStart);
             end = parseFlexibleDateTime(rangeEnd);
+        } else if (rangeStart != null) {
+            start = parseFlexibleDateTime(rangeStart);
+            end = LocalDateTime.now();
+        } else if (rangeEnd != null) {
+            start = LocalDateTime.of(2000, 1, 1, 0, 0);
+            end = parseFlexibleDateTime(rangeEnd);
         } else {
-            List<LocalDateTime> inferred = inferDateTimesFromQuery(queryParams);
-            if (inferred.size() < 2) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Start and end date range are required");
-            }
-            inferred.sort(Comparator.naturalOrder());
-            start = inferred.get(0);
-            end = inferred.get(inferred.size() - 1);
+            // No dates provided — default to all time
+            start = LocalDateTime.of(2000, 1, 1, 0, 0);
+            end = LocalDateTime.now();
         }
+
         if (end.isBefore(start)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
         }
@@ -290,14 +273,15 @@ public class AccountController {
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
     }
-
-    @PutMapping("/{id}/freeze")
-    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody(required = false) FreezeAccountRequest body) {
-        AccountStatus status = (body != null && body.getStatus() != null)
-                ? body.getStatus()
-                : AccountStatus.FROZEN;
-        accountService.freezeAccount(id, status);
-        return ResponseEntity.ok().build();
+            @GetMapping("/statements/expired")
+    public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
+        return accountService.getAccountsWithExpiredStatements();
+    }
+    @GetMapping("/reports/top-balance")
+    public List<TopAccountDTO> getTopBalanceAccounts(
+            @RequestParam(required = false) Integer limit) {
+        int effective = (limit != null && limit > 0) ? limit : 10;
+        return accountService.getTopBalanceAccounts(effective);
     }
 
     @PostMapping("/{id}/rate")
@@ -309,6 +293,24 @@ public class AccountController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{id}/freeze")
+    public ResponseEntity<Void> freezeAccount(@PathVariable Long id, @RequestBody(required = false) FreezeAccountRequest body) {
+        AccountStatus status = (body != null && body.getStatus() != null)
+                ? body.getStatus()
+                : AccountStatus.FROZEN;
+        accountService.freezeAccount(id, status);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/details/search")
+    public List<Account> searchByDetail(
+            @RequestParam String key,
+            @RequestParam String value,
+            @RequestParam(required = false) AccountStatus status
+    ) {
+        return accountService.searchByDetail(key, value, status);
+    }
+
     @PutMapping("/{accountId}/statements/{statementId}/verify")
     public Account verifyStatement(
             @PathVariable Long accountId,
@@ -317,4 +319,36 @@ public class AccountController {
     ) {
         return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
     }
+
+    // [TC_S2_11] Create Statement
+    @PostMapping("/{accountId}/statements")
+    public AccountStatement createStatement(
+            @PathVariable Long accountId,
+            @RequestBody AccountStatement statement) {
+        //AccountStatement a;
+        return accountStatementService.create(accountId, statement);
+    }
+//
+//    // [TC_S2_12] List Statements
+//    @GetMapping("/{accountId}/statements")
+//    public List<AccountStatement> getAllStatements() {
+//        return accountStatementService.getAll();
+//    }
+
+    @GetMapping("/{accountId}/statements")
+    public List<AccountStatement> getAllStatements(@PathVariable Long accountId) {
+        return accountStatementService.getByAccountId(accountId);
+    }
+
+    // [TC_S2_13] Delete Statement
+    @DeleteMapping("/{accountId}/statements/{stmtId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteStatement(
+            @PathVariable Long accountId,
+            @PathVariable Long stmtId) {
+        accountStatementService.delete(stmtId);
+    }
+
+
+
 }

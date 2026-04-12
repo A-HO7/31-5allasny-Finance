@@ -75,4 +75,9 @@ public class AccountStatementService {
     public int deleteExpiredBefore(java.time.LocalDate cutoffDate) {
         return accountStatementRepository.deleteExpiredBefore(cutoffDate);
     }
+
+    public List<AccountStatement> getByAccountId(Long accountId) {
+        return accountStatementRepository.findByAccountId(accountId);
+    }
+
 }

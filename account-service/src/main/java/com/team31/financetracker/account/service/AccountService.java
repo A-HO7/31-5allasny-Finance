@@ -11,7 +11,9 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -34,7 +36,26 @@ public class AccountService {
     }
 
     public Account create(Account account) {
+        applyCreateDefaults(account);
         return accountRepository.save(account);
+    }
+
+    private static void applyCreateDefaults(Account account) {
+        if (account.getStatus() == null) {
+            account.setStatus(AccountStatus.ACTIVE);
+        }
+        if (account.getBalance() == null) {
+            account.setBalance(0.0);
+        }
+        if (account.getRating() == null) {
+            account.setRating(0.0);
+        }
+        if (account.getTotalRatings() == null) {
+            account.setTotalRatings(0);
+        }
+        if (account.getCurrency() == null || account.getCurrency().isBlank()) {
+            account.setCurrency("EGP");
+        }
     }
 
     public Account getById(Long id) {
@@ -60,12 +81,30 @@ public class AccountService {
 
     public Account update(Long id, Account updated) {
         Account existing = getById(id);
-        existing.setName(updated.getName());
-        existing.setType(updated.getType());
-        existing.setCurrency(updated.getCurrency());
-        existing.setBalance(updated.getBalance());
-        existing.setStatus(updated.getStatus());
-        existing.setAccountDetails(updated.getAccountDetails());
+        if (updated.getName() != null) {
+            existing.setName(updated.getName());
+        }
+        if (updated.getType() != null) {
+            existing.setType(updated.getType());
+        }
+        if (updated.getCurrency() != null) {
+            existing.setCurrency(updated.getCurrency());
+        }
+        if (updated.getBalance() != null) {
+            existing.setBalance(updated.getBalance());
+        }
+        if (updated.getStatus() != null) {
+            existing.setStatus(updated.getStatus());
+        }
+        if (updated.getRating() != null) {
+            existing.setRating(updated.getRating());
+        }
+        if (updated.getTotalRatings() != null) {
+            existing.setTotalRatings(updated.getTotalRatings());
+        }
+        if (updated.getAccountDetails() != null) {
+            existing.setAccountDetails(updated.getAccountDetails());
+        }
         return accountRepository.save(existing);
     }
 
@@ -83,8 +122,22 @@ public class AccountService {
         return accountRepository.updateStatusById(id, status.name());
     }
 
+    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
+        // Return all if no balance provided (TC_S2_69)
+        if (minBalance == null || maxBalance == null) {
+            return (status != null) ? accountRepository.findByStatus(status) : accountRepository.findAll();
+        }
+
+        if (minBalance > maxBalance) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); // 400 requirement
+        }
+
+        return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
+    }
+
     @Transactional
-    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Integer rating) {
+    public void rateAccountAfterStatementReview(Long accountId, Long statementId, Double rating) {
+        Account account = getById(accountId);
         if (statementId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "statementId is required");
         }
@@ -94,7 +147,10 @@ public class AccountService {
         if (rating < 1 || rating > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be between 1 and 5");
         }
-        Account account = getById(accountId);
+        if (Math.abs(rating - Math.rint(rating)) > 1e-6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "rating must be a whole number between 1 and 5");
+        }
+        int ratingInt = (int) Math.rint(rating);
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
         if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
@@ -106,35 +162,37 @@ public class AccountService {
         int prior = account.getTotalRatings() != null ? account.getTotalRatings() : 0;
         double priorAvg = account.getRating() != null ? account.getRating() : 0.0;
         int nextTotal = prior + 1;
-        double nextAvg = (priorAvg * prior + rating) / nextTotal;
+        double nextAvg = (priorAvg * prior + ratingInt) / nextTotal;
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);
     }
-  
+
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
+        // 1. Fetch
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        // 2. Validate
         if (newStatus == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+            newStatus = AccountStatus.FROZEN;
         }
-        Account account = getById(id);
-        if (newStatus == AccountStatus.FROZEN
-                && accountRepository.countPendingTransactionsForAccount(id) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+
+        // 3. Logic for Frozen
+        if (newStatus == AccountStatus.FROZEN) {
+            // Use the count query
+            long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
+            if (pendingCount > 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+            }
         }
+
+        // 4. Update
         account.setStatus(newStatus);
-        accountRepository.save(account);
-    }
-  
-    public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
-        if (minBalance == null || maxBalance == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minBalance and maxBalance are required");
-        }
-        if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
-        }
-        String statusParam = status != null ? status.name() : null;
-        return accountRepository.searchByStatusAndBalanceRange(statusParam, minBalance, maxBalance);
+
+        // 5. Force Push to DB
+        accountRepository.saveAndFlush(account);
     }
       
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
@@ -158,20 +216,19 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        Account account = getById(id); // Use getById to ensure 404 (TC_S2_23)
 
-        Map<String, Object> merged = new HashMap<>();
-        if (account.getAccountDetails() != null) {
-            merged.putAll(account.getAccountDetails());
-        }
+        Map<String, Object> existing = account.getAccountDetails();
+        if (existing == null) existing = new HashMap<>();
+
         if (accountDetails != null) {
-            merged.putAll(accountDetails);
+            existing.putAll(accountDetails); // Merge
         }
-        account.setAccountDetails(merged);
+
+        account.setAccountDetails(existing);
         return accountRepository.save(account);
     }
-      
+
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
@@ -189,34 +246,28 @@ public class AccountService {
 
     @Transactional
     public Account verifyStatement(Long accountId, Long statementId, Long verifiedBy) {
-        // Find account, throw 404 if not found
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        // Find the AccountStatement by ID, throw 404 if not found
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
 
-        // Verify it belongs to this account
-        // Throws 400 if it doesn’t belong to the specified account
         if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
         }
 
-        //  Check the statement is not expired (expiryDate is in the future)
-        //  Throws 400 if expired
-        if(!statement.getExpiryDate().isAfter(LocalDate.now())) {
+        if (!statement.getExpiryDate().isAfter(LocalDate.now())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
         }
 
-        // Verify the verifiedBy that is the userID being sent in the request body is an actual Admin User
-        // Throws 403 if not)
-        if (verifiedBy == null || !accountRepository.isAdminUser(verifiedBy)) {
+        if (verifiedBy == null || verifiedBy <= 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
+        }
+        String role = accountRepository.getUserRoleNative(verifiedBy);
+        if (!"ADMIN".equals(role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to verify this statement");
         }
 
-        // Update the statement’s JSONB metadata
-        // To add verifiedAt timestamp and verifiedBy (from request body)
         Map<String, Object> metadata = new HashMap<>();
         if (statement.getMetadata() != null) {
             metadata.putAll(statement.getMetadata());
@@ -224,15 +275,20 @@ public class AccountService {
         metadata.put("verifiedAt", LocalDateTime.now().toString());
         metadata.put("verifiedBy", verifiedBy);
 
-        // Set verified = true
         statement.setVerified(true);
         statement.setMetadata(metadata);
-        accountStatementRepository.save(statement);
+        accountStatementRepository.saveAndFlush(statement);
 
-        return accountRepository.findById(accountId)
+        // Re-fetch with statements eagerly loaded
+        Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        // Force initialize inside transaction so Jackson can serialize it
+        result.getAccountStatements().size();
+
+        return result;
     }
-      
+
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -256,4 +312,3 @@ public class AccountService {
         return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
     }
 }
-

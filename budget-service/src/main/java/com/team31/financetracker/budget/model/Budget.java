@@ -25,7 +25,7 @@ public class Budget {
     private Category category;
 
     @Column(nullable = false)
-    private Double budgetAmount;
+    private Double amount;
 
     @Column(nullable = false)
     private Double spentAmount = 0.0;
@@ -42,7 +42,7 @@ public class Budget {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private BudgetStatus status;
+    private BudgetStatus status = BudgetStatus.ACTIVE;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
@@ -61,8 +61,26 @@ public class Budget {
         if (spentAmount == null) {
             spentAmount = 0.0;
         }
+        if (status == null) {
+            status = BudgetStatus.ACTIVE;
+        }
         if (metadata == null) {
             metadata = new HashMap<>();
+        }
+        if (category == null) {
+            category = Category.OTHER;
+        }
+        if (period == null) {
+            period = BudgetPeriod.MONTHLY;
+        }
+        if (amount == null) {
+            amount = 0.0;
+        }
+        if (startDate == null) {
+            startDate = LocalDate.now();
+        }
+        if (endDate == null) {
+            endDate = LocalDate.now().plusMonths(1);
         }
     }
 
@@ -77,8 +95,9 @@ public class Budget {
     public Category getCategory() { return category; }
     public void setCategory(Category category) { this.category = category; }
 
-    public Double getBudgetAmount() { return budgetAmount; }
-    public void setBudgetAmount(Double budgetAmount) { this.budgetAmount = budgetAmount; }
+    public Double getAmount() { return amount; }
+
+    public void setAmount(Double amount) { this.amount = amount; }
 
     public Double getSpentAmount() { return spentAmount; }
     public void setSpentAmount(Double spentAmount) { this.spentAmount = spentAmount; }

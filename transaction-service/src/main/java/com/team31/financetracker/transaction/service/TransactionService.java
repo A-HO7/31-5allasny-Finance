@@ -10,6 +10,7 @@ import com.team31.financetracker.transaction.Enums.TransactionType;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +35,9 @@ public class TransactionService {
 
     // ── CRUD ──────────────────────────────────────────────────────────────────
 
+    @Transactional
     public Transaction createTransaction(Transaction transaction) {
+        transaction.setId(null);
         ensureSplitBackReferences(transaction);
         return transactionRepository.save(transaction);
     }
@@ -48,9 +51,9 @@ public class TransactionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
     }
 
-    // FIX TC_S3_04: grader sends a PUT body that may omit currency and category.
-    // Setting null on a NOT NULL column causes a 400/500. Keep the existing value
-    // when the incoming field is null instead of blindly overwriting.
+    // TC_S3_04: saveAndFlush forces an immediate UPDATE SQL so a subsequent GET
+    // always reads the new value. No @Transactional here — Spring Data's own
+    // transaction on saveAndFlush() is sufficient and avoids proxy layering issues.
     public Transaction updateTransaction(Long id, Transaction updatedTransaction) {
         Transaction existingTransaction = getTransactionById(id);
 
@@ -85,15 +88,16 @@ public class TransactionService {
             ensureSplitBackReferences(existingTransaction);
         }
 
-        return transactionRepository.save(existingTransaction);
+        return transactionRepository.saveAndFlush(existingTransaction);
     }
 
+    @Transactional
     public void deleteTransaction(Long id) {
         Transaction existingTransaction = getTransactionById(id);
         transactionRepository.delete(existingTransaction);
     }
 
-    // ── F1: search — null-safe fixes TC_S3_16, 19, 67, 68 ────────────────────
+    // ── F1: search ────────────────────────────────────────────────────────────
 
     public List<Transaction> searchByDateRangeAndOptionalStatus(
             LocalDate startDate, LocalDate endDate, TransactionStatus status) {
@@ -110,46 +114,71 @@ public class TransactionService {
         return transactionRepository.findByTransactionDateRange(rangeStart, rangeEndExclusive);
     }
 
-    // ── F2: approve (unchanged) ───────────────────────────────────────────────
+    // ── F2: approve ───────────────────────────────────────────────────────────
 
     @Transactional
     public Transaction approveTransaction(Long transactionId, Long approverId) {
         Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
         if (transaction.getStatus() != TransactionStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Can only approve a pending transaction");
         }
-        String role = transactionRepository.findUserRoleById(approverId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // Cross-service: queries users table
+        String role;
+        try {
+            role = transactionRepository.findUserRoleById(approverId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify approver role: user service unavailable");
+        }
+
         if (!"ADMIN".equals(role)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Approver must be an admin");
         }
+
+        // Cross-service: queries accounts table
         double amount    = transaction.getAmount();
         Long   accountId = transaction.getAccountId();
-        switch (transaction.getType()) {
-            case INCOME -> {
-                int updated = transactionRepository.addToAccountBalance(accountId, amount);
-                if (updated != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        try {
+            switch (transaction.getType()) {
+                case INCOME -> {
+                    int updated = transactionRepository.addToAccountBalance(accountId, amount);
+                    if (updated != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+                case EXPENSE -> {
+                    int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                    if (updated != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                }
+                case TRANSFER -> {
+                    if (transaction.getToAccountId() == null)
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transfer requires a destination account");
+                    int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
+                    if (from != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+                    int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
+                    if (to != 1) {
+                        transactionRepository.addToAccountBalance(accountId, amount);
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
+                    }
+                }
             }
-            case EXPENSE -> {
-                int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                if (updated != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-            }
-            case TRANSFER -> {
-                if (transaction.getToAccountId() == null)
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transfer requires a destination account");
-                int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                if (from != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-                int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
-                if (to != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
-            }
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not update account balance: account service unavailable");
         }
+
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
         return transactionRepository.save(transaction);
     }
 
-    // ── F3: estimate (unchanged) ──────────────────────────────────────────────
+    // ── F3: estimate ──────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
@@ -159,10 +188,20 @@ public class TransactionService {
         if (request.accountId() == null || request.toAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accountId and toAccountId are required");
         }
-        long accountsFound = transactionRepository.countAccountsByIds(request.accountId(), request.toAccountId());
-        if (accountsFound != 2) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "One or both accounts not found");
+
+        // Cross-service: queries accounts table
+        try {
+            long accountsFound = transactionRepository.countAccountsByIds(request.accountId(), request.toAccountId());
+            if (accountsFound != 2) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "One or both accounts not found");
+            }
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify accounts: account service unavailable");
         }
+
         double amount     = request.amount();
         long similarCount = transactionRepository.countActiveSimilarAmountTransactions(amount * 0.8, amount * 1.2);
         double feePercentage = (similarCount <= 10) ? 0.5 : (similarCount <= 25) ? 1.0 : 2.0;
@@ -171,7 +210,7 @@ public class TransactionService {
         return new TransferEstimateDTO(amount, transferFee, netTransfer, feePercentage);
     }
 
-    // ── F4: complete (unchanged) ──────────────────────────────────────────────
+    // ── F4: complete ──────────────────────────────────────────────────────────
 
     @Transactional
     public Transaction completeTransaction(Long id) {
@@ -181,16 +220,25 @@ public class TransactionService {
         }
         transaction.setStatus(TransactionStatus.COMPLETED);
         transaction.setCompletedAt(LocalDateTime.now());
+        transaction = transactionRepository.save(transaction);
+
+        // Cross-service: queries budgets table — non-fatal
         if (transaction.getType() == TransactionType.EXPENSE) {
-            transactionRepository.updateBudgetSpentAmount(
-                    transaction.getAmount(),
-                    transaction.getCategory().name(),
-                    transaction.getTransactionDate().toLocalDate());
+            try {
+                transactionRepository.updateBudgetSpentAmount(
+                        transaction.getAmount(),
+                        transaction.getCategory().name(),
+                        transaction.getTransactionDate().toLocalDate());
+            } catch (Exception e) {
+                System.err.println("[WARN] Could not update budget for transaction " + id
+                        + ": " + e.getMessage());
+            }
         }
-        return transactionRepository.save(transaction);
+
+        return transaction;
     }
 
-    // ── F5: metadata search (unchanged) ──────────────────────────────────────
+    // ── F5: metadata search ───────────────────────────────────────────────────
 
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
         if (key == null || key.trim().isEmpty()) {
@@ -199,10 +247,10 @@ public class TransactionService {
         if (value == null || value.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata value cannot be empty");
         }
-        return transactionRepository.findByMetadataKeyValue(key.trim(), "\"" + value.trim() + "\"");
+        return transactionRepository.findByMetadataKeyValue(key.trim(), value.trim());
     }
 
-    // ── F6: analytics — null-safe fixes TC_S3_39 ─────────────────────────────
+    // ── F6: analytics ─────────────────────────────────────────────────────────
 
     public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
@@ -213,18 +261,24 @@ public class TransactionService {
         LocalDateTime rangeStart        = start.atStartOfDay();
         LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
         Map<String, Object> result      = transactionRepository.getTransactionAnalytics(rangeStart, rangeEndExclusive);
-        Integer totalTransactions     = ((Number) result.get("totalTransactions")).intValue();
-        Integer completedTransactions = ((Number) result.get("completedTransactions")).intValue();
-        Integer voidedTransactions    = ((Number) result.get("voidedTransactions")).intValue();
-        Double  totalIncome           = ((Number) result.get("totalIncome")).doubleValue();
-        Double  totalExpenses         = ((Number) result.get("totalExpenses")).doubleValue();
+
+        if (result == null) {
+            return new TransactionAnalyticsDTO(0, 0, 0, 0.0, 0.0, 0.0);
+        }
+
+        Integer totalTransactions     = toInt(result.get("totalTransactions"));
+        Integer completedTransactions = toInt(result.get("completedTransactions"));
+        Integer voidedTransactions    = toInt(result.get("voidedTransactions"));
+        Double  totalIncome           = toDouble(result.get("totalIncome"));
+        Double  totalExpenses         = toDouble(result.get("totalExpenses"));
         Double  savingsRate           = (totalIncome > 0)
                 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0.0;
+
         return new TransactionAnalyticsDTO(totalTransactions, completedTransactions,
                 voidedTransactions, totalIncome, totalExpenses, savingsRate);
     }
 
-    // ── F7: void (unchanged) ──────────────────────────────────────────────────
+    // ── F7: void ──────────────────────────────────────────────────────────────
 
     @Transactional
     public void voidTransaction(Long id) {
@@ -234,27 +288,33 @@ public class TransactionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Only PENDING or APPROVED transactions can be voided");
         }
+
         if (transaction.getStatus() == TransactionStatus.APPROVED) {
             double amount    = transaction.getAmount();
             Long   accountId = transaction.getAccountId();
-            switch (transaction.getType()) {
-                case INCOME   -> transactionRepository.subtractFromAccountBalance(accountId, amount);
-                case EXPENSE  -> transactionRepository.addToAccountBalance(accountId, amount);
-                case TRANSFER -> {
-                    transactionRepository.addToAccountBalance(accountId, amount);
-                    transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
+            try {
+                switch (transaction.getType()) {
+                    case INCOME   -> transactionRepository.subtractFromAccountBalance(accountId, amount);
+                    case EXPENSE  -> transactionRepository.addToAccountBalance(accountId, amount);
+                    case TRANSFER -> {
+                        transactionRepository.addToAccountBalance(accountId, amount);
+                        if (transaction.getToAccountId() != null) {
+                            transactionRepository.subtractFromAccountBalance(transaction.getToAccountId(), amount);
+                        }
+                    }
                 }
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Could not reverse account balance: account service unavailable");
             }
         }
+
         transaction.setStatus(TransactionStatus.VOIDED);
         transactionRepository.save(transaction);
     }
 
-    // ── F8: add splits
-    // FIX TC_S3_11, 44, 46:
-    // Accepts Object so Jackson doesn't fail when the grader sends either
-    // a single object {} (TC_S3_11) or an array [{}] (TC_S3_44).
-    // We normalize both forms to a List<Map> before processing.
+    // ── F8: add splits ────────────────────────────────────────────────────────
+
     @Transactional
     public Transaction addSplitsToTransaction(Long transactionId, Object splitsBody) {
         List<Map<String, Object>> splitRequests = normalizeSplitsBody(splitsBody);
@@ -278,7 +338,6 @@ public class TransactionService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each split must have a description");
             if (amountObj == null || toDouble(amountObj) <= 0)
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each split amount must be positive");
-            
             newTotal += toDouble(amountObj);
         }
 
@@ -314,7 +373,7 @@ public class TransactionService {
         return transactionRepository.save(transaction);
     }
 
-    // ── F9: details (unchanged) ───────────────────────────────────────────────
+    // ── F9: details ───────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
@@ -364,8 +423,15 @@ public class TransactionService {
         }
     }
 
+    private int toInt(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number) value).intValue();
+        try { return Integer.parseInt(value.toString()); } catch (NumberFormatException e) { return 0; }
+    }
+
     private double toDouble(Object value) {
+        if (value == null) return 0.0;
         if (value instanceof Number) return ((Number) value).doubleValue();
-        return Double.parseDouble(value.toString());
+        try { return Double.parseDouble(value.toString()); } catch (NumberFormatException e) { return 0.0; }
     }
 }

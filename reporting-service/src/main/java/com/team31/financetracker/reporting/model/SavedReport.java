@@ -1,7 +1,7 @@
 package com.team31.financetracker.reporting.model;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.team31.financetracker.reporting.util.FlexibleLocalDateTimeDeserializer;
 import jakarta.persistence.*;
@@ -53,8 +53,8 @@ public class SavedReport {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @JsonIgnoreProperties("savedReport")
-    @OneToMany(mappedBy = "savedReport", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @JsonIgnore
+    @OneToMany(mappedBy = "savedReport", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReportTemplateUsage> reportTemplateUsages = new ArrayList<>();
 
     @PrePersist

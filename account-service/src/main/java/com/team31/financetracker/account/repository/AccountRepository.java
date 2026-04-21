@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
@@ -23,13 +24,14 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Transactional
     @Query(value = """
     UPDATE accounts
-    SET status = :status
+    SET status = :status::text
     WHERE id = :id
     """, nativeQuery = true)
     int updateStatusById(@Param("id") Long id, @Param("status") String status);
 
+
     @Query(value = """
-        SELECT a.* 
+        SELECT a.*
         FROM accounts a
         JOIN users u ON u.id = a.user_id
         WHERE u.email = :email
@@ -37,23 +39,32 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByUserEmail(@Param("email") String email);
 
     @Query(value = """
-            SELECT COUNT(*) FROM transactions t
-            WHERE t.status::text = 'PENDING'
-            AND (t.account_id = :accountId OR t.to_account_id = :accountId)
-            """, nativeQuery = true)
-    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
-           
+    SELECT COUNT(*) > 0 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+      AND table_name = 'transactions'
+    """, nativeQuery = true)
+    boolean doesTransactionsTableExist();
+
     @Query(value = """
-            SELECT * FROM accounts a
-            WHERE a.balance >= :minBalance AND a.balance <= :maxBalance
-            AND (:status IS NULL OR a.status = :status)
-            ORDER BY a.balance DESC
+    SELECT COUNT(*) FROM transactions t
+    WHERE CAST(t.status AS text) = 'PENDING'
+    AND (t.account_id = :accountId OR t.to_account_id = :accountId)
+    """, nativeQuery = true)
+    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
+
+    @Query(value = """
+            SELECT * FROM accounts
+            WHERE (:status IS NULL OR status = :status)
+            AND (:minBalance IS NULL OR balance >= :minBalance)
+            AND (:maxBalance IS NULL OR balance <= :maxBalance)
+            ORDER BY balance DESC
             """, nativeQuery = true)
     List<Account> searchByStatusAndBalanceRange(
             @Param("status") String status,
             @Param("minBalance") Double minBalance,
             @Param("maxBalance") Double maxBalance);
-           
+
     @Query(value = "SELECT DISTINCT a.* FROM accounts a " +
             "JOIN account_statements s ON a.id = s.account_id " +
             "WHERE s.expiry_date < CURRENT_TIMESTAMP", nativeQuery = true)
@@ -70,7 +81,7 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             @Param("value") String value,
             @Param("status") String status
     );
-           
+
     @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
             "FROM accounts a " +
             "LEFT JOIN transactions t ON a.id = t.account_id " +
@@ -79,22 +90,35 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
 
     @Query(value = """
-        SELECT COUNT(*) > 0
-        FROM users u
-        WHERE u.id = :userId
-          AND u.role = 'ADMIN'
-        """, nativeQuery = true)
-    boolean isAdminUser(@Param("userId") Long userId);
+    SELECT COUNT(*) 
+    FROM users 
+    WHERE id = :userId AND role = 'ADMIN'
+    """, nativeQuery = true)
+    int isAdminUser(@Param("userId") Long userId);
 
     @Query(value = """
-    SELECT a.id, a.name, 
-           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits, 
-           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals, 
-           COUNT(t.id) as transactionCount 
-    FROM accounts a 
-    LEFT JOIN transactions t ON a.id = t.account_id 
-    WHERE a.id = :accountId AND t.transaction_date BETWEEN :start AND :end 
+    SELECT role 
+    FROM users 
+    WHERE id = :userId
+    """, nativeQuery = true)
+    String getUserRoleNative(@Param("userId") Long userId);
+
+    @Query(value = """
+    SELECT a.id, a.name,
+           COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits,
+           COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals,
+           COUNT(t.id) as transactionCount
+    FROM accounts a
+    LEFT JOIN transactions t ON a.id = t.account_id
+         AND t.status = 'COMPLETED'
+         AND t.transaction_date BETWEEN :start AND :end
+    WHERE a.id = :accountId
     GROUP BY a.id, a.name
     """, nativeQuery = true)
-    Object getAccountSummaryNative(@Param("accountId") Long accountId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+    Object getAccountSummaryNative(@Param("accountId") Long accountId,
+                                   @Param("start") LocalDateTime start,
+                                   @Param("end") LocalDateTime end);
+
+    @Query("SELECT a FROM Account a LEFT JOIN FETCH a.accountStatements WHERE a.id = :id")
+    Optional<Account> findByIdWithStatements(@Param("id") Long id);
 }

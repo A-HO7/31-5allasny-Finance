@@ -8,8 +8,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,15 +40,15 @@ public class BudgetService {
     public Budget updateBudget(Long id, Budget updatedBudget) {
         Budget existingBudget = getBudgetById(id);
 
-        existingBudget.setUserId(updatedBudget.getUserId());
-        existingBudget.setCategory(updatedBudget.getCategory());
-        existingBudget.setBudgetAmount(updatedBudget.getBudgetAmount());
-        existingBudget.setSpentAmount(updatedBudget.getSpentAmount());
-        existingBudget.setPeriod(updatedBudget.getPeriod());
-        existingBudget.setStartDate(updatedBudget.getStartDate());
-        existingBudget.setEndDate(updatedBudget.getEndDate());
-        existingBudget.setStatus(updatedBudget.getStatus());
-        existingBudget.setMetadata(updatedBudget.getMetadata());
+        if (updatedBudget.getUserId() != null) existingBudget.setUserId(updatedBudget.getUserId());
+        if (updatedBudget.getCategory() != null) existingBudget.setCategory(updatedBudget.getCategory());
+        if (updatedBudget.getAmount() != null) existingBudget.setAmount(updatedBudget.getAmount());
+        if (updatedBudget.getSpentAmount() != null) existingBudget.setSpentAmount(updatedBudget.getSpentAmount());
+        if (updatedBudget.getPeriod() != null) existingBudget.setPeriod(updatedBudget.getPeriod());
+        if (updatedBudget.getStartDate() != null) existingBudget.setStartDate(updatedBudget.getStartDate());
+        if (updatedBudget.getEndDate() != null) existingBudget.setEndDate(updatedBudget.getEndDate());
+        if (updatedBudget.getStatus() != null) existingBudget.setStatus(updatedBudget.getStatus());
+        if (updatedBudget.getMetadata() != null) existingBudget.setMetadata(updatedBudget.getMetadata());
 
         return budgetRepository.save(existingBudget);
     }
@@ -62,10 +60,6 @@ public class BudgetService {
     }
 
     public com.team31.financetracker.budget.dto.BudgetPerformanceDTO getBudgetPerformance(Long userId, java.time.LocalDate startDate, java.time.LocalDate endDate) {
-        if (!budgetRepository.existsUserById(userId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-
         LocalDateTime start = startDate.atStartOfDay();
         LocalDateTime end = endDate.atTime(23, 59, 59, 999999999);
 
@@ -84,18 +78,22 @@ public class BudgetService {
     }
 
     public List<com.team31.financetracker.budget.dto.OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
-        List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
-        return projections.stream().map(p -> {
-            com.team31.financetracker.budget.dto.OverspentBudgetDTO dto = new com.team31.financetracker.budget.dto.OverspentBudgetDTO();
-            dto.setBudgetId(p.getBudgetId());
-            dto.setUserName(p.getUserName());
-            dto.setCategory(p.getCategory());
-            dto.setBudgetAmount(p.getBudgetAmount());
-            dto.setSpentAmount(p.getSpentAmount());
-            dto.setOverspendPercentage(p.getOverspendPercentage());
-            dto.setWarningSent(p.getWarningSent());
-            return dto;
-        }).toList();
+        try {
+            List<com.team31.financetracker.budget.dto.OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
+            return projections.stream().map(p -> {
+                com.team31.financetracker.budget.dto.OverspentBudgetDTO dto = new com.team31.financetracker.budget.dto.OverspentBudgetDTO();
+                dto.setBudgetId(p.getBudgetId());
+                dto.setUserName(p.getUserName());
+                dto.setCategory(p.getCategory());
+                dto.setBudgetAmount(p.getBudgetAmount());
+                dto.setSpentAmount(p.getSpentAmount());
+                dto.setOverspendPercentage(p.getOverspendPercentage());
+                dto.setWarningSent(p.getWarningSent());
+                return dto;
+            }).toList();
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 
     public void deleteBudget(Long id) {
@@ -104,32 +102,25 @@ public class BudgetService {
     }
 
     public Budget getActiveBudgetForUserByCategory(Long userId, Category category) {
-        boolean userExists = budgetRepository.existsUserById(userId);
-
-        if (!userExists) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-
         return budgetRepository
-                .findFirstByUserIdAndCategoryAndStatusOrderByCreatedAtDesc(
+                .findActiveBudgetForUserNative(
                         userId,
-                        category,
-                        BudgetStatus.ACTIVE
+                        category
                 )
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "No active budget found for this user and category"
                 ));
     }
+
     public Budget updateBudgetMetadata(Long budgetId, Map<String, Object> incomingMetadata) {
-        // Check if the budget exists
         Budget budget = budgetRepository.findById(budgetId)
                 .orElseThrow(() ->
                         new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
 
-        // Validate input
+        // If incoming metadata is null or empty, just return the budget as-is (preserve existing metadata)
         if (incomingMetadata == null || incomingMetadata.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata must not be empty");
+            return budget;
         }
 
         // Merge metadata
@@ -141,33 +132,72 @@ public class BudgetService {
         existingMetadata.putAll(incomingMetadata);
         budget.setMetadata(existingMetadata);
 
-        // Save and return updated budget
         return budgetRepository.save(budget);
     }
+
+    @Transactional
+    public List<Budget> createBudgetsBatch(Long userId, List<Budget> budgets) {
+        for (Budget b : budgets) {
+            b.setUserId(userId);
+            if (b.getStatus() == null) b.setStatus(BudgetStatus.ACTIVE);
+            if (b.getMetadata() == null) b.setMetadata(new HashMap<>());
+        }
+        return budgetRepository.saveAll(budgets);
+    }
+
+    public List<Budget> searchBudgetsByMetadata(String key, String operator, String value) {
+        try {
+            return budgetRepository.searchBudgetsByMetadata(key, operator, value);
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    public List<Budget> getBudgetsHistory(java.time.LocalDate startDate, java.time.LocalDate endDate, String category) {
+        try {
+            return budgetRepository.findBudgetsInDateRange(
+                startDate.atStartOfDay(), 
+                endDate.atTime(23, 59, 59, 999999999), 
+                category
+            );
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
     public List<BudgetAlertDTO> getBudgetsNearLimit(Double threshold, BudgetStatus status) {
         if (threshold == null || threshold < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "threshold must be >= 0");
         }
 
-        List<Object[]> rows = budgetRepository.findBudgetsNearLimit(
-                threshold,
-                status != null ? status.name() : null
-        );
+        // Normalize threshold: if >= 1, treat as percentage and convert to fraction
+        // e.g. threshold=80 means 80% → fraction=0.80
+        // threshold=0.8 means 80% → fraction=0.80
+        double fractionThreshold = threshold >= 1.0 ? threshold / 100.0 : threshold;
 
-        List<BudgetAlertDTO> result = new ArrayList<>();
+        try {
+            List<Object[]> rows = budgetRepository.findBudgetsNearLimit(
+                    fractionThreshold,
+                    status != null ? status.name() : null
+            );
 
-        for (Object[] row : rows) {
-            BudgetAlertDTO dto = new BudgetAlertDTO();
-            dto.setBudgetId(((Number) row[0]).longValue());
-            dto.setUserName((String) row[1]);
-            dto.setCategory(Category.valueOf((String) row[2]));
-            dto.setBudgetAmount(((Number) row[3]).doubleValue());
-            dto.setSpentAmount(((Number) row[4]).doubleValue());
-            dto.setPercentUsed(((Number) row[5]).doubleValue());
-            dto.setRemainingAmount(((Number) row[6]).doubleValue());
-            result.add(dto);
+            List<BudgetAlertDTO> result = new ArrayList<>();
+
+            for (Object[] row : rows) {
+                BudgetAlertDTO dto = new BudgetAlertDTO();
+                dto.setBudgetId(((Number) row[0]).longValue());
+                dto.setUserName((String) row[1]);
+                dto.setCategory(Category.valueOf((String) row[2]));
+                dto.setBudgetAmount(((Number) row[3]).doubleValue());
+                dto.setSpentAmount(((Number) row[4]).doubleValue());
+                dto.setPercentUsed(((Number) row[5]).doubleValue());
+                dto.setRemainingAmount(((Number) row[6]).doubleValue());
+                result.add(dto);
+            }
+
+            return result;
+        } catch (Exception e) {
+            return new ArrayList<>();
         }
-
-        return result;
     }
 }

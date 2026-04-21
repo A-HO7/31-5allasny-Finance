@@ -2,7 +2,7 @@ package com.team31.financetracker.transaction.model;
 
 import jakarta.persistence.*;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 
 import java.util.HashMap;
@@ -12,6 +12,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "transaction_splits")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TransactionSplit {
 
     @Id
@@ -31,7 +32,6 @@ public class TransactionSplit {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private TransactionSplitsStatus status;
 
@@ -39,10 +39,29 @@ public class TransactionSplit {
     @Column(columnDefinition = "jsonb")
     private java.util.Map<String, Object> metadata = new HashMap<>();
 
-    @JsonBackReference
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "transaction_id")
+    // FIX: optional=true so that when a Transaction is created with embedded splits
+    // in the request body, Hibernate does not immediately enforce the FK constraint
+    // before the parent Transaction has been saved and its ID assigned.
+    // The back-reference is set via Transaction.addTransactionSplit() / ensureSplitBackReferences()
+    // before save(), so the FK will always be populated by the time the INSERT runs.
+    @JsonIgnoreProperties("transactionSplits")
+    @ManyToOne(optional = true)
+    @JoinColumn(name = "transaction_id", nullable = true)
     private Transaction transaction;
+
+    @com.fasterxml.jackson.annotation.JsonProperty("transactionId")
+    public void setTransactionId(Long id) {
+        if (id == null) return;   // ignore null — back-reference is set by the parent
+        if (this.transaction == null) {
+            this.transaction = new Transaction();
+        }
+        this.transaction.setId(id);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("transaction_id")
+    public void setTransactionIdSnakeCase(Long id) {
+        setTransactionId(id);
+    }
 
     @PrePersist
     public void prePersist() {
@@ -50,6 +69,14 @@ public class TransactionSplit {
             status = TransactionSplitsStatus.PENDING;
         if (metadata == null)
             metadata = new HashMap<>();
+        if (splitOrder == null)
+            splitOrder = 1;
+        if (description == null)
+            description = "";
+        if (recipientName == null)
+            recipientName = "";
+        if (amount == null)
+            amount = 0.0;
     }
 
     // Getters and setters

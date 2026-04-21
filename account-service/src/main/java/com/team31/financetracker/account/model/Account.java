@@ -1,6 +1,5 @@
 package com.team31.financetracker.account.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -22,34 +21,35 @@ public class Account {
     @Column(nullable = false)
     private String name;
 
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AccountType type;
 
     @Column(nullable = false)
-    private String currency;
+    private String currency ="EGP";
 
     @Column(nullable = false)
-    private Double balance;
+    private Double balance=0.0;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private AccountStatus  status;
+    private AccountStatus  status = AccountStatus.ACTIVE;
 
     @Column(nullable = false)
-    private Double rating;
+    private Double rating =0.0;
 
     @Column(nullable = false)
-    private Integer totalRatings;
+    private Integer totalRatings =0;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> accountDetails;
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
+    @org.hibernate.annotations.CreationTimestamp // Required by TC_S2_08
     private LocalDateTime createdAt;
 
-    @OneToMany(mappedBy = "account", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "account", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<AccountStatement> accountStatements;
 
     @PrePersist
@@ -64,10 +64,13 @@ public class Account {
             rating = 0.0;
         }
         if (balance == null){
-            balance = 0.0;
+            balance = Double.valueOf(0);
         }
         if (currency == null){
             currency = "EGP";
+        }
+        if (status == null){
+            status=AccountStatus.ACTIVE;
         }
     }
 

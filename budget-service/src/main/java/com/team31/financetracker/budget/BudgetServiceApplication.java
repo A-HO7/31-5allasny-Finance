@@ -1,13 +1,13 @@
-package com.team31.financetracker.account;
+package com.team31.financetracker.budget;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class AccountApplication {
+public class BudgetServiceApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(AccountApplication.class, args);
+        SpringApplication.run(BudgetServiceApplication.class, args);
     }
 
 }

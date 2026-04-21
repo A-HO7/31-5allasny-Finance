@@ -6,6 +6,7 @@ import com.team31.financetracker.account.service.AccountStatementService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -27,9 +28,9 @@ public class AccountStatementController {
         return accountStatementService.getAll();
     }
 
-    @GetMapping("/{id}")
-    public AccountStatement getStatementById(@PathVariable Long id) {
-        return accountStatementService.getById(id);
+    @GetMapping("/{accountId}/statements")public List<AccountStatement> getStatementsByAccount(@PathVariable Long accountId) {
+
+        return accountStatementService.getByUserId(accountId);
     }
 
     @GetMapping("/type/{type}")
@@ -47,8 +48,10 @@ public class AccountStatementController {
         return accountStatementService.getExpiringAfter(date);
     }
 
-    @PostMapping("/account/{accountId}")
-    public AccountStatement createStatement(@PathVariable Long accountId, @RequestBody AccountStatement statement) {
+    @PostMapping("/{accountId}/statements")
+    public AccountStatement createStatement(
+            @PathVariable Long accountId,
+            @RequestBody AccountStatement statement) {
         return accountStatementService.create(accountId, statement);
     }
 
@@ -58,9 +61,9 @@ public class AccountStatementController {
         return accountStatementService.update(id, statement);
     }
 
-    @DeleteMapping("/{id}")
-    public void deleteStatement(@PathVariable Long id) {
-        accountStatementService.delete(id);
+    @DeleteMapping("/{accountId}/statements/{stmtId}")
+    public void deleteStatement(@PathVariable Long accountId, @PathVariable Long stmtId) {
+        accountStatementService.delete(stmtId);
     }
 
     @GetMapping("/user/{userId}")

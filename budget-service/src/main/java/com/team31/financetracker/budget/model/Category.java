@@ -6,5 +6,12 @@ public enum Category {
     TRANSPORT,
     RENT,
     SAVINGS,
-    TRANSFER
+    TRANSFER,
+    BILLS,
+    ENTERTAINMENT,
+    SHOPPING,
+    HEALTH,
+    GROCERIES,
+    @com.fasterxml.jackson.annotation.JsonEnumDefaultValue
+    OTHER
 }

@@ -17,7 +17,7 @@ public interface ReportTemplateUsageRepository extends JpaRepository<ReportTempl
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM ReportTemplateUsage u WHERE u.id = :id")
-    void deleteByIdCustom(@Param("id") Long id);
+    void deleteUsageById(@Param("id") Long id);
 
     boolean existsBySavedReportIdAndReportTemplateId(Long reportId, Long templateId);
 }

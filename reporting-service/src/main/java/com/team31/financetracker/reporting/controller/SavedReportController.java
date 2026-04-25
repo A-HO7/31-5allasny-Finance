@@ -1,10 +1,12 @@
 package com.team31.financetracker.reporting.controller;
 
 import com.team31.financetracker.reporting.model.SavedReport;
+import com.team31.financetracker.reporting.model.ReportTemplateUsage;
 import com.team31.financetracker.reporting.service.SavedReportService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
@@ -113,16 +115,17 @@ public class SavedReportController {
     }
 
     @PostMapping("/{reportId}/templates/{templateId}")
-    public ResponseEntity<?> applyTemplateToReport(@PathVariable Long reportId, @PathVariable Long templateId) {
+    public ResponseEntity<ReportTemplateUsage> applyTemplateToReport(@PathVariable Long reportId, @PathVariable Long templateId) {
         try {
-            SavedReport updated = service.applyTemplateToReport(reportId, templateId);
-            return ResponseEntity.ok(updated);
+            ReportTemplateUsage usage = service.applyTemplateToReport(reportId, templateId);
+            return ResponseEntity.ok(usage);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
     }
+
     @GetMapping("/{reportId}/details")
     public ResponseEntity<?> getReportDetails(@PathVariable Long reportId) {
         try {

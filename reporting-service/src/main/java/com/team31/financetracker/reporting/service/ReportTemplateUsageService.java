@@ -1,100 +1,112 @@
 package com.team31.financetracker.reporting.service;
 
-import com.team31.financetracker.reporting.dto.ReportTemplateUsageDTO;
 import com.team31.financetracker.reporting.model.ReportTemplate;
 import com.team31.financetracker.reporting.model.ReportTemplateUsage;
 import com.team31.financetracker.reporting.model.SavedReport;
+import com.team31.financetracker.reporting.model.TemplateType;
 import com.team31.financetracker.reporting.repository.ReportTemplateUsageRepository;
+import com.team31.financetracker.reporting.repository.SavedReportRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class ReportTemplateUsageService {
 
     private final ReportTemplateUsageRepository repository;
-    private final SavedReportService savedReportService;
+    private final SavedReportRepository savedReportRepository;
     private final ReportTemplateService reportTemplateService;
 
-    public ReportTemplateUsageService(ReportTemplateUsageRepository repository, 
-                                     SavedReportService savedReportService, 
+    public ReportTemplateUsageService(ReportTemplateUsageRepository repository,
+                                     SavedReportRepository savedReportRepository,
                                      ReportTemplateService reportTemplateService) {
         this.repository = repository;
-        this.savedReportService = savedReportService;
+        this.savedReportRepository = savedReportRepository;
         this.reportTemplateService = reportTemplateService;
     }
 
     @Transactional
-    public ReportTemplateUsageDTO createReportTemplateUsage(ReportTemplateUsageDTO dto) {
-        SavedReport report = savedReportService.getSavedReportById(dto.getReportId());
-        ReportTemplate template = reportTemplateService.getReportTemplateById(dto.getTemplateId());
+    public ReportTemplateUsage createReportTemplateUsage(ReportTemplateUsage usage) {
+        if (usage.getSavedReport() == null || usage.getSavedReport().getId() == null ||
+            usage.getReportTemplate() == null || usage.getReportTemplate().getId() == null) {
+             throw new IllegalArgumentException("Missing required SavedReport or ReportTemplate references.");
+        }
+        
+        SavedReport report = savedReportRepository.findById(usage.getSavedReport().getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SavedReport not found"));
+        ReportTemplate template = reportTemplateService.getReportTemplateById(usage.getReportTemplate().getId());
+        
+        if (!Boolean.TRUE.equals(template.getActive())) {
+            throw new IllegalArgumentException("Template is not active.");
+        }
+        
+        if (template.getExpiryDate() != null && template.getExpiryDate().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("Template has expired.");
+        }
+        
+        if (template.getCurrentUses() >= template.getMaxUses()) {
+            throw new IllegalArgumentException("Template usage limit reached.");
+        }
 
-        ReportTemplateUsage usage = new ReportTemplateUsage();
+        // Business Logic: Calculate pagesGenerated if not provided
+        if (usage.getPagesGenerated() == null) {
+            long days = ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd());
+            double rate = (template.getTemplateType() == TemplateType.SUMMARY) ? 7.0 : 1.0;
+            double calculated = days / rate;
+            usage.setPagesGenerated(Math.min(calculated, template.getMaxPages()));
+        }
+
+        if (usage.getAppliedAt() == null) {
+            usage.setAppliedAt(LocalDateTime.now());
+        }
+
         usage.setSavedReport(report);
         usage.setReportTemplate(template);
-        usage.setPagesGenerated(dto.getPagesGenerated() != null ? dto.getPagesGenerated() : 0.0);
-        usage.setAppliedAt(dto.getAppliedAt() != null ? dto.getAppliedAt() : LocalDateTime.now());
+        
+        template.setCurrentUses(template.getCurrentUses() + 1);
+        reportTemplateService.updateReportTemplate(template.getId(), template);
 
-        ReportTemplateUsage saved = repository.save(usage);
-        
-        // Ensure bidirectional link is established for immediate reflection in parent
-        report.getReportTemplateUsages().add(saved);
-        
-        return ReportTemplateUsageDTO.fromEntity(saved);
+        return repository.save(usage);
     }
 
-    @Transactional(readOnly = true)
-    public List<ReportTemplateUsageDTO> getAllReportTemplateUsages() {
-        return repository.findAll().stream()
-                .map(ReportTemplateUsageDTO::fromEntity)
-                .collect(Collectors.toList());
+    public List<ReportTemplateUsage> getAllReportTemplateUsages() {
+        return repository.findAll();
     }
 
-    @Transactional(readOnly = true)
-    public ReportTemplateUsageDTO getReportTemplateUsage(Long id) {
-        ReportTemplateUsage usage = repository.findByIdWithRelations(id)
-                .orElseThrow(() -> new RuntimeException("ReportTemplateUsage not found with id: " + id));
-        return ReportTemplateUsageDTO.fromEntity(usage);
+    public ReportTemplateUsage getReportTemplateUsageById(Long id) {
+        return repository.findById(id).orElseThrow(() -> 
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "ReportTemplateUsage not found with id: " + id));
     }
 
     @Transactional
-    public ReportTemplateUsageDTO updateReportTemplateUsage(Long id, ReportTemplateUsageDTO dto) {
-        ReportTemplateUsage existing = repository.findByIdWithRelations(id)
-                .orElseThrow(() -> new RuntimeException("ReportTemplateUsage not found with id: " + id));
-        
-        if (dto.getPagesGenerated() != null) existing.setPagesGenerated(dto.getPagesGenerated());
-        if (dto.getAppliedAt() != null) existing.setAppliedAt(dto.getAppliedAt());
-        
-        // If IDs change, handle the association switch
-        if (dto.getReportId() != null && !dto.getReportId().equals(existing.getSavedReport().getId())) {
-            existing.getSavedReport().getReportTemplateUsages().remove(existing);
-            SavedReport newReport = savedReportService.getSavedReportById(dto.getReportId());
-            existing.setSavedReport(newReport);
-            newReport.getReportTemplateUsages().add(existing);
-        }
-        
-        if (dto.getTemplateId() != null && !dto.getTemplateId().equals(existing.getReportTemplate().getId())) {
-            existing.setReportTemplate(reportTemplateService.getReportTemplateById(dto.getTemplateId()));
+    public ReportTemplateUsage updateReportTemplateUsage(Long id, ReportTemplateUsage updatedUsage) {
+        ReportTemplateUsage existing = getReportTemplateUsageById(id);
+
+        if (updatedUsage.getPagesGenerated() == null) {
+            throw new IllegalArgumentException("Pages generated value missing.");
         }
 
-        return ReportTemplateUsageDTO.fromEntity(repository.save(existing));
+        existing.setPagesGenerated(updatedUsage.getPagesGenerated());
+        return repository.save(existing);
     }
 
     @Transactional
     public void deleteReportTemplateUsage(Long id) {
-        ReportTemplateUsage usage = repository.findByIdWithRelations(id)
-                .orElseThrow(() -> new RuntimeException("ReportTemplateUsage not found with id: " + id));
+        ReportTemplateUsage existing = getReportTemplateUsageById(id);
         
-        // THE FIX: To truly delete a child in JPA with orphanRemoval=true,
-        // we MUST remove it from the parent's collection. If we don't, 
-        // Hibernate's 'Session Rescue' will re-persist it upon flush.
-        SavedReport parentReport = usage.getSavedReport();
-        if (parentReport != null) {
-            parentReport.getReportTemplateUsages().remove(usage);
-            // JPA orphanRemoval automatically deletes the usage row when it's removed from this list
+        // Manual unlinking from collections to avoid "zombies" in the session cache
+        if (existing.getSavedReport() != null) {
+            existing.getSavedReport().getReportTemplateUsages().remove(existing);
         }
+        if (existing.getReportTemplate() != null) {
+            existing.getReportTemplate().getReportTemplateUsages().remove(existing);
+        }
+
+        repository.delete(existing);
     }
 }

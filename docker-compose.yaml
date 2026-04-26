@@ -1,5 +1,6 @@
 services:
-  finance-db:
+  # Primary relational database used by the Spring services.
+  postgres:
     image: postgres
     container_name: finance-db
     ports:
@@ -10,7 +11,14 @@ services:
       POSTGRES_DB: financedb
     volumes:
       - pgdata:/var/lib/postgresql
+    healthcheck:
+      # Wait until Postgres is ready to accept connections.
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d financedb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Web UI for managing the Postgres instance.
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
@@ -20,19 +28,20 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
     depends_on:
-      - finance-db
+      - postgres
 
+  # Core Spring microservices (all connect to Postgres via host `postgres`).
   user-service:
     build: ./user-service
     container_name: user-service
     ports:
       - "8081:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://finance-db:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
     depends_on:
-      - finance-db
+      - postgres
 
   account-service:
     build: ./account-service
@@ -40,11 +49,11 @@ services:
     ports:
       - "8082:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://finance-db:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
     depends_on:
-      - finance-db
+      - postgres
 
   transaction-service:
     build: ./transaction-service
@@ -52,11 +61,11 @@ services:
     ports:
       - "8083:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://finance-db:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
     depends_on:
-      - finance-db
+      - postgres
 
   budget-service:
     build: ./budget-service
@@ -64,23 +73,125 @@ services:
     ports:
       - "8084:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://finance-db:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
     depends_on:
-      - finance-db
+      - postgres
 
-  reportingg-service:
+  reporting-service:
     build: ./reporting-service
     container_name: reporting-service
     ports:
       - "8085:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://finance-db:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
     depends_on:
-      - finance-db
+      - postgres
 
+  # Document-oriented database for features that need flexible schemas.
+  mongo:
+    image: mongo:latest
+    container_name: finance-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpass
+      MONGO_INITDB_DATABASE: financemongo
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Health check runs a simple Mongo admin ping.
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # In-memory cache / key-value store.
+  redis:
+    image: redis:latest
+    container_name: finance-redis
+    ports:
+      - "6379:6379"
+    # Keep spaces between redis-server args; they are parsed as CLI flags.
+    command: [ "redis-server", "--requirepass", "redispass", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru" ]
+    healthcheck:
+      # Health check verifies Redis responds with PONG using auth.
+      test: ["CMD", "redis-cli", "-a", "redispass", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Search and analytics engine.
+  elasticsearch:
+    image: elasticsearch:8.19.12
+    container_name: finance-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      # Uses shell form to allow curl failure fallback with exit code.
+      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Graph database.
+  neo4j:
+    image: neo4j:latest
+    container_name: finance-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/neo4jpass
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_heap_initial__size: 256m
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      # Basic process status check from inside the container.
+      test: [ "CMD", "neo4j", "status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Wide-column store for high-write workloads.
+  cassandra:
+    image: cassandra:latest
+    container_name: finance-cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: financecluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_KEYSPACE: financeks
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      # Uses cqlsh to check cluster responsiveness.
+      test: [ "CMD-SHELL", "cqlsh -e \'DESCRIBE KEYSPACES\'" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+# Named volumes for persistent data across container restarts.
 volumes:
   pgdata:
+  mongo-data:
+  es-data:
+  neo4j-data:
+  cassandra-data:

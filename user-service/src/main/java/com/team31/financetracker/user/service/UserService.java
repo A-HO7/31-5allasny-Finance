@@ -1,8 +1,6 @@
 package com.team31.financetracker.user.service;
 
-import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
-import com.team31.financetracker.user.dto.TopSaverDTO;
-import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.user.dto.*;
 import com.team31.financetracker.user.model.User;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
@@ -14,9 +12,11 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
-import com.team31.financetracker.user.dto.UserProfileDTO;
-import com.team31.financetracker.user.dto.FinancialGoalDTO;
+
 import java.util.stream.Collectors;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import com.team31.financetracker.user.service.JwtService;
+import com.team31.financetracker.user.dto.RegisterRequest;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,15 +27,25 @@ import java.util.Map;
 public class UserService {
     private final UserRepository userRepository;
     private final FinancialGoalRepository financialGoalRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public UserService(UserRepository userRepository, FinancialGoalRepository financialGoalRepository) {
+    public UserService(UserRepository userRepository,
+                       FinancialGoalRepository financialGoalRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtService jwtService) { // Add here
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     // Create
     public User createUser(User user) {
         try {
+
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+
             return userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
@@ -59,7 +69,11 @@ public class UserService {
         existingUser.setName(userDetails.getName());
         existingUser.setEmail(userDetails.getEmail());
         existingUser.setPhone(userDetails.getPhone());
-        existingUser.setPassword(userDetails.getPassword());
+
+        if (userDetails.getPassword() != null && !userDetails.getPassword().isBlank()) {
+            existingUser.setPassword(passwordEncoder.encode(userDetails.getPassword()));
+        }
+
         existingUser.setRole(userDetails.getRole());
         return userRepository.save(existingUser);
     }
@@ -231,6 +245,36 @@ public class UserService {
                         ((Number) row[2]).longValue()
                 ))
                 .toList();
+    }
+
+    // Register User (S1-F10)
+    public String registerUser(RegisterRequest request) {
+        // a) Validate not blank
+        if (request.name() == null || request.name().isBlank() ||
+                request.email() == null || request.email().isBlank() ||
+                request.password() == null || request.password().isBlank() ||
+                request.phone() == null || request.phone().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "All fields are required");
+        }
+
+        // b) Check if already exists (Conflict 409)
+        if (userRepository.existsByEmail(request.email()) || userRepository.existsByPhone(request.phone())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email or phone already registered");
+        }
+
+        // c) Create & Map User
+        User user = new User();
+        user.setName(request.name());
+        user.setEmail(request.email());
+        user.setPassword(passwordEncoder.encode(request.password())); // HASHING!
+        user.setPhone(request.phone());
+        user.setRole(Role.PERSONAL); // Always default to PERSONAL
+        user.setStatus(UserStatus.ACTIVE);
+
+        User savedUser = userRepository.save(user);
+
+        // d) Generate Token
+        return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
 
 }

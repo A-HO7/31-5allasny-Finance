@@ -97,4 +97,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("minTransactions") int minTransactions
     );
 
+    boolean existsByEmail(String email);
+    boolean existsByPhone(String phone);
 }

@@ -3,6 +3,7 @@ package com.team31.financetracker.reporting.mongo;
 import com.team31.financetracker.reporting.observer.MongoEvent;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.lang.NonNull;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -25,10 +26,13 @@ public class ReportAuditEvent implements MongoEvent {
     @Id
     private String id;
 
+    @NonNull
     private Long reportId;
 
+    @NonNull
     private String action;
 
+    @NonNull
     private LocalDateTime timestamp;
 
     /**

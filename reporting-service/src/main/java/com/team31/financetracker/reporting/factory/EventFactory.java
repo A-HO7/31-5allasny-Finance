@@ -65,6 +65,24 @@ public class EventFactory {
         Map<String, Object> details = (Map<String, Object>) params.get("details");
         event.setDetails(details != null ? details : new HashMap<>());
 
+        // Strict null constraints
+        if (event.getAction() == null) {
+            throw new IllegalArgumentException("action must not be null");
+        }
+        if (event.getReportId() == null) {
+            throw new IllegalArgumentException("reportId must not be null");
+        }
+
+        // Conditional requirements for report-shaped actions
+        if (!"ANALYTICS_VIEWED".equals(event.getAction())) {
+            if (event.getReportType() == null) {
+                throw new IllegalArgumentException("reportType is required for report-shaped action: " + event.getAction());
+            }
+            if (event.getPagesGenerated() == null) {
+                throw new IllegalArgumentException("pagesGenerated is required for report-shaped action: " + event.getAction());
+            }
+        }
+
         return event;
     }
 

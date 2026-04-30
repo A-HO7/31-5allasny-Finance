@@ -3,6 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.event.EntityObserver;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +28,7 @@ import java.util.Map;
 public class AccountService {
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
+    private final List<EntityObserver> observers = new ArrayList<>();
 
     public AccountService(
             AccountRepository accountRepository,
@@ -33,6 +36,20 @@ public class AccountService {
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
+    }
+
+    public void register(EntityObserver observer){
+        observers.add(observer);
+    }
+
+    public void unregister(EntityObserver observer){
+        observers.remove(observer);
+    }
+
+    public void notifyObservers(String eventType, Object payload){
+        for (EntityObserver observer : observers) {
+            observer.onEvent(eventType, payload);
+        }
     }
 
     public Account create(Account account) {

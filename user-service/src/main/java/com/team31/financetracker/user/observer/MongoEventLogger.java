@@ -6,12 +6,15 @@ import com.team31.financetracker.user.model.nosql.EventType;
 import org.springframework.stereotype.Component;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @Component
 public class MongoEventLogger implements EntityObserver {
+    private static final Logger log = LoggerFactory.getLogger(MongoEventLogger.class);
     private final AuthEventRepository repository;
 
     public MongoEventLogger(AuthEventRepository repository) {
@@ -21,7 +24,6 @@ public class MongoEventLogger implements EntityObserver {
     @Override
     public void onEvent(String eventType, Object payload) {
         // Since 'payload' is an Object, we check if it is the Map we expect
-        System.out.println("OBSERVER TRIGGERED! Event: " + eventType);
         if (payload instanceof Map) {
             Map<String, Object> details = (Map<String, Object>) payload;
             Long userId = (Long) details.get("userId");
@@ -47,9 +49,8 @@ public class MongoEventLogger implements EntityObserver {
                     repository.save((AuthEvent) event);
                 }
 
-                System.out.println("DEBUG: Event saved to MongoDB: " + action);
             } catch (Exception e) {
-                System.err.println("WARN: Could not log to MongoDB: " + e.getMessage());
+                log.warn("Could not log to MongoDB: {}", e.getMessage());
             }
         }
     }

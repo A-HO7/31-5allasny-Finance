@@ -3,6 +3,7 @@ package com.team31.financetracker.user.service;
 import com.team31.financetracker.user.dto.*;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.observer.MongoEventLogger;
+import com.team31.financetracker.user.observer.EntityObserver;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 @Service
 public class UserService {
@@ -31,7 +33,7 @@ public class UserService {
     private final FinancialGoalRepository financialGoalRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final MongoEventLogger mongoEventLogger;
+    private final List<EntityObserver> observers = new ArrayList<>();
 
     // 2. Update your Constructor
     public UserService(UserRepository userRepository,
@@ -43,7 +45,15 @@ public class UserService {
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-        this.mongoEventLogger = mongoEventLogger; // Add this
+        register(mongoEventLogger);
+    }
+
+    public void register(EntityObserver observer) { observers.add(observer); }
+    public void unregister(EntityObserver observer) { observers.remove(observer); }
+    private void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver obs : observers) {
+            obs.onEvent(eventType, payload);
+        }
     }
 
     // Create
@@ -111,7 +121,7 @@ public class UserService {
         Map<String, Object> payload = new HashMap<>(newPreferences);
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_UPDATED");
-        mongoEventLogger.onEvent("USER_UPDATED", payload);
+        notifyObservers("USER_UPDATED", payload);
 
         return savedUser;
     }
@@ -143,7 +153,7 @@ public class UserService {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_DEACTIVATED");
-        mongoEventLogger.onEvent("USER_DEACTIVATED", payload);
+        notifyObservers("USER_DEACTIVATED", payload);
 
         return savedUser;
     }
@@ -292,7 +302,7 @@ public class UserService {
         payload.put("userId", savedUser.getId());
         payload.put("email", savedUser.getEmail());
 
-        mongoEventLogger.onEvent("REGISTERED", payload);
+        notifyObservers("REGISTERED", payload);
 
         return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
@@ -309,7 +319,14 @@ public class UserService {
         }
 
         // 3. Generate and return token
-        return jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", user.getId());
+        payload.put("email", user.getEmail());
+        notifyObservers("LOGGED_IN", payload);
+        
+        return token;
     }
 
     // CC-2 Role Management
@@ -319,7 +336,14 @@ public class UserService {
         // This will throw IllegalArgumentException if the string is not a valid enum
         // value
         user.setRole(Role.valueOf(roleName.toUpperCase()));
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("newRole", savedUser.getRole().name());
+        notifyObservers("ROLE_CHANGED", payload);
+        
+        return savedUser;
     }
 
 }

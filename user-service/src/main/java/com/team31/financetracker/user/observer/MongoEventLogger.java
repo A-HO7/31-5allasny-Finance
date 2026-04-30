@@ -31,10 +31,21 @@ public class MongoEventLogger implements EntityObserver {
                 Map<String, Object> params = new HashMap<>(details);
                 params.put("userId", userId);
                 params.put("action", action);
+                
+                EventType type;
+                try {
+                    type = EventType.valueOf(eventType.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    // Fallback to AUTH if it's an old string like "USER_CREATED"
+                    type = EventType.AUTH;
+                }
 
                 // Use Factory
-                MongoEvent event = EventFactory.createEvent(EventType.AUTH, params);
-                repository.save((AuthEvent) event);
+                MongoEvent event = EventFactory.createEvent(type, params);
+                
+                if (event instanceof AuthEvent) {
+                    repository.save((AuthEvent) event);
+                }
 
                 System.out.println("DEBUG: Event saved to MongoDB: " + action);
             } catch (Exception e) {

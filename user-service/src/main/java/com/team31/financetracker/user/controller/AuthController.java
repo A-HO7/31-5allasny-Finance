@@ -27,4 +27,16 @@ public class AuthController {
                 "expiresIn", String.valueOf(JwtConfigurationManager.getInstance().getExpirationMs())
         );
     }
+    @PostMapping("/login")
+    public Map<String, String> login(@RequestBody Map<String, String> loginRequest) {
+        String email = loginRequest.get("email");
+        String password = loginRequest.get("password");
+
+        String token = userService.loginUser(email, password);
+
+        return Map.of(
+                "token", token,
+                "expiresIn", String.valueOf(JwtConfigurationManager.getInstance().getExpirationMs())
+        );
+    }
 }

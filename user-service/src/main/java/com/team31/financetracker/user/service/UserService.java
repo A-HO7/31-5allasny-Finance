@@ -277,4 +277,28 @@ public class UserService {
         return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
 
+    //Login User (S1-F11)
+    public String loginUser(String email, String password) {
+        // 1. Find user by email
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+
+        // 2. Verify password (matches raw input against hashed DB value)
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+        }
+
+        // 3. Generate and return token
+        return jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
+    }
+
+    //CC-2 Role Management
+    @Transactional
+    public User updateUserRole(Long id, String roleName) {
+        User user = getUserById(id);
+        // This will throw IllegalArgumentException if the string is not a valid enum value
+        user.setRole(Role.valueOf(roleName.toUpperCase()));
+        return userRepository.save(user);
+    }
+
 }

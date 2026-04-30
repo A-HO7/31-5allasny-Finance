@@ -119,4 +119,19 @@ public class Budget {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    // Returns healthWeight from metadata with fallback=1.0 for absent/null and clamp to [0.0, 2.0].
+    // Pre-M2 rows without the key are treated as neutral (1.0).
+    public double getHealthWeight() {
+        if (metadata == null) return 1.0;
+        Object raw = metadata.get("healthWeight");
+        if (raw == null) return 1.0;
+        double val;
+        if (raw instanceof Number n) {
+            val = n.doubleValue();
+        } else {
+            try { val = Double.parseDouble(raw.toString()); } catch (Exception e) { return 1.0; }
+        }
+        return Math.min(2.0, Math.max(0.0, val));
+    }
 }

@@ -130,6 +130,18 @@ public class BudgetService {
         }
 
         existingMetadata.putAll(incomingMetadata);
+
+        if (existingMetadata.containsKey("healthWeight")) {
+            Object raw = existingMetadata.get("healthWeight");
+            double val = 1.0;
+            if (raw instanceof Number n) {
+                val = n.doubleValue();
+            } else if (raw != null) {
+                try { val = Double.parseDouble(raw.toString()); } catch (Exception ignored) {}
+            }
+            existingMetadata.put("healthWeight", Math.min(2.0, Math.max(0.0, val)));
+        }
+
         budget.setMetadata(existingMetadata);
 
         return budgetRepository.save(budget);
@@ -141,6 +153,7 @@ public class BudgetService {
             b.setUserId(userId);
             if (b.getStatus() == null) b.setStatus(BudgetStatus.ACTIVE);
             if (b.getMetadata() == null) b.setMetadata(new HashMap<>());
+            b.getMetadata().putIfAbsent("healthWeight", 1.0);
         }
         return budgetRepository.saveAll(budgets);
     }

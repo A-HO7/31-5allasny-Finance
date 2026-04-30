@@ -35,10 +35,10 @@ public class UserService {
 
     // 2. Update your Constructor
     public UserService(UserRepository userRepository,
-                       FinancialGoalRepository financialGoalRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtService jwtService,
-                       MongoEventLogger mongoEventLogger) { // Add this
+            FinancialGoalRepository financialGoalRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            MongoEventLogger mongoEventLogger) { // Add this
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
@@ -90,12 +90,12 @@ public class UserService {
         userRepository.delete(user);
     }
 
-    //Search with Filter (S1-F1)
+    // Search with Filter (S1-F1)
     public List<User> searchUsers(String name, String email, Role role) {
         return userRepository.searchUsers(name, email, role != null ? role.name() : null);
     }
 
-    //Update Preferences (S1-F2)
+    // Update Preferences (S1-F2)
     public User updatePreferences(Long id, Map<String, Object> newPreferences) {
         User user = getUserById(id);
         Map<String, Object> existing = user.getPreferences();
@@ -116,7 +116,7 @@ public class UserService {
         return savedUser;
     }
 
-    //Filter Users by Preference (S1-F5)
+    // Filter Users by Preference (S1-F5)
     public List<User> filterByPreference(String key, String value) {
         if (key == null || key.isBlank() || value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
@@ -184,8 +184,7 @@ public class UserService {
                         goal.getCurrentAmount(),
                         goal.getDeadline(),
                         goal.getPrimary(),
-                        goal.getMetadata()
-                ))
+                        goal.getMetadata()))
                 .collect(Collectors.toList());
 
         return new UserProfileDTO(
@@ -195,10 +194,8 @@ public class UserService {
                 user.getPhone(),
                 user.getPreferences(),
                 goalDTOs,
-                goalDTOs.size()
-        );
+                goalDTOs.size());
     }
-
 
     // Get User Transaction Summary (S1-F3)
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
@@ -208,8 +205,7 @@ public class UserService {
 
         if (results == null || results.isEmpty()) {
             return new UserTransactionSummaryDTO(
-                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0
-            );
+                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0);
         }
 
         Object[] result = results.get(0);
@@ -221,8 +217,7 @@ public class UserService {
                 ((Number) result[3]).longValue(),
                 ((Number) result[4]).longValue(),
                 ((Number) result[5]).doubleValue(),
-                ((Number) result[6]).doubleValue()
-        );
+                ((Number) result[6]).doubleValue());
     }
 
     // Top Savers by Net Income (S1-F6)
@@ -245,8 +240,7 @@ public class UserService {
                         ((Number) result[0]).longValue(),
                         (String) result[1],
                         ((Number) result[2]).doubleValue(),
-                        ((Number) result[3]).longValue()
-                ))
+                        ((Number) result[3]).longValue()))
                 .toList();
     }
 
@@ -264,8 +258,7 @@ public class UserService {
                 .map(row -> new CurrencyPreferenceUserDTO(
                         ((Number) row[0]).longValue(),
                         (String) row[1],
-                        ((Number) row[2]).longValue()
-                ))
+                        ((Number) row[2]).longValue()))
                 .toList();
     }
 
@@ -299,13 +292,12 @@ public class UserService {
         payload.put("userId", savedUser.getId());
         payload.put("email", savedUser.getEmail());
 
-
         mongoEventLogger.onEvent("REGISTERED", payload);
 
         return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
 
-    //Login User (S1-F11)
+    // Login User (S1-F11)
     public String loginUser(String email, String password) {
         // 1. Find user by email
         User user = userRepository.findByEmail(email)
@@ -320,11 +312,12 @@ public class UserService {
         return jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
     }
 
-    //CC-2 Role Management
+    // CC-2 Role Management
     @Transactional
     public User updateUserRole(Long id, String roleName) {
         User user = getUserById(id);
-        // This will throw IllegalArgumentException if the string is not a valid enum value
+        // This will throw IllegalArgumentException if the string is not a valid enum
+        // value
         user.setRole(Role.valueOf(roleName.toUpperCase()));
         return userRepository.save(user);
     }

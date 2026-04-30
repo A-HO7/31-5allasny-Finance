@@ -2,6 +2,7 @@ package com.team31.financetracker.user.service;
 
 import com.team31.financetracker.user.dto.*;
 import com.team31.financetracker.user.model.User;
+import com.team31.financetracker.user.observer.MongoEventLogger;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
 
+import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.team31.financetracker.user.service.JwtService;
@@ -29,15 +31,19 @@ public class UserService {
     private final FinancialGoalRepository financialGoalRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final MongoEventLogger mongoEventLogger;
 
+    // 2. Update your Constructor
     public UserService(UserRepository userRepository,
                        FinancialGoalRepository financialGoalRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtService jwtService) { // Add here
+                       JwtService jwtService,
+                       MongoEventLogger mongoEventLogger) { // Add this
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.mongoEventLogger = mongoEventLogger; // Add this
     }
 
     // Create
@@ -99,7 +105,15 @@ public class UserService {
             existing.putAll(newPreferences); // merges, overwrites same keys, adds new keys
             user.setPreferences(existing);
         }
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        // RETROFIT: Observer notification (M2 Requirement Section 4.5)
+        Map<String, Object> payload = new HashMap<>(newPreferences);
+        payload.put("userId", savedUser.getId());
+        payload.put("action", "USER_UPDATED");
+        mongoEventLogger.onEvent("USER_UPDATED", payload);
+
+        return savedUser;
     }
 
     //Filter Users by Preference (S1-F5)
@@ -123,7 +137,15 @@ public class UserService {
         userRepository.voidPendingTransactionsNative(id);
 
         user.setStatus(UserStatus.DEACTIVATED);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        // RETROFIT: Observer notification
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("action", "USER_DEACTIVATED");
+        mongoEventLogger.onEvent("USER_DEACTIVATED", payload);
+
+        return savedUser;
     }
 
     // Set Primary Financial Goal (S1-F7)
@@ -273,7 +295,13 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
 
-        // d) Generate Token
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("email", savedUser.getEmail());
+
+
+        mongoEventLogger.onEvent("REGISTERED", payload);
+
         return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
 

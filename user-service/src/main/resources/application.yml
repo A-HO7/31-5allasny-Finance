@@ -2,8 +2,6 @@ server:
   port: 8080
 
 spring:
-  application:
-    name: user-service
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -16,13 +14,12 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
-    redis:
-      host: redis
-      port: 6379
-      password: redispass
-    mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-
+   redis:
+     host: localhost
+     port: 6379
+     password: redispass
+  mongodb:
+    uri: mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin
 jwt:
-  secret: "<Base64-encoded shared secret across all 5 services>"
-  expiration: 86400000 # 24 hours in ms
+  secret: "ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev"
+  expiration: 86400000

@@ -2,7 +2,7 @@ package com.team31.financetracker.user.observer;
 
 import com.team31.financetracker.user.factory.EventFactory;
 import com.team31.financetracker.user.model.nosql.MongoEvent;
-import com.team31.financetracker.user.repository.nosql.AuthEventRepository; // You'll need this repo
+import com.team31.financetracker.user.model.nosql.EventType;
 import org.springframework.stereotype.Component;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
@@ -33,7 +33,7 @@ public class MongoEventLogger implements EntityObserver {
                 params.put("action", action);
 
                 // Use Factory
-                MongoEvent event = EventFactory.createEvent("AUTH", params);
+                MongoEvent event = EventFactory.createEvent(EventType.AUTH, params);
                 repository.save((AuthEvent) event);
 
                 System.out.println("DEBUG: Event saved to MongoDB: " + action);

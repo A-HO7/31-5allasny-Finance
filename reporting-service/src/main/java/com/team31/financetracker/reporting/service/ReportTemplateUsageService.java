@@ -14,6 +14,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import com.team31.financetracker.reporting.observer.EntityObserver;
+import com.team31.financetracker.reporting.observer.MongoEventLogger;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class ReportTemplateUsageService {
@@ -21,13 +27,41 @@ public class ReportTemplateUsageService {
     private final ReportTemplateUsageRepository repository;
     private final SavedReportRepository savedReportRepository;
     private final ReportTemplateService reportTemplateService;
+    private final MongoEventLogger mongoEventLogger;
+    
+    private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
     public ReportTemplateUsageService(ReportTemplateUsageRepository repository,
                                      SavedReportRepository savedReportRepository,
-                                     ReportTemplateService reportTemplateService) {
+                                     ReportTemplateService reportTemplateService,
+                                     MongoEventLogger mongoEventLogger) {
         this.repository = repository;
         this.savedReportRepository = savedReportRepository;
         this.reportTemplateService = reportTemplateService;
+        this.mongoEventLogger = mongoEventLogger;
+    }
+
+    @PostConstruct
+    public void init() {
+        register(this.mongoEventLogger);
+    }
+
+    public void register(EntityObserver observer) {
+        if (observer != null && !observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    public void unregister(EntityObserver observer) {
+        if (observer != null) {
+            observers.remove(observer);
+        }
+    }
+
+    protected void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver observer : observers) {
+            observer.onEvent(eventType, payload);
+        }
     }
 
     @Transactional
@@ -71,7 +105,19 @@ public class ReportTemplateUsageService {
         template.setCurrentUses(template.getCurrentUses() + 1);
         reportTemplateService.updateReportTemplate(template.getId(), template);
 
-        return repository.save(usage);
+        ReportTemplateUsage saved = repository.save(usage);
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("reportId", report.getId());
+        payload.put("reportType", report.getReportType());
+        payload.put("pagesGenerated", saved.getPagesGenerated());
+        Map<String, Object> details = new HashMap<>();
+        details.put("templateCode", template.getCode());
+        payload.put("details", details);
+        
+        notifyObservers("TEMPLATE_APPLIED", payload);
+        
+        return saved;
     }
 
     public List<ReportTemplateUsage> getAllReportTemplateUsages() {

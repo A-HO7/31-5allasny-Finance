@@ -39,6 +39,7 @@ services:
     ports:
       - "27017:27017"
     environment:
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: rootpass
       MONGO_INITDB_DATABASE: financemongo

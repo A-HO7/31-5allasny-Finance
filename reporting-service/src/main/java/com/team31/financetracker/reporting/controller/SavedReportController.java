@@ -103,9 +103,11 @@ public class SavedReportController {
     }
 
     @PostMapping("/generate/{userId}")
-    public ResponseEntity<?> generateReport(@PathVariable Long userId, @RequestBody GenerateReportRequestDTO request) {
+    public ResponseEntity<?> generateReport(@PathVariable Long userId, 
+                                            @RequestBody GenerateReportRequestDTO request,
+                                            @RequestParam(defaultValue = "false") boolean simulateFailure) {
         try {
-            SavedReport newReport = service.generateReport(userId, request);
+            SavedReport newReport = service.generateReport(userId, request, simulateFailure);
             return new ResponseEntity<>(newReport, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());

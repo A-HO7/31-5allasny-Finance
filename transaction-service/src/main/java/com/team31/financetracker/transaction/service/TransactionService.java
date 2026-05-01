@@ -9,6 +9,8 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
+import com.team31.financetracker.transaction.observer.EntityObserver;
+import com.team31.financetracker.transaction.observer.MongoEventLogger;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -27,8 +30,43 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
 
-    public TransactionService(TransactionRepository transactionRepository) {
+    // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
+    // Each service owns its own observer list — not shared across services.
+    private final List<EntityObserver> observers = new ArrayList<>();
+
+    /**
+     * MongoEventLogger is injected by Spring and registered immediately so that
+     * every write endpoint fires events from the first request onward.
+     */
+    public TransactionService(TransactionRepository transactionRepository,
+            MongoEventLogger mongoEventLogger) {
         this.transactionRepository = transactionRepository;
+        registerObserver(mongoEventLogger);
+    }
+
+    /** Register an observer to receive state-change notifications. */
+    public void registerObserver(EntityObserver observer) {
+        if (!observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    /** Unregister an observer (used in unit tests to verify the observer path). */
+    public void unregisterObserver(EntityObserver observer) {
+        observers.remove(observer);
+    }
+
+    /**
+     * Notify all registered observers of a state change.
+     * Called AFTER the PostgreSQL save so the observer can read the persisted
+     * state.
+     * Any exception thrown by an observer is caught inside MongoEventLogger — it
+     * never propagates here and never rolls back the PG transaction.
+     */
+    private void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver observer : observers) {
+            observer.onEvent(eventType, payload);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -39,7 +77,9 @@ public class TransactionService {
     public Transaction createTransaction(Transaction transaction) {
         transaction.setId(null); // enforce auto-generation
         ensureSplitBackReferences(transaction); // fix back-refs if splits were embedded
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("TRANSACTION_CREATED", saved); // DP-2 Observer
+        return saved;
     }
 
     public List<Transaction> getAllTransactions() {
@@ -48,7 +88,8 @@ public class TransactionService {
 
     public Transaction getTransactionById(Long id) {
         return transactionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Transaction not found"));
     }
 
     /**
@@ -88,12 +129,16 @@ public class TransactionService {
         if (updatedTransaction.getMetadata() != null && !updatedTransaction.getMetadata().isEmpty())
             existing.setMetadata(updatedTransaction.getMetadata());
 
-        return transactionRepository.saveAndFlush(existing);
+        Transaction saved = transactionRepository.saveAndFlush(existing);
+        notifyObservers("TRANSACTION_UPDATED", saved); // DP-2 Observer
+        return saved;
     }
 
     @Transactional
     public void deleteTransaction(Long id) {
         Transaction existing = getTransactionById(id);
+        // Fire event BEFORE delete so the payload still carries the entity's fields
+        notifyObservers("TRANSACTION_DELETED", existing); // DP-2 Observer
         transactionRepository.delete(existing);
     }
 
@@ -124,7 +169,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F2 — Approve Transaction (Transactional)
+    // F2 — Approve Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -141,7 +186,8 @@ public class TransactionService {
         String role;
         try {
             role = transactionRepository.findUserRoleById(approverId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "User not found"));
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
@@ -176,12 +222,15 @@ public class TransactionService {
                                 "TRANSFER requires a toAccountId");
                     int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
                     if (from != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Source account not found");
-                    int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Source account not found");
+                    int to = transactionRepository.addToAccountBalance(
+                            transaction.getToAccountId(), amount);
                     if (to != 1) {
                         // roll back the deduct
                         transactionRepository.addToAccountBalance(accountId, amount);
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Destination account not found");
                     }
                 }
             }
@@ -194,18 +243,21 @@ public class TransactionService {
 
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("APPROVED", saved); // DP-2 Observer — S3-F2 write
+        return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F3 — Get Transfer Fee Estimate (DTO, read-only)
+    // F3 — Get Transfer Fee Estimate (DTO, read-only — no observer needed)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
     public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
         // Validate amount
         if (request.amount() == null || request.amount() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be positive");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "amount must be positive");
         }
         if (request.accountId() == null || request.toAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -240,7 +292,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F4 — Complete Transaction (Transactional)
+    // F4 — Complete Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -269,11 +321,12 @@ public class TransactionService {
             }
         }
 
+        notifyObservers("COMPLETED", transaction); // DP-2 Observer — S3-F4 write
         return transaction;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F5 — Filter Transactions by Metadata Field (JSONB)
+    // F5 — Filter Transactions by Metadata Field (JSONB, read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
@@ -289,7 +342,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F6 — Transaction Analytics by Time Period
+    // F6 — Transaction Analytics by Time Period (read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
     public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
@@ -325,7 +378,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F7 — Void Transaction (Transactional)
+    // F7 — Void Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -361,15 +414,17 @@ public class TransactionService {
         }
 
         transaction.setStatus(TransactionStatus.VOIDED);
-        transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("VOIDED", saved); // DP-2 Observer — S3-F7 write
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F8 — Add Splits to Transaction (Transactional + Relationship)
+    // F8 — Add Splits to Transaction (Finance Tracker deviation write → Observer)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
-    public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> splitRequests) {
+    public Transaction addSplitsToTransaction(Long transactionId,
+            List<TransactionSplit> splitRequests) {
         Transaction transaction = getTransactionById(transactionId);
 
         // Validate transaction status
@@ -427,11 +482,13 @@ public class TransactionService {
         }
 
         // Save transaction — cascade persists the new splits
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("SPLITS_ADDED", saved); // DP-2 Observer — S3-F8 Finance Tracker deviation
+        return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F9 — Get Transaction Details with Splits (DTO)
+    // F9 — Get Transaction Details with Splits (DTO, read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)

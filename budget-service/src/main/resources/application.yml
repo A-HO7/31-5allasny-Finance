@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: budget-service
+
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -20,14 +21,16 @@ spring:
       host: redis
       port: 6379
       password: redispass
-    mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-    cassandra:
-      contact-points: cassandra
-      port: 9042
-      local-datacenter: datacenter1
-      keyspace-name: financeks
-      schema-action: CREATE_IF_NOT_EXISTS
+
+  mongodb:
+    uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+
+  cassandra:
+    contact-points: cassandra
+    port: 9042
+    local-datacenter: datacenter1
+    keyspace-name: financeks
+    schema-action: CREATE_IF_NOT_EXISTS
 
 
 jwt:

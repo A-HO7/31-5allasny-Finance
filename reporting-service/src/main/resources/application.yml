@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: reporting-service
+
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -20,8 +21,9 @@ spring:
       host: redis
       port: 6379
       password: redispass
-    mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+
+  mongodb:
+    uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
 
 jwt:
   secret: "<Base64-encoded shared secret across all 5 services>"

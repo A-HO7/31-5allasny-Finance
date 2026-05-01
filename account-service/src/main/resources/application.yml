@@ -5,9 +5,9 @@ spring:
   application:
     name: account-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/financedb
-    username: postgres
-    password: postgres
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: update
@@ -17,18 +17,15 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
     rest:
-      # Custom @RestController owns /api/accounts;
-      # disable auto HAL export of JpaRepository (avoids conflicts / odd 500s)
       enabled: false
     redis:
-      host: redis
-      port: 6379
-      password: redispass
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
     mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      uri: ${SPRING_DATA_MONGODB_URI}
   elasticsearch:
-    uris: http://elasticsearch:9200
-
+    uris: ${ELASTICSEARCH_URI}
 jwt:
   secret: "<Base64-encoded shared secret across all 5 services>"
   expiration: 86400000 # 24 hours in ms

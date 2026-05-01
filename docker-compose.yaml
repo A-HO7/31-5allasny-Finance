@@ -28,7 +28,8 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   # Core Spring microservices (all connect to Postgres via host `postgres`).
   user-service:
@@ -40,8 +41,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redispass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   account-service:
     build: ./account-service
@@ -52,8 +58,14 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      ELASTICSEARCH_URI: http://elasticsearch:9200
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redispass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   transaction-service:
     build: ./transaction-service
@@ -64,8 +76,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redispass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   budget-service:
     build: ./budget-service
@@ -76,8 +93,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redispass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   reporting-service:
     build: ./reporting-service
@@ -88,8 +110,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redispass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   # Document-oriented database for features that need flexible schemas.
   mongo:

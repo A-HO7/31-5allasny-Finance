@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: reporting-service
+
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres

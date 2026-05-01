@@ -24,7 +24,7 @@ public class Budget {
     @Column(nullable = false)
     private Category category;
 
-    @Column(nullable = false)
+    @Column(name = "budget_amount", nullable = false)
     private Double amount;
 
     @Column(nullable = false)

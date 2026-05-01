@@ -1,14 +1,20 @@
 package com.team31.financetracker.budget.service;
 
 import com.team31.financetracker.budget.model.Budget;
+import com.team31.financetracker.budget.model.BudgetEvent;
 import com.team31.financetracker.budget.model.BudgetStatus;
+import com.team31.financetracker.budget.model.BudgetUsageEvent;
+import com.team31.financetracker.budget.model.BudgetUsageEventKey;
 import com.team31.financetracker.budget.model.Category;
+import com.team31.financetracker.budget.observer.MongoEventLogger;
 import com.team31.financetracker.budget.repository.BudgetRepository;
+import com.team31.financetracker.budget.repository.BudgetUsageEventRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
@@ -19,9 +25,15 @@ import java.util.List;
 public class BudgetService {
 
     private final BudgetRepository budgetRepository;
+    private final BudgetUsageEventRepository budgetUsageEventRepository;
+    private final MongoEventLogger mongoEventLogger;
 
-    public BudgetService(BudgetRepository budgetRepository) {
+    public BudgetService(BudgetRepository budgetRepository,
+                         BudgetUsageEventRepository budgetUsageEventRepository,
+                         MongoEventLogger mongoEventLogger) {
         this.budgetRepository = budgetRepository;
+        this.budgetUsageEventRepository = budgetUsageEventRepository;
+        this.mongoEventLogger = mongoEventLogger;
     }
 
     public Budget createBudget(Budget budget) {
@@ -176,6 +188,30 @@ public class BudgetService {
         } catch (Exception e) {
             return new ArrayList<>();
         }
+    }
+
+    public void recordUsage(Long id, Double spentAmount, String notes) {
+        Budget budget = getBudgetById(id);
+
+        if (spentAmount == null || spentAmount < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "spentAmount must be non-negative");
+        }
+
+        double budgetAmount = budget.getAmount() != null ? budget.getAmount() : 0.0;
+        double remaining = Math.max(0.0, budgetAmount - spentAmount);
+        double percentUsed = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100.0 : 0.0;
+        String categoryName = budget.getCategory() != null ? budget.getCategory().name() : null;
+
+        BudgetUsageEventKey key = new BudgetUsageEventKey(id, Instant.now());
+        BudgetUsageEvent usageEvent = new BudgetUsageEvent(key, spentAmount, remaining, percentUsed, categoryName, notes);
+        budgetUsageEventRepository.save(usageEvent);
+
+        mongoEventLogger.onEvent(BudgetEvent.USAGE_RECORDED, Map.of(
+                "budgetId", id,
+                "spentAmount", spentAmount,
+                "percentUsed", percentUsed,
+                "category", categoryName != null ? categoryName : ""
+        ));
     }
 
     public List<BudgetAlertDTO> getBudgetsNearLimit(Double threshold, BudgetStatus status) {

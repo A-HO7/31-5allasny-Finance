@@ -4,6 +4,7 @@ import com.team31.financetracker.budget.model.Budget;
 import com.team31.financetracker.budget.model.BudgetPeriod;
 import com.team31.financetracker.budget.model.BudgetStatus;
 import com.team31.financetracker.budget.model.Category;
+import com.team31.financetracker.budget.security.JwtUtil;
 import com.team31.financetracker.budget.service.BudgetService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -21,9 +22,11 @@ import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 public class BudgetController {
 
     private final BudgetService budgetService;
+    private final JwtUtil jwtUtil;
 
-    public BudgetController(BudgetService budgetService) {
+    public BudgetController(BudgetService budgetService, JwtUtil jwtUtil) {
         this.budgetService = budgetService;
+        this.jwtUtil = jwtUtil;
     }
 
     // --- Helper methods for safe type conversions ---
@@ -234,5 +237,17 @@ public class BudgetController {
             try { statusEnum = BudgetStatus.valueOf(status.toUpperCase().trim()); } catch (Exception ignored) {}
         }
         return budgetService.getBudgetsNearLimit(threshold, statusEnum);
+    }
+
+    @PostMapping("/{id}/usage")
+    @ResponseStatus(HttpStatus.CREATED)
+    public void recordBudgetUsage(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body
+    ) {
+        Double spentAmount = toDouble(body.get("spentAmount"));
+        String notes = body.get("notes") != null ? body.get("notes").toString() : null;
+
+        budgetService.recordUsage(id, spentAmount, notes);
     }
 }

@@ -89,8 +89,16 @@ public class ReportTemplateService {
                 }
             }
             Boolean expired = expiryDate != null && expiryDate.isBefore(LocalDateTime.now());
-            return new TemplateUsageDTO(templateId, code, templateType, maxPages,
-                    timesUsed, totalPagesGenerated, active, expired);
+            return TemplateUsageDTO.builder()
+                    .templateId(templateId)
+                    .code(code)
+                    .templateType(templateType)
+                    .maxPages(maxPages)
+                    .timesUsed(timesUsed)
+                    .totalPagesGenerated(totalPagesGenerated)
+                    .active(active)
+                    .expired(expired)
+                    .build();
         }).collect(Collectors.toList());
     }
 }

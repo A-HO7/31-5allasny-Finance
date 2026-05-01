@@ -1,9 +1,9 @@
 package com.team31.financetracker.user.service;
 
-import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
-import com.team31.financetracker.user.dto.TopSaverDTO;
-import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.user.dto.*;
 import com.team31.financetracker.user.model.User;
+import com.team31.financetracker.user.observer.MongoEventLogger;
+import com.team31.financetracker.user.observer.EntityObserver;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -14,28 +14,54 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
-import com.team31.financetracker.user.dto.UserProfileDTO;
-import com.team31.financetracker.user.dto.FinancialGoalDTO;
+
+import java.util.HashMap;
 import java.util.stream.Collectors;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import com.team31.financetracker.user.service.JwtService;
+import com.team31.financetracker.user.dto.RegisterRequest;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 @Service
 public class UserService {
     private final UserRepository userRepository;
     private final FinancialGoalRepository financialGoalRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final List<EntityObserver> observers = new ArrayList<>();
 
-    public UserService(UserRepository userRepository, FinancialGoalRepository financialGoalRepository) {
+    // 2. Update your Constructor
+    public UserService(UserRepository userRepository,
+            FinancialGoalRepository financialGoalRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            MongoEventLogger mongoEventLogger) { // Add this
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        register(mongoEventLogger);
+    }
+
+    public void register(EntityObserver observer) { observers.add(observer); }
+    public void unregister(EntityObserver observer) { observers.remove(observer); }
+    private void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver obs : observers) {
+            obs.onEvent(eventType, payload);
+        }
     }
 
     // Create
     public User createUser(User user) {
         try {
+
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+
             return userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
@@ -59,7 +85,11 @@ public class UserService {
         existingUser.setName(userDetails.getName());
         existingUser.setEmail(userDetails.getEmail());
         existingUser.setPhone(userDetails.getPhone());
-        existingUser.setPassword(userDetails.getPassword());
+
+        if (userDetails.getPassword() != null && !userDetails.getPassword().isBlank()) {
+            existingUser.setPassword(passwordEncoder.encode(userDetails.getPassword()));
+        }
+
         existingUser.setRole(userDetails.getRole());
         return userRepository.save(existingUser);
     }
@@ -70,12 +100,12 @@ public class UserService {
         userRepository.delete(user);
     }
 
-    //Search with Filter (S1-F1)
+    // Search with Filter (S1-F1)
     public List<User> searchUsers(String name, String email, Role role) {
         return userRepository.searchUsers(name, email, role != null ? role.name() : null);
     }
 
-    //Update Preferences (S1-F2)
+    // Update Preferences (S1-F2)
     public User updatePreferences(Long id, Map<String, Object> newPreferences) {
         User user = getUserById(id);
         Map<String, Object> existing = user.getPreferences();
@@ -85,10 +115,18 @@ public class UserService {
             existing.putAll(newPreferences); // merges, overwrites same keys, adds new keys
             user.setPreferences(existing);
         }
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        // RETROFIT: Observer notification (M2 Requirement Section 4.5)
+        Map<String, Object> payload = new HashMap<>(newPreferences);
+        payload.put("userId", savedUser.getId());
+        payload.put("action", "USER_UPDATED");
+        notifyObservers("USER_UPDATED", payload);
+
+        return savedUser;
     }
 
-    //Filter Users by Preference (S1-F5)
+    // Filter Users by Preference (S1-F5)
     public List<User> filterByPreference(String key, String value) {
         if (key == null || key.isBlank() || value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
@@ -109,7 +147,15 @@ public class UserService {
         userRepository.voidPendingTransactionsNative(id);
 
         user.setStatus(UserStatus.DEACTIVATED);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        // RETROFIT: Observer notification
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("action", "USER_DEACTIVATED");
+        notifyObservers("USER_DEACTIVATED", payload);
+
+        return savedUser;
     }
 
     // Set Primary Financial Goal (S1-F7)
@@ -148,8 +194,7 @@ public class UserService {
                         goal.getCurrentAmount(),
                         goal.getDeadline(),
                         goal.getPrimary(),
-                        goal.getMetadata()
-                ))
+                        goal.getMetadata()))
                 .collect(Collectors.toList());
 
         return new UserProfileDTO(
@@ -159,10 +204,8 @@ public class UserService {
                 user.getPhone(),
                 user.getPreferences(),
                 goalDTOs,
-                goalDTOs.size()
-        );
+                goalDTOs.size());
     }
-
 
     // Get User Transaction Summary (S1-F3)
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
@@ -172,8 +215,7 @@ public class UserService {
 
         if (results == null || results.isEmpty()) {
             return new UserTransactionSummaryDTO(
-                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0
-            );
+                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0);
         }
 
         Object[] result = results.get(0);
@@ -185,8 +227,7 @@ public class UserService {
                 ((Number) result[3]).longValue(),
                 ((Number) result[4]).longValue(),
                 ((Number) result[5]).doubleValue(),
-                ((Number) result[6]).doubleValue()
-        );
+                ((Number) result[6]).doubleValue());
     }
 
     // Top Savers by Net Income (S1-F6)
@@ -209,8 +250,7 @@ public class UserService {
                         ((Number) result[0]).longValue(),
                         (String) result[1],
                         ((Number) result[2]).doubleValue(),
-                        ((Number) result[3]).longValue()
-                ))
+                        ((Number) result[3]).longValue()))
                 .toList();
     }
 
@@ -228,9 +268,82 @@ public class UserService {
                 .map(row -> new CurrencyPreferenceUserDTO(
                         ((Number) row[0]).longValue(),
                         (String) row[1],
-                        ((Number) row[2]).longValue()
-                ))
+                        ((Number) row[2]).longValue()))
                 .toList();
+    }
+
+    // Register User (S1-F10)
+    public String registerUser(RegisterRequest request) {
+        // a) Validate not blank
+        if (request.name() == null || request.name().isBlank() ||
+                request.email() == null || request.email().isBlank() ||
+                request.password() == null || request.password().isBlank() ||
+                request.phone() == null || request.phone().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "All fields are required");
+        }
+
+        // b) Check if already exists (Conflict 409)
+        if (userRepository.existsByEmail(request.email()) || userRepository.existsByPhone(request.phone())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email or phone already registered");
+        }
+
+        // c) Create & Map User
+        User user = new User();
+        user.setName(request.name());
+        user.setEmail(request.email());
+        user.setPassword(passwordEncoder.encode(request.password())); // HASHING!
+        user.setPhone(request.phone());
+        user.setRole(Role.PERSONAL); // Always default to PERSONAL
+        user.setStatus(UserStatus.ACTIVE);
+
+        User savedUser = userRepository.save(user);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("email", savedUser.getEmail());
+
+        notifyObservers("REGISTERED", payload);
+
+        return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
+    }
+
+    // Login User (S1-F11)
+    public String loginUser(String email, String password) {
+        // 1. Find user by email
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+
+        // 2. Verify password (matches raw input against hashed DB value)
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+        }
+
+        // 3. Generate and return token
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", user.getId());
+        payload.put("email", user.getEmail());
+        notifyObservers("LOGGED_IN", payload);
+        
+        return token;
+    }
+
+    // CC-2 Role Management
+    @Transactional
+    public User updateUserRole(Long id, String roleName) {
+        User user = getUserById(id);
+        // This will throw IllegalArgumentException if the string is not a valid enum
+        // value
+        user.setRole(Role.valueOf(roleName.toUpperCase()));
+        User savedUser = userRepository.save(user);
+        
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("newRole", savedUser.getRole().name());
+        notifyObservers("ROLE_CHANGED", payload);
+        
+        return savedUser;
     }
 
 }

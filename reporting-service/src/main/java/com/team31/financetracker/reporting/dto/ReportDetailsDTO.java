@@ -39,18 +39,22 @@ public class ReportDetailsDTO {
         public LocalDateTime getAppliedAt() { return appliedAt; }
     }
 
-    public ReportDetailsDTO(Long reportId, Long userId, String name, ReportType reportType,
-                            ReportStatus status, Map<String, Object> reportConfig,
-                            List<AppliedTemplateDTO> appliedTemplates, Double totalPages, Integer templateCount) {
-        this.reportId = reportId;
-        this.userId = userId;
-        this.name = name;
-        this.reportType = reportType;
-        this.status = status;
-        this.reportConfig = reportConfig;
-        this.appliedTemplates = appliedTemplates;
-        this.totalPages = totalPages;
-        this.templateCount = templateCount;
+    public ReportDetailsDTO() {}
+
+    private ReportDetailsDTO(Builder builder) {
+        this.reportId = builder.reportId;
+        this.userId = builder.userId;
+        this.name = builder.name;
+        this.reportType = builder.reportType;
+        this.status = builder.status;
+        this.reportConfig = builder.reportConfig;
+        this.appliedTemplates = builder.appliedTemplates;
+        this.totalPages = builder.totalPages;
+        this.templateCount = builder.templateCount;
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     public Long getReportId() { return reportId; }
@@ -62,4 +66,65 @@ public class ReportDetailsDTO {
     public List<AppliedTemplateDTO> getAppliedTemplates() { return appliedTemplates; }
     public Double getTotalPages() { return totalPages; }
     public Integer getTemplateCount() { return templateCount; }
+
+    public static class Builder {
+        private Long reportId;
+        private Long userId;
+        private String name;
+        private ReportType reportType;
+        private ReportStatus status;
+        private Map<String, Object> reportConfig;
+        private List<AppliedTemplateDTO> appliedTemplates;
+        private Double totalPages;
+        private Integer templateCount;
+
+        public Builder reportId(Long reportId) {
+            this.reportId = reportId;
+            return this;
+        }
+
+        public Builder userId(Long userId) {
+            this.userId = userId;
+            return this;
+        }
+
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder reportType(ReportType reportType) {
+            this.reportType = reportType;
+            return this;
+        }
+
+        public Builder status(ReportStatus status) {
+            this.status = status;
+            return this;
+        }
+
+        public Builder reportConfig(Map<String, Object> reportConfig) {
+            this.reportConfig = reportConfig;
+            return this;
+        }
+
+        public Builder appliedTemplates(List<AppliedTemplateDTO> appliedTemplates) {
+            this.appliedTemplates = appliedTemplates;
+            return this;
+        }
+
+        public Builder totalPages(Double totalPages) {
+            this.totalPages = totalPages;
+            return this;
+        }
+
+        public Builder templateCount(Integer templateCount) {
+            this.templateCount = templateCount;
+            return this;
+        }
+
+        public ReportDetailsDTO build() {
+            return new ReportDetailsDTO(this);
+        }
+    }
 }

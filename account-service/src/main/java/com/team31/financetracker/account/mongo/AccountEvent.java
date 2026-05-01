@@ -1,12 +1,13 @@
-package com.team31.financetracker.account.event;
+package com.team31.financetracker.account.mongo;
 
+import com.team31.financetracker.account.observer.MongoEvent;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
 import java.util.Map;
 
 @Document(collection = "account_events")
-public class AccountEvent implements MongoEvent{
+public class AccountEvent implements MongoEvent {
 
     @Id
     private String id;

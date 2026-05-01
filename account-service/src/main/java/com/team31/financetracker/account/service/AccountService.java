@@ -3,7 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
-import com.team31.financetracker.account.event.EntityObserver;
+import com.team31.financetracker.account.observer.EntityObserver;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
@@ -12,9 +12,7 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;

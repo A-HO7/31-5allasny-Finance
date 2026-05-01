@@ -4,6 +4,7 @@ import com.team31.financetracker.reporting.model.SavedReport;
 import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -87,6 +88,7 @@ public class SavedReportService {
         return repository.findAll();
     }
 
+    @Cacheable(value = "reporting-service::S5-F1")
     public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
                                            LocalDate startDate, LocalDate endDate) {
         boolean hasType   = reportType != null;
@@ -97,6 +99,7 @@ public class SavedReportService {
         return repository.searchReports(hasType, reportType, hasStatus, status, hasStart, startDate, hasEnd, endDate);
     }
 
+    @Cacheable(value = "reporting-service::saved-report", key = "#id")
     public SavedReport getSavedReportById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("SavedReport not found with id: " + id));
     }
@@ -147,6 +150,7 @@ public class SavedReportService {
         return saved;
     }
 
+    @Cacheable(value = "reporting-service::S5-F3", key = "#userId")
     public UserReportSummaryDTO getUserReportSummary(Long userId) {
         ensureUserExists(userId);
 
@@ -282,6 +286,7 @@ public class SavedReportService {
         notifyReportEvent("REGENERATED", saved, null);
         return saved;
     }
+    @Cacheable(value = "reporting-service::S5-F8", key = "#reportId")
     public ReportDetailsDTO getReportDetails(Long reportId) {
         SavedReport report = repository.findById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found with id: " + reportId));
@@ -314,6 +319,7 @@ public class SavedReportService {
                 .build();
     }
 
+    @Cacheable(value = "reporting-service::S5-F6")
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
         // Step a: Validate — both must be provided or both must be absent
         if ((startDate == null) != (endDate == null)) {

@@ -142,7 +142,9 @@ public class SavedReportService {
         config.put("archivedAt", LocalDateTime.now().toString());
         report.setReportConfig(config);
         
-        return repository.save(report);
+        SavedReport saved = repository.save(report);
+        notifyReportEvent("ARCHIVED", saved, Map.of("reason", reason));
+        return saved;
     }
 
     public UserReportSummaryDTO getUserReportSummary(Long userId) {

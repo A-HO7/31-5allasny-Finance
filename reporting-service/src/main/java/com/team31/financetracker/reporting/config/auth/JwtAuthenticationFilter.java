@@ -2,6 +2,7 @@ package com.team31.financetracker.reporting.config.auth;
 
 import com.team31.financetracker.reporting.config.JwtService;
 import com.team31.financetracker.reporting.config.auth.handlers.*;
+import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,9 +31,11 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final SavedReportRepository savedReportRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, SavedReportRepository savedReportRepository) {
         this.jwtService = jwtService;
+        this.savedReportRepository = savedReportRepository;
     }
 
     @Override
@@ -54,7 +57,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         AuthHandler chain = new TokenExtractionHandler();
         chain.setNext(new SignatureValidationHandler(jwtService))
-             .setNext(new UserLoaderHandler(jwtService))
+             .setNext(new UserLoaderHandler(jwtService, savedReportRepository))
              .setNext(new RoleAuthorizationHandler());
 
         boolean success = chain.handle(context);

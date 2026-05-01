@@ -2,6 +2,7 @@ package com.team31.financetracker.reporting.config.auth.handlers;
 
 import com.team31.financetracker.reporting.config.JwtService;
 import com.team31.financetracker.reporting.config.auth.AuthContext;
+import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,9 +28,11 @@ import java.util.Collections;
 public class UserLoaderHandler extends AuthHandler {
 
     private final JwtService jwtService;
+    private final SavedReportRepository savedReportRepository;
 
-    public UserLoaderHandler(JwtService jwtService) {
+    public UserLoaderHandler(JwtService jwtService, SavedReportRepository savedReportRepository) {
         this.jwtService = jwtService;
+        this.savedReportRepository = savedReportRepository;
     }
 
     @Override
@@ -44,6 +47,14 @@ public class UserLoaderHandler extends AuthHandler {
             if (userId == null || role == null) {
                 context.getResponse().setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 context.getResponse().getWriter().write("Token is missing required claims");
+                return false;
+            }
+
+            // Test e) requirement: Verify user actually exists in PG database
+            // If the user was deleted after the token was issued, block access.
+            if (!savedReportRepository.existsUserById(userId)) {
+                context.getResponse().setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                context.getResponse().getWriter().write("User associated with token no longer exists");
                 return false;
             }
 

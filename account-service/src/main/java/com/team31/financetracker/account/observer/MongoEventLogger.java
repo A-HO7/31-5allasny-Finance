@@ -1,6 +1,9 @@
-package com.team31.financetracker.account.event;
+package com.team31.financetracker.account.observer;
 
-import com.team31.financetracker.account.repository.AccountEventRepository;
+import com.team31.financetracker.account.factory.EventFactory;
+import com.team31.financetracker.account.factory.EventType;
+import com.team31.financetracker.account.mongo.AccountEvent;
+import com.team31.financetracker.account.mongo.AccountEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

@@ -1,6 +1,5 @@
-package com.team31.financetracker.account.repository;
+package com.team31.financetracker.account.mongo;
 
-import com.team31.financetracker.account.event.AccountEvent;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.List;

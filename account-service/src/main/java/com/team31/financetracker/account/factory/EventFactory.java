@@ -1,4 +1,7 @@
-package com.team31.financetracker.account.event;
+package com.team31.financetracker.account.factory;
+
+import com.team31.financetracker.account.mongo.AccountEvent;
+import com.team31.financetracker.account.observer.MongoEvent;
 
 import java.util.Map;
 

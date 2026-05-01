@@ -1,4 +1,4 @@
-package com.team31.financetracker.account.event;
+package com.team31.financetracker.account.observer;
 
 import java.time.LocalDateTime;
 import java.util.Map;

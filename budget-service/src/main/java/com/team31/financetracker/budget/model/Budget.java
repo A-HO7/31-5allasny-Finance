@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -11,7 +12,9 @@ import java.util.Map;
 
 @Entity
 @Table(name = "budgets")
-public class Budget {
+public class Budget implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -122,6 +125,7 @@ public class Budget {
 
     // Returns healthWeight from metadata with fallback=1.0 for absent/null and clamp to [0.0, 2.0].
     // Pre-M2 rows without the key are treated as neutral (1.0).
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public double getHealthWeight() {
         if (metadata == null) return 1.0;
         Object raw = metadata.get("healthWeight");

@@ -1,32 +1,33 @@
 package com.team31.financetracker.budget.controller;
 
+import com.team31.financetracker.budget.dto.BudgetAlertDTO;
+import com.team31.financetracker.budget.dto.BudgetUsageDTO;
 import com.team31.financetracker.budget.model.Budget;
 import com.team31.financetracker.budget.model.BudgetPeriod;
 import com.team31.financetracker.budget.model.BudgetStatus;
 import com.team31.financetracker.budget.model.Category;
-import com.team31.financetracker.budget.security.JwtUtil;
 import com.team31.financetracker.budget.service.BudgetService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
-import com.team31.financetracker.budget.dto.BudgetAlertDTO;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/budgets")
 public class BudgetController {
 
     private final BudgetService budgetService;
-    private final JwtUtil jwtUtil;
 
-    public BudgetController(BudgetService budgetService, JwtUtil jwtUtil) {
+    public BudgetController(BudgetService budgetService) {
         this.budgetService = budgetService;
-        this.jwtUtil = jwtUtil;
     }
 
     // --- Helper methods for safe type conversions ---
@@ -93,6 +94,25 @@ public class BudgetController {
 
         return budget;
     }
+
+    // --- Helper to extract JWT claims from request attributes ---
+
+    private Long getJwtUid(HttpServletRequest request) {
+        Object uid = request.getAttribute("jwt.uid");
+        if (uid instanceof Long l) return l;
+        if (uid instanceof Number n) return n.longValue();
+        if (uid != null) {
+            try { return Long.parseLong(uid.toString()); } catch (Exception e) { /* ignore */ }
+        }
+        return null;
+    }
+
+    private String getJwtRole(HttpServletRequest request) {
+        Object role = request.getAttribute("jwt.role");
+        return role != null ? role.toString() : null;
+    }
+
+    // ──────────────────── CRUD Endpoints ────────────────────
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -247,7 +267,48 @@ public class BudgetController {
     ) {
         Double spentAmount = toDouble(body.get("spentAmount"));
         String notes = body.get("notes") != null ? body.get("notes").toString() : null;
-
         budgetService.recordUsage(id, spentAmount, notes);
+    }
+
+    // ──────────────────── S4-F12: Get Budget Usage Timeline ────────────────────
+
+    @GetMapping("/{id}/usage")
+    public List<BudgetUsageDTO> getBudgetUsageTimeline(
+            @PathVariable Long id,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
+            HttpServletRequest request
+    ) {
+        Long jwtUid = getJwtUid(request);
+        String jwtRole = getJwtRole(request);
+
+        Instant start = null;
+        Instant end = null;
+
+        if (startTime != null && !startTime.isBlank()) {
+            try {
+                start = Instant.parse(startTime);
+            } catch (Exception e) {
+                try {
+                    start = LocalDateTime.parse(startTime).toInstant(java.time.ZoneOffset.UTC);
+                } catch (Exception ex) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid startTime format");
+                }
+            }
+        }
+
+        if (endTime != null && !endTime.isBlank()) {
+            try {
+                end = Instant.parse(endTime);
+            } catch (Exception e) {
+                try {
+                    end = LocalDateTime.parse(endTime).toInstant(java.time.ZoneOffset.UTC);
+                } catch (Exception ex) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid endTime format");
+                }
+            }
+        }
+
+        return budgetService.getBudgetUsageTimeline(id, start, end, jwtUid, jwtRole);
     }
 }

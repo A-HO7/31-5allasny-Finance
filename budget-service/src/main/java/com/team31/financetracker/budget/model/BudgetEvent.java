@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Document(collection = "budget_events")
-public class BudgetEvent {
+public class BudgetEvent implements MongoEvent {
 
     public static final String USAGE_RECORDED   = "USAGE_RECORDED";
     public static final String ANALYTICS_VIEWED = "ANALYTICS_VIEWED";

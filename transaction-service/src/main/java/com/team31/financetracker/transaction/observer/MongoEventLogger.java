@@ -5,6 +5,7 @@ import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.mongodb.EventType;
 import com.team31.financetracker.transaction.mongodb.MongoEvent;
 import com.team31.financetracker.transaction.mongodb.TransactionEvent;
+import com.team31.financetracker.transaction.repository.TransactionEventRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

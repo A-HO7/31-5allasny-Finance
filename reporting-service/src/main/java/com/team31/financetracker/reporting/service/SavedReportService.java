@@ -170,7 +170,12 @@ public class SavedReportService {
         long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
 
         // Step e: Build and return DTO
-        return new UserReportSummaryDTO(userId, totalReports, generatedCount, typeBreakdown);
+        return UserReportSummaryDTO.builder()
+                .userId(userId)
+                .totalReports(totalReports)
+                .generatedCount(generatedCount)
+                .typeBreakdown(typeBreakdown)
+                .build();
     }
 
     @Transactional
@@ -296,17 +301,17 @@ public class SavedReportService {
                 .mapToDouble(ReportTemplateUsage::getPagesGenerated)
                 .sum();
 
-        return new ReportDetailsDTO(
-                report.getId(),
-                report.getUserId(),
-                report.getName(),
-                report.getReportType(),
-                report.getStatus(),
-                report.getReportConfig(),
-                appliedTemplates,
-                totalPages,
-                usages.size()
-        );
+        return ReportDetailsDTO.builder()
+                .reportId(report.getId())
+                .userId(report.getUserId())
+                .name(report.getName())
+                .reportType(report.getReportType())
+                .status(report.getStatus())
+                .reportConfig(report.getReportConfig())
+                .appliedTemplates(appliedTemplates)
+                .totalPages(totalPages)
+                .templateCount(usages.size())
+                .build();
     }
 
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
@@ -325,7 +330,13 @@ public class SavedReportService {
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);
         if (results == null || results.isEmpty() || results.get(0) == null) {
-            return new ReportAnalyticsDTO(0, 0, 0.0, 0, 0);
+            return ReportAnalyticsDTO.builder()
+                    .totalGenerated(0)
+                    .totalReports(0)
+                    .averagePeriodDays(0.0)
+                    .archivedCount(0)
+                    .failedCount(0)
+                    .build();
         }
 
         Object[] row = results.get(0);
@@ -336,7 +347,13 @@ public class SavedReportService {
         long   failedCount       = (row[4] != null) ? ((Number) row[4]).longValue() : 0;
 
         // Step d: Build and return DTO
-        ReportAnalyticsDTO dto = new ReportAnalyticsDTO(totalGenerated, totalReports, averagePeriodDays, archivedCount, failedCount);
+        ReportAnalyticsDTO dto = ReportAnalyticsDTO.builder()
+                .totalGenerated(totalGenerated)
+                .totalReports(totalReports)
+                .averagePeriodDays(averagePeriodDays)
+                .archivedCount(archivedCount)
+                .failedCount(failedCount)
+                .build();
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }

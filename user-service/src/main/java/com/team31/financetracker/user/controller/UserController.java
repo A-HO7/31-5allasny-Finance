@@ -117,6 +117,13 @@ public class UserController {
             @RequestParam int minTransactions) {
         return userService.findUsersByCurrencyPreference(currency, minTransactions);
     }
+
+    //CC-2 Role Management
+    @PutMapping("/{id}/role")
+    public User updateUserRole(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        String newRole = body.get("role");
+        return userService.updateUserRole(id, newRole);
+    }
 }
 
 

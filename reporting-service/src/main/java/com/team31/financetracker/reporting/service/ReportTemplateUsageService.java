@@ -28,17 +28,20 @@ public class ReportTemplateUsageService {
     private final SavedReportRepository savedReportRepository;
     private final ReportTemplateService reportTemplateService;
     private final MongoEventLogger mongoEventLogger;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
     public ReportTemplateUsageService(ReportTemplateUsageRepository repository,
                                      SavedReportRepository savedReportRepository,
                                      ReportTemplateService reportTemplateService,
-                                     MongoEventLogger mongoEventLogger) {
+                                     MongoEventLogger mongoEventLogger,
+                                     com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.savedReportRepository = savedReportRepository;
         this.reportTemplateService = reportTemplateService;
         this.mongoEventLogger = mongoEventLogger;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
 
     @PostConstruct
@@ -117,6 +120,12 @@ public class ReportTemplateUsageService {
         
         notifyObservers("TEMPLATE_APPLIED", payload);
         
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template-usage::" + saved.getId(),
+                "reporting-service::S5-F9::*",
+                "reporting-service::S5-F8::*"
+        );
+        
         return saved;
     }
 
@@ -138,7 +147,13 @@ public class ReportTemplateUsageService {
         }
 
         existing.setPagesGenerated(updatedUsage.getPagesGenerated());
-        return repository.save(existing);
+        ReportTemplateUsage saved = repository.save(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template-usage::" + saved.getId(),
+                "reporting-service::S5-F9::*",
+                "reporting-service::S5-F8::*"
+        );
+        return saved;
     }
 
     @Transactional
@@ -154,5 +169,10 @@ public class ReportTemplateUsageService {
         }
 
         repository.delete(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template-usage::" + id,
+                "reporting-service::S5-F9::*",
+                "reporting-service::S5-F8::*"
+        );
     }
 }

@@ -1,5 +1,7 @@
+version: "3.9"
+
 services:
-  # Primary relational database used by the Spring services.
+  # PostgreSQL
   postgres:
     image: postgres
     container_name: finance-db
@@ -12,13 +14,12 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      # Wait until Postgres is ready to accept connections.
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d financedb" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Web UI for managing the Postgres instance.
+  # pgAdmin
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
@@ -31,148 +32,58 @@ services:
       postgres:
         condition: service_healthy
 
-  # Core Spring microservices (all connect to Postgres via host `postgres`).
-  user-service:
-    build: ./user-service
-    container_name: user-service
-    ports:
-      - "8081:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: redispass
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  account-service:
-    build: ./account-service
-    container_name: account-service
-    ports:
-      - "8082:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-      ELASTICSEARCH_URI: http://elasticsearch:9200
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: redispass
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  transaction-service:
-    build: ./transaction-service
-    container_name: transaction-service
-    ports:
-      - "8083:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: redispass
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  budget-service:
-    build: ./budget-service
-    container_name: budget-service
-    ports:
-      - "8084:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: redispass
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  reporting-service:
-    build: ./reporting-service
-    container_name: reporting-service
-    ports:
-      - "8085:8080"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: redispass
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # Document-oriented database for features that need flexible schemas.
+  # MongoDB
   mongo:
     image: mongo:latest
     container_name: finance-mongo
     ports:
       - "27017:27017"
     environment:
+      SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: rootpass
       MONGO_INITDB_DATABASE: financemongo
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      # Health check runs a simple Mongo admin ping.
-      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # In-memory cache / key-value store.
+  # Redis
   redis:
     image: redis:latest
     container_name: finance-redis
     ports:
       - "6379:6379"
-    # Keep spaces between redis-server args; they are parsed as CLI flags.
-    command: [ "redis-server", "--requirepass", "redispass", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru" ]
+    command: ["redis-server", "--requirepass", "redispass", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
-      # Health check verifies Redis responds with PONG using auth.
       test: ["CMD", "redis-cli", "-a", "redispass", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Search and analytics engine.
+  # Elasticsearch
   elasticsearch:
     image: elasticsearch:8.19.12
     container_name: finance-elasticsearch
     ports:
       - "9200:9200"
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes:
       - es-data:/usr/share/elasticsearch/data
     healthcheck:
-      # Uses shell form to allow curl failure fallback with exit code.
-      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
 
-  # Graph database.
+  # Neo4j
   neo4j:
     image: neo4j:latest
     container_name: finance-neo4j
@@ -186,14 +97,13 @@ services:
     volumes:
       - neo4j-data:/data
     healthcheck:
-      # Basic process status check from inside the container.
-      test: [ "CMD", "neo4j", "status" ]
+      test: ["CMD", "neo4j", "status"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
 
-  # Wide-column store for high-write workloads.
+  # Cassandra
   cassandra:
     image: cassandra:latest
     container_name: finance-cassandra
@@ -202,20 +112,87 @@ services:
     environment:
       CASSANDRA_CLUSTER_NAME: financecluster
       CASSANDRA_DC: datacenter1
-      CASSANDRA_KEYSPACE: financeks
       MAX_HEAP_SIZE: 512M
       HEAP_NEWSIZE: 128M
     volumes:
       - cassandra-data:/var/lib/cassandra
     healthcheck:
-      # Uses cqlsh to check cluster responsiveness.
-      test: [ "CMD-SHELL", "cqlsh -e \'DESCRIBE KEYSPACES\'" ]
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES'"]
       interval: 15s
       timeout: 10s
       retries: 10
       start_period: 60s
 
-# Named volumes for persistent data across container restarts.
+  # Microservices
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    ports:
+      - "8081:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  account-service:
+    build: ./account-service
+    container_name: account-service
+    ports:
+      - "8082:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  transaction-service:
+    build: ./transaction-service
+    container_name: transaction-service
+    ports:
+      - "8083:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  budget-service:
+    build: ./budget-service
+    container_name: budget-service
+    ports:
+      - "8084:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      MONGO_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+    depends_on:
+      postgres:
+        condition:
+          service_healthy
+
+  reporting-service:
+    build: ./reporting-service
+    container_name: reporting-service
+    ports:
+      - "8085:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      postgres:
+        condition:
+          service_healthy
+
+# Volumes
 volumes:
   pgdata:
   mongo-data:

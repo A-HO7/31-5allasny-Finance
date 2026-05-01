@@ -4,10 +4,11 @@ server:
 spring:
   application:
     name: account-service
+
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: jdbc:postgresql://localhost:5432/financedb
+    username: postgres
+    password: postgres
   jpa:
     hibernate:
       ddl-auto: update
@@ -16,16 +17,17 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
-    rest:
-      enabled: false
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT}
-      password: ${REDIS_PASSWORD}
-    mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI}
+      host: localhost
+      port: 6379
+      password: redispass
+
+  mongodb:
+    uri: ${SPRING_DATA_MONGODB_URI}
+
   elasticsearch:
     uris: ${ELASTICSEARCH_URI}
+
 jwt:
   secret: "<Base64-encoded shared secret across all 5 services>"
   expiration: 86400000 # 24 hours in ms

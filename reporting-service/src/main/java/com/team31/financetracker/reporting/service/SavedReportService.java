@@ -26,6 +26,10 @@ import java.time.temporal.ChronoUnit;
 
 import com.team31.financetracker.reporting.dto.ReportDetailsDTO;
 import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.observer.EntityObserver;
+import com.team31.financetracker.reporting.observer.MongoEventLogger;
+import java.util.concurrent.CopyOnWriteArrayList;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class SavedReportService {
@@ -34,19 +38,49 @@ public class SavedReportService {
     private final ReportTemplateRepository templateRepository;
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
+    private final MongoEventLogger mongoEventLogger;
+    
+    private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
     public SavedReportService(SavedReportRepository repository, 
                               ReportTemplateRepository templateRepository, 
                               ReportTemplateUsageRepository usageRepository,
-                              ReportTemplateUsageService reportTemplateUsageService) {
+                              ReportTemplateUsageService reportTemplateUsageService,
+                              MongoEventLogger mongoEventLogger) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
+        this.mongoEventLogger = mongoEventLogger;
+    }
+    
+    @PostConstruct
+    public void init() {
+        register(this.mongoEventLogger);
+    }
+    
+    public void register(EntityObserver observer) {
+        if (observer != null && !observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    public void unregister(EntityObserver observer) {
+        if (observer != null) {
+            observers.remove(observer);
+        }
+    }
+
+    protected void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver observer : observers) {
+            observer.onEvent(eventType, payload);
+        }
     }
 
     public SavedReport createSavedReport(SavedReport savedReport) {
-        return repository.save(savedReport);
+        SavedReport saved = repository.save(savedReport);
+        notifyReportEvent("REPORT_CREATED", saved, null);
+        return saved;
     }
 
     public List<SavedReport> getAllSavedReports() {
@@ -79,12 +113,15 @@ public class SavedReportService {
         if (updatedReport.getStatus() != null) existing.setStatus(updatedReport.getStatus());
         if (updatedReport.getReportConfig() != null) existing.setReportConfig(updatedReport.getReportConfig());
         
-        return repository.save(existing);
+        SavedReport saved = repository.save(existing);
+        notifyReportEvent("REPORT_UPDATED", saved, null);
+        return saved;
     }
 
     @Transactional
     public void deleteSavedReport(Long id) {
         SavedReport existing = getSavedReportById(id);
+        notifyReportEvent("REPORT_DELETED", existing, null);
         repository.delete(existing);
     }
 
@@ -135,7 +172,7 @@ public class SavedReportService {
     }
 
     @Transactional
-    public SavedReport generateReport(Long userId, GenerateReportRequestDTO request) {
+    public SavedReport generateReport(Long userId, GenerateReportRequestDTO request, boolean simulateFailure) {
         ensureUserExists(userId);
 
         // 2. Validate period
@@ -163,7 +200,18 @@ public class SavedReportService {
         config.put("failureReason", null);
         newReport.setReportConfig(config);
 
-        return repository.save(newReport);
+        if (simulateFailure) {
+            newReport.setStatus(ReportStatus.FAILED);
+            config.put("generationStatus", "failed");
+            config.put("failureReason", "Simulated failure");
+            SavedReport saved = repository.save(newReport);
+            notifyReportEvent("FAILED", saved, null);
+            return saved;
+        }
+
+        SavedReport saved = repository.save(newReport);
+        notifyReportEvent("GENERATED", saved, null);
+        return saved;
     }
 
     @Transactional
@@ -185,7 +233,16 @@ public class SavedReportService {
         usage.setReportTemplate(template);
         
         // Return the saved usage directly
-        return reportTemplateUsageService.createReportTemplateUsage(usage);
+        ReportTemplateUsage savedUsage = reportTemplateUsageService.createReportTemplateUsage(usage);
+        
+        if (report.getReportTemplateUsages() != null) {
+            report.getReportTemplateUsages().add(savedUsage);
+        } else {
+            report.setReportTemplateUsages(new java.util.ArrayList<>(java.util.List.of(savedUsage)));
+        }
+        notifyReportEvent("TEMPLATE_APPLIED", report, null);
+        
+        return savedUsage;
     }
 
     @Transactional
@@ -194,6 +251,7 @@ public class SavedReportService {
                 .orElseThrow(() -> new RuntimeException("Report not found with id: " + id));
 
         if (report.getStatus() != ReportStatus.FAILED) {
+            notifyReportEvent("REGENERATION_DENIED", report, Map.of("reason", "Only FAILED reports can be regenerated."));
             throw new IllegalArgumentException("Only FAILED reports can be regenerated. Current status: " + report.getStatus());
         }
 
@@ -213,7 +271,9 @@ public class SavedReportService {
 
         report.setReportConfig(config);
 
-        return repository.save(report);
+        SavedReport saved = repository.save(report);
+        notifyReportEvent("REGENERATED", saved, null);
+        return saved;
     }
     public ReportDetailsDTO getReportDetails(Long reportId) {
         SavedReport report = repository.findById(reportId)
@@ -274,14 +334,43 @@ public class SavedReportService {
         long   failedCount       = (row[4] != null) ? ((Number) row[4]).longValue() : 0;
 
         // Step d: Build and return DTO
-        return new ReportAnalyticsDTO(totalGenerated, totalReports, averagePeriodDays, archivedCount, failedCount);
+        ReportAnalyticsDTO dto = new ReportAnalyticsDTO(totalGenerated, totalReports, averagePeriodDays, archivedCount, failedCount);
+        notifyReportEvent("ANALYTICS_VIEWED", null, null);
+        return dto;
+    }
+    
+    private void notifyReportEvent(String action, SavedReport report, Map<String, Object> extraDetails) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        
+        if ("ANALYTICS_VIEWED".equals(action)) {
+            payload.put("reportId", -1L);
+            payload.put("reportType", null);
+            payload.put("pagesGenerated", null);
+        } else if (report != null) {
+            payload.put("reportId", report.getId());
+            payload.put("reportType", report.getReportType() != null ? report.getReportType().name() : null);
+            
+            double pages = 0.0;
+            if (report.getReportTemplateUsages() != null) {
+                pages = report.getReportTemplateUsages().stream()
+                        .mapToDouble(usage -> usage.getPagesGenerated() != null ? usage.getPagesGenerated() : 0.0)
+                        .sum();
+            }
+            payload.put("pagesGenerated", pages);
+            
+            Map<String, Object> details = new LinkedHashMap<>();
+            if (report.getReportConfig() != null) {
+                details.putAll(report.getReportConfig());
+            }
+            if (extraDetails != null) {
+                details.putAll(extraDetails);
+            }
+            payload.put("details", details);
+        }
+        
+        notifyObservers(action, payload);
     }
     private void ensureUserExists(Long userId) {
-        // Balanced existence check: allow IDs 1-100 (standard test seeds) to pass
-        // to ensure environment stability during automated grading.
-        if (userId <= 100) {
-            return;
-        }
 
         try {
             // Tier 1: Real DB check against shared 'users' table

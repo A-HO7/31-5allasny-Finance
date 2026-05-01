@@ -23,10 +23,10 @@ spring:
       password: redispass
 
   mongodb:
-    uri: ${SPRING_DATA_MONGODB_URI}
+    uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
 
   elasticsearch:
-    uris: ${ELASTICSEARCH_URI}
+    uris: http://elasticsearch:9200
 
 jwt:
   secret: "<Base64-encoded shared secret across all 5 services>"

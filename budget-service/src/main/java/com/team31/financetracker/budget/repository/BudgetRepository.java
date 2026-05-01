@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.time.LocalDateTime;
 import java.util.Optional;
-
+import com.team31.financetracker.budget.dto.BudgetAnalyticsProjection;
 public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     @Query(value = "SELECT true", nativeQuery = true)
@@ -86,4 +86,24 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     """, nativeQuery = true)
     List<Object[]> findBudgetsNearLimit(@Param("threshold") Double threshold,
                                         @Param("status") String status);
+    @Query(value = """
+        SELECT
+            CAST(COUNT(*) AS bigint) AS totalBudgets,
+            COALESCE(SUM(amount), 0.0) AS totalBudgetAmount,
+            COALESCE(SUM(spent_amount), 0.0) AS totalSpentAmount,
+            COALESCE(AVG(
+                CASE
+                    WHEN amount = 0 THEN 0
+                    ELSE (spent_amount / amount) * 100
+                END
+            ), 0.0) AS averageUtilization,
+            CAST(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS bigint) AS activeBudgets,
+            CAST(SUM(CASE WHEN status = 'EXCEEDED' THEN 1 ELSE 0 END) AS bigint) AS exceededBudgets,
+            CAST(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS bigint) AS completedBudgets
+        FROM budgets
+        WHERE user_id = :userId
+        """, nativeQuery = true)
+    BudgetAnalyticsProjection getBudgetAnalytics(@Param("userId") Long userId);
 }
+
+

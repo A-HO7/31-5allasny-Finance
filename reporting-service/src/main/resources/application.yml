@@ -24,5 +24,5 @@ spring:
       uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
 
 jwt:
-  secret: "<Base64-encoded shared secret across all 5 services>"
+  secret: "ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev"
   expiration: 86400000 # 24 hours in ms

@@ -6,18 +6,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.team31.financetracker.reporting.dto.TemplateUsageDTO;
-import java.time.LocalDateTime;
-import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.adapter.TemplateUsageAdapter;
 
 @Service
 public class ReportTemplateService {
 
     private final ReportTemplateRepository repository;
+    private final TemplateUsageAdapter templateUsageAdapter;
 
-    public ReportTemplateService(ReportTemplateRepository repository) {
+    public ReportTemplateService(ReportTemplateRepository repository,
+                                  TemplateUsageAdapter templateUsageAdapter) {
         this.repository = repository;
+        this.templateUsageAdapter = templateUsageAdapter;
     }
 
     public ReportTemplate createReportTemplate(ReportTemplate template) {
@@ -68,37 +71,14 @@ public class ReportTemplateService {
         repository.delete(existing);
     }
 
+    /**
+     * S5-F9 — returns top-used templates as DTOs.
+     * Uses native SQL returning Object[], mapped via TemplateUsageAdapter (Adapter Pattern).
+     */
     public List<TemplateUsageDTO> getTopUsedTemplates(int limit) {
         List<Object[]> rows = repository.findTopUsedTemplates(limit);
-        return rows.stream().map(row -> {
-            Long templateId = ((Number) row[0]).longValue();
-            String code = (String) row[1];
-            String templateType = (String) row[2];
-            Double maxPages = ((Number) row[3]).doubleValue();
-            Integer timesUsed = ((Number) row[4]).intValue();
-            Double totalPagesGenerated = ((Number) row[5]).doubleValue();
-            Boolean active = (Boolean) row[6];
-            LocalDateTime expiryDate = null;
-            if (row[7] != null) {
-                if (row[7] instanceof java.sql.Timestamp) {
-                    expiryDate = ((java.sql.Timestamp) row[7]).toLocalDateTime();
-                } else if (row[7] instanceof LocalDateTime) {
-                    expiryDate = (LocalDateTime) row[7];
-                } else {
-                    expiryDate = LocalDateTime.parse(row[7].toString());
-                }
-            }
-            Boolean expired = expiryDate != null && expiryDate.isBefore(LocalDateTime.now());
-            return TemplateUsageDTO.builder()
-                    .templateId(templateId)
-                    .code(code)
-                    .templateType(templateType)
-                    .maxPages(maxPages)
-                    .timesUsed(timesUsed)
-                    .totalPagesGenerated(totalPagesGenerated)
-                    .active(active)
-                    .expired(expired)
-                    .build();
-        }).collect(Collectors.toList());
+        return rows.stream()
+                .map(templateUsageAdapter::adapt)
+                .collect(Collectors.toList());
     }
 }

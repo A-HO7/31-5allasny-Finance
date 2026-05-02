@@ -159,4 +159,9 @@ public class SavedReportController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
+    @GetMapping("/{reportId}/audit")
+    public ResponseEntity<?> getReportAuditTrail(@PathVariable Long reportId) {
+        return ResponseEntity.ok(service.getReportAuditTrail(reportId));
+    }
 }

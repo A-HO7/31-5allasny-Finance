@@ -26,19 +26,33 @@ import java.time.temporal.ChronoUnit;
 
 import com.team31.financetracker.reporting.dto.ReportDetailsDTO;
 import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter;
+import com.team31.financetracker.reporting.dto.ReportTypeBreakdownProjection;
+import com.team31.financetracker.reporting.adapter.MongoDocumentAdapter;
+import com.team31.financetracker.reporting.dto.ReportAuditEventDTO;
+import com.team31.financetracker.reporting.mongo.ReportAuditEvent;
+import com.team31.financetracker.reporting.mongo.ReportAuditEventRepository;
 import com.team31.financetracker.reporting.observer.EntityObserver;
 import com.team31.financetracker.reporting.observer.MongoEventLogger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class SavedReportService {
+
+    private static final Logger log = LoggerFactory.getLogger(SavedReportService.class);
 
     private final SavedReportRepository repository;
     private final ReportTemplateRepository templateRepository;
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
     private final MongoEventLogger mongoEventLogger;
+    private final ReportAnalyticsAdapter reportAnalyticsAdapter;
+
+    private final MongoDocumentAdapter mongoDocumentAdapter;
+    private final ReportAuditEventRepository auditEventRepository;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
@@ -46,12 +60,20 @@ public class SavedReportService {
                               ReportTemplateRepository templateRepository, 
                               ReportTemplateUsageRepository usageRepository,
                               ReportTemplateUsageService reportTemplateUsageService,
-                              MongoEventLogger mongoEventLogger) {
+                              MongoEventLogger mongoEventLogger,
+                              ReportAnalyticsAdapter reportAnalyticsAdapter,
+
+                              MongoDocumentAdapter mongoDocumentAdapter,
+                              ReportAuditEventRepository auditEventRepository) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
         this.mongoEventLogger = mongoEventLogger;
+        this.reportAnalyticsAdapter = reportAnalyticsAdapter;
+
+        this.mongoDocumentAdapter = mongoDocumentAdapter;
+        this.auditEventRepository = auditEventRepository;
     }
     
     @PostConstruct
@@ -81,6 +103,23 @@ public class SavedReportService {
         SavedReport saved = repository.save(savedReport);
         notifyReportEvent("REPORT_CREATED", saved, null);
         return saved;
+    }
+
+    /**
+     * Reads all MongoDB audit events for a given report and converts them
+     * via MongoDocumentAdapter (Adapter Pattern — NoSQL read path for S5).
+     */
+    public List<ReportAuditEventDTO> getReportAuditTrail(Long reportId) {
+        List<ReportAuditEvent> events;
+        try {
+            events = auditEventRepository.findByReportIdOrderByTimestampDesc(reportId);
+        } catch (Exception e) {
+            log.warn("Could not retrieve audit trail from MongoDB for reportId {}: {}", reportId, e.getMessage());
+            events = new java.util.ArrayList<>();
+        }
+        return events.stream()
+                .map(mongoDocumentAdapter::adapt)
+                .collect(Collectors.toList());
     }
 
     public List<SavedReport> getAllSavedReports() {
@@ -151,25 +190,23 @@ public class SavedReportService {
         ensureUserExists(userId);
 
         // Step b & c: Query grouped counts, build typeBreakdown map
-        List<Object[]> rows;
+        List<ReportTypeBreakdownProjection> rows;
         try {
             rows = repository.countGeneratedReportsByType(userId);
         } catch (Exception e) {
             rows = new java.util.ArrayList<>();
         }
         
+        long totalReports = repository.countByUserId(userId);
+
+        // Step d & e: Build and return DTO manually (Projection)
         Map<String, Integer> typeBreakdown = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            String type = row[0].toString();
-            Integer count = ((Number) row[1]).intValue();
-            typeBreakdown.put(type, count);
+        for (ReportTypeBreakdownProjection row : rows) {
+            typeBreakdown.put(row.getReportType(), row.getCount());
         }
 
-        // Step d: Calculate totals
-        long totalReports = repository.countByUserId(userId);
         long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
 
-        // Step e: Build and return DTO
         return UserReportSummaryDTO.builder()
                 .userId(userId)
                 .totalReports(totalReports)
@@ -329,31 +366,10 @@ public class SavedReportService {
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);
-        if (results == null || results.isEmpty() || results.get(0) == null) {
-            return ReportAnalyticsDTO.builder()
-                    .totalGenerated(0)
-                    .totalReports(0)
-                    .averagePeriodDays(0.0)
-                    .archivedCount(0)
-                    .failedCount(0)
-                    .build();
-        }
-
-        Object[] row = results.get(0);
-        long   totalReports      = (row[0] != null) ? ((Number) row[0]).longValue() : 0;
-        long   totalGenerated    = (row[1] != null) ? ((Number) row[1]).longValue() : 0;
-        double averagePeriodDays = (row[2] != null) ? ((Number) row[2]).doubleValue() : 0.0;
-        long   archivedCount     = (row[3] != null) ? ((Number) row[3]).longValue() : 0;
-        long   failedCount       = (row[4] != null) ? ((Number) row[4]).longValue() : 0;
-
-        // Step d: Build and return DTO
-        ReportAnalyticsDTO dto = ReportAnalyticsDTO.builder()
-                .totalGenerated(totalGenerated)
-                .totalReports(totalReports)
-                .averagePeriodDays(averagePeriodDays)
-                .archivedCount(archivedCount)
-                .failedCount(failedCount)
-                .build();
+        Object[] row = (results != null && !results.isEmpty()) ? results.get(0) : null;
+        
+        // Step d: Build and return DTO via Adapter
+        ReportAnalyticsDTO dto = reportAnalyticsAdapter.adapt(row);
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }

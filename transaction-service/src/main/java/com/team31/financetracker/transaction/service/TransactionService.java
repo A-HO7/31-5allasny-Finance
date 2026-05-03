@@ -9,14 +9,19 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
+import com.team31.financetracker.transaction.observer.EntityObserver;
+import com.team31.financetracker.transaction.observer.MongoEventLogger;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -26,9 +31,47 @@ import java.util.stream.Collectors;
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
-    public TransactionService(TransactionRepository transactionRepository) {
+    // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
+    // Each service owns its own observer list — not shared across services.
+    private final List<EntityObserver> observers = new ArrayList<>();
+
+    /**
+     * MongoEventLogger is injected by Spring and registered immediately so that
+     * every write endpoint fires events from the first request onward.
+     */
+    public TransactionService(TransactionRepository transactionRepository,
+            MongoEventLogger mongoEventLogger,
+            CacheInvalidationService cacheInvalidationService) {
         this.transactionRepository = transactionRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
+        registerObserver(mongoEventLogger);
+    }
+
+    /** Register an observer to receive state-change notifications. */
+    public void registerObserver(EntityObserver observer) {
+        if (!observers.contains(observer)) {
+            observers.add(observer);
+        }
+    }
+
+    /** Unregister an observer (used in unit tests to verify the observer path). */
+    public void unregisterObserver(EntityObserver observer) {
+        observers.remove(observer);
+    }
+
+    /**
+     * Notify all registered observers of a state change.
+     * Called AFTER the PostgreSQL save so the observer can read the persisted
+     * state.
+     * Any exception thrown by an observer is caught inside MongoEventLogger — it
+     * never propagates here and never rolls back the PG transaction.
+     */
+    private void notifyObservers(String eventType, Object payload) {
+        for (EntityObserver observer : observers) {
+            observer.onEvent(eventType, payload);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -39,16 +82,21 @@ public class TransactionService {
     public Transaction createTransaction(Transaction transaction) {
         transaction.setId(null); // enforce auto-generation
         ensureSplitBackReferences(transaction); // fix back-refs if splits were embedded
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("TRANSACTION_CREATED", saved); // DP-2 Observer
+        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
+        return saved;
     }
 
     public List<Transaction> getAllTransactions() {
         return transactionRepository.findAll();
     }
 
+    @Cacheable(value = "transaction-service", key = "'transaction::' + #id")
     public Transaction getTransactionById(Long id) {
         return transactionRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Transaction not found"));
     }
 
     /**
@@ -88,19 +136,26 @@ public class TransactionService {
         if (updatedTransaction.getMetadata() != null && !updatedTransaction.getMetadata().isEmpty())
             existing.setMetadata(updatedTransaction.getMetadata());
 
-        return transactionRepository.saveAndFlush(existing);
+        Transaction saved = transactionRepository.saveAndFlush(existing);
+        notifyObservers("TRANSACTION_UPDATED", saved); // DP-2 Observer
+        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
+        return saved;
     }
 
     @Transactional
     public void deleteTransaction(Long id) {
         Transaction existing = getTransactionById(id);
+        // Fire event BEFORE delete so the payload still carries the entity's fields
+        notifyObservers("TRANSACTION_DELETED", existing); // DP-2 Observer
         transactionRepository.delete(existing);
+        cacheInvalidationService.evictAllTransactionCaches(id);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // F1 — Get Transactions by Status and Date Range
     // ═══════════════════════════════════════════════════════════════════════════
 
+    @Cacheable(value = "transaction-service", key = "'S3-F1::' + #startDate + '-' + #endDate + '-' + #status")
     public List<Transaction> searchByDateRangeAndOptionalStatus(
             LocalDate startDate, LocalDate endDate, TransactionStatus status) {
 
@@ -124,7 +179,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F2 — Approve Transaction (Transactional)
+    // F2 — Approve Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -141,7 +196,8 @@ public class TransactionService {
         String role;
         try {
             role = transactionRepository.findUserRoleById(approverId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "User not found"));
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
@@ -176,12 +232,15 @@ public class TransactionService {
                                 "TRANSFER requires a toAccountId");
                     int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
                     if (from != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Source account not found");
-                    int to = transactionRepository.addToAccountBalance(transaction.getToAccountId(), amount);
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Source account not found");
+                    int to = transactionRepository.addToAccountBalance(
+                            transaction.getToAccountId(), amount);
                     if (to != 1) {
                         // roll back the deduct
                         transactionRepository.addToAccountBalance(accountId, amount);
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Destination account not found");
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Destination account not found");
                     }
                 }
             }
@@ -194,18 +253,23 @@ public class TransactionService {
 
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("APPROVED", saved); // DP-2 Observer — S3-F2 write
+        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
+        return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F3 — Get Transfer Fee Estimate (DTO, read-only)
+    // F3 — Get Transfer Fee Estimate (DTO, read-only — no observer needed)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "transaction-service", key = "'S3-F3::' + #request.hashCode()")
     public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
         // Validate amount
         if (request.amount() == null || request.amount() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be positive");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "amount must be positive");
         }
         if (request.accountId() == null || request.toAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -236,11 +300,16 @@ public class TransactionService {
         double transferFee = amount * feePercentage / 100.0;
         double netTransfer = amount - transferFee;
 
-        return new TransferEstimateDTO(amount, transferFee, netTransfer, feePercentage);
+        return TransferEstimateDTO.builder()
+                .amount(amount)
+                .transferFee(transferFee)
+                .netTransfer(netTransfer)
+                .feePercentage(feePercentage)
+                .build();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F4 — Complete Transaction (Transactional)
+    // F4 — Complete Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -269,13 +338,16 @@ public class TransactionService {
             }
         }
 
+        notifyObservers("COMPLETED", transaction); // DP-2 Observer — S3-F4 write
+        cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
         return transaction;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F5 — Filter Transactions by Metadata Field (JSONB)
+    // F5 — Filter Transactions by Metadata Field (JSONB, read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
+    @Cacheable(value = "transaction-service", key = "'S3-F5::' + #key + '-' + #value")
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
         if (key == null || key.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -289,9 +361,10 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F6 — Transaction Analytics by Time Period
+    // F6 — Transaction Analytics by Time Period (read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
+    @Cacheable(value = "transaction-service", key = "'S3-F6::' + #startDate + '-' + #endDate")
     public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
         LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
@@ -307,25 +380,12 @@ public class TransactionService {
         Map<String, Object> raw = transactionRepository
                 .getTransactionAnalytics(rangeStart, rangeEndExclusive);
 
-        if (raw == null) {
-            return new TransactionAnalyticsDTO(0, 0, 0, 0.0, 0.0, 0.0);
-        }
-
-        int totalTransactions = toInt(raw.get("totalTransactions"));
-        int completedTransactions = toInt(raw.get("completedTransactions"));
-        int voidedTransactions = toInt(raw.get("voidedTransactions"));
-        double totalIncome = toDouble(raw.get("totalIncome"));
-        double totalExpenses = toDouble(raw.get("totalExpenses"));
-        double savingsRate = (totalIncome > 0)
-                ? ((totalIncome - totalExpenses) / totalIncome) * 100.0
-                : 0.0;
-
-        return new TransactionAnalyticsDTO(totalTransactions, completedTransactions,
-                voidedTransactions, totalIncome, totalExpenses, savingsRate);
+        TransactionAnalyticsAdapter adapter = new TransactionAnalyticsAdapter();
+        return adapter.adapt(raw);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F7 — Void Transaction (Transactional)
+    // F7 — Void Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -361,15 +421,18 @@ public class TransactionService {
         }
 
         transaction.setStatus(TransactionStatus.VOIDED);
-        transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("VOIDED", saved); // DP-2 Observer — S3-F7 write
+        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F8 — Add Splits to Transaction (Transactional + Relationship)
+    // F8 — Add Splits to Transaction (Finance Tracker deviation write → Observer)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
-    public Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit> splitRequests) {
+    public Transaction addSplitsToTransaction(Long transactionId,
+            List<TransactionSplit> splitRequests) {
         Transaction transaction = getTransactionById(transactionId);
 
         // Validate transaction status
@@ -427,38 +490,44 @@ public class TransactionService {
         }
 
         // Save transaction — cascade persists the new splits
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+        notifyObservers("SPLITS_ADDED", saved); // DP-2 Observer — S3-F8 Finance Tracker deviation
+        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
+        return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F9 — Get Transaction Details with Splits (DTO)
+    // F9 — Get Transaction Details with Splits (DTO, read-only)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "transaction-service", key = "'S3-F9::' + #transactionId")
     public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
         Transaction transaction = getTransactionById(transactionId);
 
         List<TransactionDetailsDTO.SplitDTO> splitDTOs = transaction.getTransactionSplits()
                 .stream()
                 .sorted(Comparator.comparingInt(TransactionSplit::getSplitOrder))
-                .map(s -> new TransactionDetailsDTO.SplitDTO(
-                        s.getId(),
-                        s.getSplitOrder(),
-                        s.getRecipientName(),
-                        s.getAmount(),
-                        s.getDescription(),
-                        s.getStatus(),
-                        s.getMetadata()))
+                .map(s -> TransactionDetailsDTO.SplitDTO.builder()
+                        .id(s.getId())
+                        .splitOrder(s.getSplitOrder())
+                        .recipientName(s.getRecipientName())
+                        .amount(s.getAmount())
+                        .description(s.getDescription())
+                        .status(s.getStatus())
+                        .metadata(s.getMetadata())
+                        .build())
                 .collect(Collectors.toList());
 
-        return new TransactionDetailsDTO(
-                transaction.getId(),
-                transaction.getAccountId(),
-                transaction.getUserId(),
-                transaction.getStatus() != null ? transaction.getStatus().name() : null,
-                transaction.getAmount(),
-                transaction.getMetadata(),
-                splitDTOs);
+        return TransactionDetailsDTO.builder()
+                .transactionId(transaction.getId())
+                .accountId(transaction.getAccountId())
+                .userId(transaction.getUserId())
+                .status(transaction.getStatus() != null ? transaction.getStatus().name() : null)
+                .amount(transaction.getAmount())
+                .metadata(transaction.getMetadata())
+                .splits(splitDTOs)
+                .build();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -476,27 +545,5 @@ public class TransactionService {
         }
     }
 
-    private int toInt(Object value) {
-        if (value == null)
-            return 0;
-        if (value instanceof Number)
-            return ((Number) value).intValue();
-        try {
-            return Integer.parseInt(value.toString());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
-
-    private double toDouble(Object value) {
-        if (value == null)
-            return 0.0;
-        if (value instanceof Number)
-            return ((Number) value).doubleValue();
-        try {
-            return Double.parseDouble(value.toString());
-        } catch (NumberFormatException e) {
-            return 0.0;
-        }
-    }
+    // Removed private helpers toInt and toDouble as they are now in the adapter
 }

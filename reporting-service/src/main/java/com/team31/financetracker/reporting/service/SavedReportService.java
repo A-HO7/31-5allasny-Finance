@@ -40,6 +40,8 @@ public class SavedReportService {
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
     private final MongoEventLogger mongoEventLogger;
+    private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
+    private final com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter reportAnalyticsAdapter;
     private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
@@ -49,12 +51,16 @@ public class SavedReportService {
                               ReportTemplateUsageRepository usageRepository,
                               ReportTemplateUsageService reportTemplateUsageService,
                               MongoEventLogger mongoEventLogger,
+                              com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter,
+                              com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter reportAnalyticsAdapter) {
                               com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
         this.mongoEventLogger = mongoEventLogger;
+        this.userReportSummaryAdapter = userReportSummaryAdapter;
+        this.reportAnalyticsAdapter = reportAnalyticsAdapter;
         this.redisCacheEvictor = redisCacheEvictor;
     }
     
@@ -169,24 +175,8 @@ public class SavedReportService {
             rows = new java.util.ArrayList<>();
         }
         
-        Map<String, Integer> typeBreakdown = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            String type = row[0].toString();
-            Integer count = ((Number) row[1]).intValue();
-            typeBreakdown.put(type, count);
-        }
-
-        // Step d: Calculate totals
         long totalReports = repository.countByUserId(userId);
-        long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
-
-        // Step e: Build and return DTO
-        return UserReportSummaryDTO.builder()
-                .userId(userId)
-                .totalReports(totalReports)
-                .generatedCount(generatedCount)
-                .typeBreakdown(typeBreakdown)
-                .build();
+        return userReportSummaryAdapter.adapt(userId, rows, totalReports);
     }
 
     @Transactional
@@ -351,31 +341,8 @@ public class SavedReportService {
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);
-        if (results == null || results.isEmpty() || results.get(0) == null) {
-            return ReportAnalyticsDTO.builder()
-                    .totalGenerated(0)
-                    .totalReports(0)
-                    .averagePeriodDays(0.0)
-                    .archivedCount(0)
-                    .failedCount(0)
-                    .build();
-        }
-
-        Object[] row = results.get(0);
-        long   totalReports      = (row[0] != null) ? ((Number) row[0]).longValue() : 0;
-        long   totalGenerated    = (row[1] != null) ? ((Number) row[1]).longValue() : 0;
-        double averagePeriodDays = (row[2] != null) ? ((Number) row[2]).doubleValue() : 0.0;
-        long   archivedCount     = (row[3] != null) ? ((Number) row[3]).longValue() : 0;
-        long   failedCount       = (row[4] != null) ? ((Number) row[4]).longValue() : 0;
-
-        // Step d: Build and return DTO
-        ReportAnalyticsDTO dto = ReportAnalyticsDTO.builder()
-                .totalGenerated(totalGenerated)
-                .totalReports(totalReports)
-                .averagePeriodDays(averagePeriodDays)
-                .archivedCount(archivedCount)
-                .failedCount(failedCount)
-                .build();
+        
+        ReportAnalyticsDTO dto = reportAnalyticsAdapter.adapt(results);
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }

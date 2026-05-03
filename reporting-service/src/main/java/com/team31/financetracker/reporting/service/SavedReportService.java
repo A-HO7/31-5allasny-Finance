@@ -4,6 +4,7 @@ import com.team31.financetracker.reporting.model.SavedReport;
 import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,6 +54,8 @@ public class SavedReportService {
 
     private final MongoDocumentAdapter mongoDocumentAdapter;
     private final ReportAuditEventRepository auditEventRepository;
+    //private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
@@ -64,7 +67,8 @@ public class SavedReportService {
                               ReportAnalyticsAdapter reportAnalyticsAdapter,
 
                               MongoDocumentAdapter mongoDocumentAdapter,
-                              ReportAuditEventRepository auditEventRepository) {
+                              ReportAuditEventRepository auditEventRepository,
+                              com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
@@ -74,6 +78,7 @@ public class SavedReportService {
 
         this.mongoDocumentAdapter = mongoDocumentAdapter;
         this.auditEventRepository = auditEventRepository;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
     
     @PostConstruct
@@ -102,6 +107,7 @@ public class SavedReportService {
     public SavedReport createSavedReport(SavedReport savedReport) {
         SavedReport saved = repository.save(savedReport);
         notifyReportEvent("REPORT_CREATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -126,6 +132,7 @@ public class SavedReportService {
         return repository.findAll();
     }
 
+    @Cacheable(value = "reporting-service::S5-F1")
     public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
                                            LocalDate startDate, LocalDate endDate) {
         boolean hasType   = reportType != null;
@@ -136,6 +143,7 @@ public class SavedReportService {
         return repository.searchReports(hasType, reportType, hasStatus, status, hasStart, startDate, hasEnd, endDate);
     }
 
+    @Cacheable(value = "reporting-service::saved-report", key = "#id")
     public SavedReport getSavedReportById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("SavedReport not found with id: " + id));
     }
@@ -154,6 +162,7 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(existing);
         notifyReportEvent("REPORT_UPDATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -162,6 +171,7 @@ public class SavedReportService {
         SavedReport existing = getSavedReportById(id);
         notifyReportEvent("REPORT_DELETED", existing, null);
         repository.delete(existing);
+        evictWildcardCaches(id);
     }
 
     @Transactional
@@ -183,9 +193,11 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(report);
         notifyReportEvent("ARCHIVED", saved, Map.of("reason", reason));
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
+    @Cacheable(value = "reporting-service::S5-F3", key = "#userId")
     public UserReportSummaryDTO getUserReportSummary(Long userId) {
         ensureUserExists(userId);
 
@@ -250,11 +262,13 @@ public class SavedReportService {
             config.put("failureReason", "Simulated failure");
             SavedReport saved = repository.save(newReport);
             notifyReportEvent("FAILED", saved, null);
+            evictWildcardCaches(saved.getId());
             return saved;
         }
 
         SavedReport saved = repository.save(newReport);
         notifyReportEvent("GENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -285,6 +299,12 @@ public class SavedReportService {
             report.setReportTemplateUsages(new java.util.ArrayList<>(java.util.List.of(savedUsage)));
         }
         notifyReportEvent("TEMPLATE_APPLIED", report, null);
+        
+        evictWildcardCaches(reportId);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F9::*",
+                "reporting-service::report-template-usage::*"
+        );
         
         return savedUsage;
     }
@@ -317,8 +337,10 @@ public class SavedReportService {
 
         SavedReport saved = repository.save(report);
         notifyReportEvent("REGENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
+    @Cacheable(value = "reporting-service::S5-F8", key = "#reportId")
     public ReportDetailsDTO getReportDetails(Long reportId) {
         SavedReport report = repository.findById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found with id: " + reportId));
@@ -351,6 +373,7 @@ public class SavedReportService {
                 .build();
     }
 
+    @Cacheable(value = "reporting-service::S5-F6")
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
         // Step a: Validate — both must be provided or both must be absent
         if ((startDate == null) != (endDate == null)) {
@@ -421,5 +444,16 @@ public class SavedReportService {
                 throw new RuntimeException("User not found with id: " + userId);
             }
         }
+    }
+    private void evictWildcardCaches(Long entityId) {
+        if (entityId != null) {
+            redisCacheEvictor.evictByPatterns("reporting-service::saved-report::" + entityId);
+        }
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F1::*",
+                "reporting-service::S5-F3::*",
+                "reporting-service::S5-F6::*",
+                "reporting-service::S5-F8::*"
+        );
     }
 }

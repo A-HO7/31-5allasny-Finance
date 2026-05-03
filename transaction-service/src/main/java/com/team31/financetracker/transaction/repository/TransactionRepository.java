@@ -99,4 +99,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
            nativeQuery = true)
     Map<String, Object> getTransactionAnalytics(@Param("start") LocalDateTime start,
                                                 @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query("SELECT t.category, COUNT(t) FROM Transaction t " +
+           "WHERE t.transactionDate >= :start AND t.transactionDate < :endExclusive " +
+           "GROUP BY t.category")
+    List<Object[]> countTransactionsByCategory(@Param("start") LocalDateTime start,
+                                               @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query("SELECT t.status, COUNT(t) FROM Transaction t " +
+           "WHERE t.transactionDate >= :start AND t.transactionDate < :endExclusive " +
+           "GROUP BY t.status")
+    List<Object[]> countTransactionsByStatus(@Param("start") LocalDateTime start,
+                                             @Param("endExclusive") LocalDateTime endExclusive);
 }

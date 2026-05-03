@@ -27,21 +27,34 @@ import java.time.temporal.ChronoUnit;
 
 import com.team31.financetracker.reporting.dto.ReportDetailsDTO;
 import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter;
+import com.team31.financetracker.reporting.dto.ReportTypeBreakdownProjection;
+import com.team31.financetracker.reporting.adapter.MongoDocumentAdapter;
+import com.team31.financetracker.reporting.dto.ReportAuditEventDTO;
+import com.team31.financetracker.reporting.mongo.ReportAuditEvent;
+import com.team31.financetracker.reporting.mongo.ReportAuditEventRepository;
 import com.team31.financetracker.reporting.observer.EntityObserver;
 import com.team31.financetracker.reporting.observer.MongoEventLogger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class SavedReportService {
+
+    private static final Logger log = LoggerFactory.getLogger(SavedReportService.class);
 
     private final SavedReportRepository repository;
     private final ReportTemplateRepository templateRepository;
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
     private final MongoEventLogger mongoEventLogger;
-    private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
-    private final com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter reportAnalyticsAdapter;
+    private final ReportAnalyticsAdapter reportAnalyticsAdapter;
+
+    private final MongoDocumentAdapter mongoDocumentAdapter;
+    private final ReportAuditEventRepository auditEventRepository;
+    //private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
     private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
@@ -51,16 +64,20 @@ public class SavedReportService {
                               ReportTemplateUsageRepository usageRepository,
                               ReportTemplateUsageService reportTemplateUsageService,
                               MongoEventLogger mongoEventLogger,
-                              com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter,
-                              com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter reportAnalyticsAdapter) {
+                              ReportAnalyticsAdapter reportAnalyticsAdapter,
+
+                              MongoDocumentAdapter mongoDocumentAdapter,
+                              ReportAuditEventRepository auditEventRepository,
                               com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
         this.mongoEventLogger = mongoEventLogger;
-        this.userReportSummaryAdapter = userReportSummaryAdapter;
         this.reportAnalyticsAdapter = reportAnalyticsAdapter;
+
+        this.mongoDocumentAdapter = mongoDocumentAdapter;
+        this.auditEventRepository = auditEventRepository;
         this.redisCacheEvictor = redisCacheEvictor;
     }
     
@@ -92,6 +109,23 @@ public class SavedReportService {
         notifyReportEvent("REPORT_CREATED", saved, null);
         evictWildcardCaches(saved.getId());
         return saved;
+    }
+
+    /**
+     * Reads all MongoDB audit events for a given report and converts them
+     * via MongoDocumentAdapter (Adapter Pattern — NoSQL read path for S5).
+     */
+    public List<ReportAuditEventDTO> getReportAuditTrail(Long reportId) {
+        List<ReportAuditEvent> events;
+        try {
+            events = auditEventRepository.findByReportIdOrderByTimestampDesc(reportId);
+        } catch (Exception e) {
+            log.warn("Could not retrieve audit trail from MongoDB for reportId {}: {}", reportId, e.getMessage());
+            events = new java.util.ArrayList<>();
+        }
+        return events.stream()
+                .map(mongoDocumentAdapter::adapt)
+                .collect(Collectors.toList());
     }
 
     public List<SavedReport> getAllSavedReports() {
@@ -168,7 +202,7 @@ public class SavedReportService {
         ensureUserExists(userId);
 
         // Step b & c: Query grouped counts, build typeBreakdown map
-        List<Object[]> rows;
+        List<ReportTypeBreakdownProjection> rows;
         try {
             rows = repository.countGeneratedReportsByType(userId);
         } catch (Exception e) {
@@ -176,7 +210,21 @@ public class SavedReportService {
         }
         
         long totalReports = repository.countByUserId(userId);
-        return userReportSummaryAdapter.adapt(userId, rows, totalReports);
+
+        // Step d & e: Build and return DTO manually (Projection)
+        Map<String, Integer> typeBreakdown = new LinkedHashMap<>();
+        for (ReportTypeBreakdownProjection row : rows) {
+            typeBreakdown.put(row.getReportType(), row.getCount());
+        }
+
+        long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
+
+        return UserReportSummaryDTO.builder()
+                .userId(userId)
+                .totalReports(totalReports)
+                .generatedCount(generatedCount)
+                .typeBreakdown(typeBreakdown)
+                .build();
     }
 
     @Transactional
@@ -341,8 +389,10 @@ public class SavedReportService {
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);
+        Object[] row = (results != null && !results.isEmpty()) ? results.get(0) : null;
         
-        ReportAnalyticsDTO dto = reportAnalyticsAdapter.adapt(results);
+        // Step d: Build and return DTO via Adapter
+        ReportAnalyticsDTO dto = reportAnalyticsAdapter.adapt(row);
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }

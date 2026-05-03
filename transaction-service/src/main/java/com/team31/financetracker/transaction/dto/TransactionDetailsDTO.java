@@ -17,6 +17,58 @@ public class TransactionDetailsDTO {
     private int totalSplits;
     private long settledSplits;
 
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static class Builder {
+        private Long transactionId;
+        private Long accountId;
+        private Long userId;
+        private String status;
+        private Double amount;
+        private Map<String, Object> metadata;
+        private List<SplitDTO> splits;
+
+        public Builder transactionId(Long transactionId) {
+            this.transactionId = transactionId;
+            return this;
+        }
+
+        public Builder accountId(Long accountId) {
+            this.accountId = accountId;
+            return this;
+        }
+
+        public Builder userId(Long userId) {
+            this.userId = userId;
+            return this;
+        }
+
+        public Builder status(String status) {
+            this.status = status;
+            return this;
+        }
+
+        public Builder amount(Double amount) {
+            this.amount = amount;
+            return this;
+        }
+
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
+        public Builder splits(List<SplitDTO> splits) {
+            this.splits = splits;
+            return this;
+        }
+
+        public TransactionDetailsDTO build() {
+            return new TransactionDetailsDTO(transactionId, accountId, userId, status, amount, metadata, splits);
+        }
+    }
 
     public static class SplitDTO {
 
@@ -27,6 +79,59 @@ public class TransactionDetailsDTO {
         private String description;
         private String status;
         private Map<String, Object> metadata;
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public static class Builder {
+            private Long id;
+            private Integer splitOrder;
+            private String recipientName;
+            private Double amount;
+            private String description;
+            private TransactionSplitsStatus status;
+            private Map<String, Object> metadata;
+
+            public Builder id(Long id) {
+                this.id = id;
+                return this;
+            }
+
+            public Builder splitOrder(Integer splitOrder) {
+                this.splitOrder = splitOrder;
+                return this;
+            }
+
+            public Builder recipientName(String recipientName) {
+                this.recipientName = recipientName;
+                return this;
+            }
+
+            public Builder amount(Double amount) {
+                this.amount = amount;
+                return this;
+            }
+
+            public Builder description(String description) {
+                this.description = description;
+                return this;
+            }
+
+            public Builder status(TransactionSplitsStatus status) {
+                this.status = status;
+                return this;
+            }
+
+            public Builder metadata(Map<String, Object> metadata) {
+                this.metadata = metadata;
+                return this;
+            }
+
+            public SplitDTO build() {
+                return new SplitDTO(id, splitOrder, recipientName, amount, description, status, metadata);
+            }
+        }
 
         public SplitDTO(Long id, Integer splitOrder, String recipientName,
                         Double amount, String description,

@@ -16,16 +16,23 @@ import java.util.stream.Collectors;
 public class ReportTemplateService {
 
     private final ReportTemplateRepository repository;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
 
-    public ReportTemplateService(ReportTemplateRepository repository) {
+    public ReportTemplateService(ReportTemplateRepository repository, com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
 
     public ReportTemplate createReportTemplate(ReportTemplate template) {
         if (template.getCode() != null && repository.existsByCode(template.getCode())) {
             throw new IllegalArgumentException("Template code must be unique");
         }
-        return repository.save(template);
+        ReportTemplate saved = repository.save(template);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + saved.getId(),
+                "reporting-service::S5-F9::*"
+        );
+        return saved;
     }
 
     public List<ReportTemplate> getAllReportTemplates() {
@@ -61,13 +68,22 @@ public class ReportTemplateService {
             existing.setActive(updatedTemplate.getActive());
         }
 
-        return repository.save(existing);
+        ReportTemplate saved = repository.save(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + saved.getId(),
+                "reporting-service::S5-F9::*"
+        );
+        return saved;
     }
 
     @Transactional
     public void deleteReportTemplate(Long id) {
         ReportTemplate existing = getReportTemplateById(id);
         repository.delete(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + id,
+                "reporting-service::S5-F9::*"
+        );
     }
 
     @Cacheable(value = "reporting-service::S5-F9", key = "#limit")

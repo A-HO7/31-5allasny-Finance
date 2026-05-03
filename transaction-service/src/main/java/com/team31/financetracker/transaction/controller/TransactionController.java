@@ -8,6 +8,7 @@ import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
+import com.team31.financetracker.transaction.security.AuthContext;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.service.TransactionService;
@@ -34,7 +35,8 @@ public class TransactionController {
 
     public TransactionController(TransactionService transactionService,
             TransactionSplitService transactionSplitService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AuthContext authContext) {
         this.transactionService = transactionService;
         this.transactionSplitService = transactionSplitService;
         this.objectMapper = objectMapper;
@@ -209,6 +211,15 @@ public class TransactionController {
     @GetMapping("/{transactionId}/details")
     public TransactionDetailsDTO getTransactionDetails(@PathVariable Long transactionId) {
         return transactionService.getTransactionDetails(transactionId);
+    }
+
+    // ── S3-F11: Record User-Category Spending Pattern ────────────────────────
+
+    /** POST /api/transactions/{transactionId}/record-pattern */
+    @PostMapping("/{transactionId}/record-pattern")
+    @ResponseStatus(HttpStatus.OK)
+    public void recordSpendingPattern(@PathVariable Long transactionId) {
+        transactionService.recordSpendingPattern(transactionId);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

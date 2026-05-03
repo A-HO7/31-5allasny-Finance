@@ -1,11 +1,13 @@
 package com.team31.financetracker.transaction.repository;
 
+import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
 import com.team31.financetracker.transaction.neo4j.UserNode;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -35,4 +37,40 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, Long> {
     UserNode mergeUser(@Param("userId") Long userId,
                        @Param("name") String name,
                        @Param("currencyPreference") String currencyPreference);
+
+    /**
+     * S3-F11: Record spending pattern with idempotency.
+     * Merges User and Category nodes, then merges or updates the SPENT_ON relationship
+     * only if the transactionId has not been recorded yet.
+     * Returns the relationship if created/updated, null if already recorded.
+     */
+    @Query("""
+            MERGE (u:User {userId: $userId})
+            ON CREATE SET u.name = $name, u.currencyPreference = $currencyPreference
+            ON MATCH  SET u.name = $name, u.currencyPreference = $currencyPreference
+            MERGE (c:Category {category: $category})
+            ON CREATE SET c.categoryType = $categoryType
+            ON MATCH  SET c.categoryType = $categoryType
+            WITH u, c
+            CALL {
+                WITH u, c, $transactionId AS tid
+                OPTIONAL MATCH (u)-[r:SPENT_ON]->(c)
+                WHERE tid IN r.recordedTransactionIds
+                RETURN r AS existing
+            }
+            WITH u, c, existing
+            WHERE existing IS NULL
+            MERGE (u)-[r:SPENT_ON]->(c)
+            ON CREATE SET r.transactionCount = 1, r.totalAmount = $amount, r.lastTransactionDate = $date, r.recordedTransactionIds = [$transactionId]
+            ON MATCH SET r.transactionCount = r.transactionCount + 1, r.totalAmount = r.totalAmount + $amount, r.lastTransactionDate = $date, r.recordedTransactionIds = r.recordedTransactionIds + $transactionId
+            RETURN r
+            """)
+    SpentOnRelationship recordSpendingPattern(@Param("userId") Long userId,
+                                              @Param("name") String name,
+                                              @Param("currencyPreference") String currencyPreference,
+                                              @Param("category") String category,
+                                              @Param("categoryType") String categoryType,
+                                              @Param("transactionId") Long transactionId,
+                                              @Param("amount") Double amount,
+                                              @Param("date") LocalDateTime date);
 }

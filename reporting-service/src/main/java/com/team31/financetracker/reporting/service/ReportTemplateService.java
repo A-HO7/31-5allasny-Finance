@@ -4,6 +4,7 @@ import com.team31.financetracker.reporting.model.ReportTemplate;
 import com.team31.financetracker.reporting.repository.ReportTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
 
@@ -38,6 +39,7 @@ public class ReportTemplateService {
         return repository.findAll();
     }
 
+    @Cacheable(value = "reporting-service::report-template", key = "#id")
     public ReportTemplate getReportTemplateById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("ReportTemplate not found with id: " + id));
     }
@@ -84,6 +86,7 @@ public class ReportTemplateService {
         );
     }
 
+    @Cacheable(value = "reporting-service::S5-F9", key = "#limit")
     public List<TemplateUsageDTO> getTopUsedTemplates(int limit) {
         List<Object[]> rows = repository.findTopUsedTemplates(limit);
         return rows.stream().map(row -> {

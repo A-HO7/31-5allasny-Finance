@@ -40,6 +40,7 @@ public class SavedReportService {
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
     private final MongoEventLogger mongoEventLogger;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
@@ -47,12 +48,14 @@ public class SavedReportService {
                               ReportTemplateRepository templateRepository, 
                               ReportTemplateUsageRepository usageRepository,
                               ReportTemplateUsageService reportTemplateUsageService,
-                              MongoEventLogger mongoEventLogger) {
+                              MongoEventLogger mongoEventLogger,
+                              com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
         this.mongoEventLogger = mongoEventLogger;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
     
     @PostConstruct
@@ -81,6 +84,7 @@ public class SavedReportService {
     public SavedReport createSavedReport(SavedReport savedReport) {
         SavedReport saved = repository.save(savedReport);
         notifyReportEvent("REPORT_CREATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -118,6 +122,7 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(existing);
         notifyReportEvent("REPORT_UPDATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -126,6 +131,7 @@ public class SavedReportService {
         SavedReport existing = getSavedReportById(id);
         notifyReportEvent("REPORT_DELETED", existing, null);
         repository.delete(existing);
+        evictWildcardCaches(id);
     }
 
     @Transactional
@@ -147,6 +153,7 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(report);
         notifyReportEvent("ARCHIVED", saved, Map.of("reason", reason));
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -217,11 +224,13 @@ public class SavedReportService {
             config.put("failureReason", "Simulated failure");
             SavedReport saved = repository.save(newReport);
             notifyReportEvent("FAILED", saved, null);
+            evictWildcardCaches(saved.getId());
             return saved;
         }
 
         SavedReport saved = repository.save(newReport);
         notifyReportEvent("GENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -252,6 +261,12 @@ public class SavedReportService {
             report.setReportTemplateUsages(new java.util.ArrayList<>(java.util.List.of(savedUsage)));
         }
         notifyReportEvent("TEMPLATE_APPLIED", report, null);
+        
+        evictWildcardCaches(reportId);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F9::*",
+                "reporting-service::report-template-usage::*"
+        );
         
         return savedUsage;
     }
@@ -284,6 +299,7 @@ public class SavedReportService {
 
         SavedReport saved = repository.save(report);
         notifyReportEvent("REGENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
     @Cacheable(value = "reporting-service::S5-F8", key = "#reportId")
@@ -411,5 +427,16 @@ public class SavedReportService {
                 throw new RuntimeException("User not found with id: " + userId);
             }
         }
+    }
+    private void evictWildcardCaches(Long entityId) {
+        if (entityId != null) {
+            redisCacheEvictor.evictByPatterns("reporting-service::saved-report::" + entityId);
+        }
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F1::*",
+                "reporting-service::S5-F3::*",
+                "reporting-service::S5-F6::*",
+                "reporting-service::S5-F8::*"
+        );
     }
 }

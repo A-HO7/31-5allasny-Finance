@@ -59,10 +59,16 @@ public class UserService {
     // Create
     public User createUser(User user) {
         try {
-
             user.setPassword(passwordEncoder.encode(user.getPassword()));
+            User savedUser = userRepository.save(user);
 
-            return userRepository.save(user);
+            // RETROFIT: Observer notification (Section 4.5 M1 write endpoint)
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", savedUser.getId());
+            payload.put("email", savedUser.getEmail());
+            notifyObservers("USER_CREATED", payload);
+
+            return savedUser;
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
         }
@@ -333,16 +339,18 @@ public class UserService {
     @Transactional
     public User updateUserRole(Long id, String roleName) {
         User user = getUserById(id);
-        // This will throw IllegalArgumentException if the string is not a valid enum
-        // value
-        user.setRole(Role.valueOf(roleName.toUpperCase()));
+        try {
+            user.setRole(Role.valueOf(roleName.toUpperCase()));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
+        }
         User savedUser = userRepository.save(user);
-        
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
         payload.put("newRole", savedUser.getRole().name());
         notifyObservers("ROLE_CHANGED", payload);
-        
+
         return savedUser;
     }
 

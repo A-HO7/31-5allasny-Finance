@@ -37,3 +37,7 @@ build/
 
 .env
 *.class
+
+### HTTP Test files (may contain tokens/secrets) ###
+*.http
+*.HTTP

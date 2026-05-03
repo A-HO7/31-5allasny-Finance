@@ -28,5 +28,5 @@ spring:
     uris: ${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}
 
 jwt:
-  secret: "<Base64-encoded shared secret across all 5 services>"
+  secret: "n2p1MF4+anaXiUsAmAznZtdjV8rDZAoscZLaa686hnE="
   expiration: 86400000 # 24 hours in ms

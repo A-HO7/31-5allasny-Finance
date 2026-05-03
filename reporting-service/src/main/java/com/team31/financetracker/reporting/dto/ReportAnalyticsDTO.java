@@ -10,13 +10,16 @@ public class ReportAnalyticsDTO {
 
     public ReportAnalyticsDTO() {}
 
-    public ReportAnalyticsDTO(long totalGenerated, long totalReports, double averagePeriodDays,
-                               long archivedCount, long failedCount) {
-        this.totalGenerated = totalGenerated;
-        this.totalReports = totalReports;
-        this.averagePeriodDays = averagePeriodDays;
-        this.archivedCount = archivedCount;
-        this.failedCount = failedCount;
+    private ReportAnalyticsDTO(Builder builder) {
+        this.totalGenerated = builder.totalGenerated;
+        this.totalReports = builder.totalReports;
+        this.averagePeriodDays = builder.averagePeriodDays;
+        this.archivedCount = builder.archivedCount;
+        this.failedCount = builder.failedCount;
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     public long getTotalGenerated() { return totalGenerated; }
@@ -33,4 +36,41 @@ public class ReportAnalyticsDTO {
 
     public long getFailedCount() { return failedCount; }
     public void setFailedCount(long failedCount) { this.failedCount = failedCount; }
+
+    public static class Builder {
+        private long totalGenerated;
+        private long totalReports;
+        private double averagePeriodDays;
+        private long archivedCount;
+        private long failedCount;
+
+        public Builder totalGenerated(long totalGenerated) {
+            this.totalGenerated = totalGenerated;
+            return this;
+        }
+
+        public Builder totalReports(long totalReports) {
+            this.totalReports = totalReports;
+            return this;
+        }
+
+        public Builder averagePeriodDays(double averagePeriodDays) {
+            this.averagePeriodDays = averagePeriodDays;
+            return this;
+        }
+
+        public Builder archivedCount(long archivedCount) {
+            this.archivedCount = archivedCount;
+            return this;
+        }
+
+        public Builder failedCount(long failedCount) {
+            this.failedCount = failedCount;
+            return this;
+        }
+
+        public ReportAnalyticsDTO build() {
+            return new ReportAnalyticsDTO(this);
+        }
+    }
 }

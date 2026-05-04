@@ -2,7 +2,6 @@ package com.team31.financetracker.budget.observer;
 
 import com.team31.financetracker.budget.factory.EventFactory;
 import com.team31.financetracker.budget.model.BudgetEvent;
-import com.team31.financetracker.budget.model.EventType;
 import com.team31.financetracker.budget.model.MongoEvent;
 import com.team31.financetracker.budget.repository.BudgetEventRepository;
 import org.slf4j.Logger;
@@ -12,6 +11,14 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Observer Pattern (DP-2) — concrete observer that persists a BudgetEvent
+ * to MongoDB whenever a subject calls onEvent(String, Object).
+ *
+ * Failure policy: Any MongoDB exception is caught, logged at WARN level,
+ * and NOT re-thrown. The upstream database write must not be rolled back on
+ * a Mongo write failure.
+ */
 @Component
 public class MongoEventLogger implements EntityObserver {
 
@@ -29,20 +36,40 @@ public class MongoEventLogger implements EntityObserver {
     @Override
     public void onEvent(String eventType, Object payload) {
         try {
-            Map<String, Object> params = new HashMap<>();
-            params.put("action", eventType);
+            Map<String, Object> details = new HashMap<>();
 
             if (payload instanceof Map<?, ?> map) {
-                map.forEach((key, value) -> params.put(String.valueOf(key), value));
+                map.forEach((key, value) -> details.put(String.valueOf(key), value));
             } else if (payload != null) {
-                params.put("payload", payload.toString());
+                details.put("payload", payload.toString());
             }
 
-            MongoEvent event = eventFactory.createEvent(EventType.BUDGET, params);
+            Long budgetId = extractBudgetId(details);
+
+            MongoEvent event = eventFactory.createEvent(budgetId, eventType, details);
+
             budgetEventRepository.save((BudgetEvent) event);
 
-        } catch (Exception e) {
-            log.warn("Failed to write BudgetEvent to MongoDB", e);
+        } catch (Exception ex) {
+            log.warn("MongoEventLogger failed to persist event [{}]: {}", eventType, ex.getMessage(), ex);
         }
+    }
+
+    private Long extractBudgetId(Map<String, Object> details) {
+        Object rawBudgetId = details.get("budgetId");
+
+        if (rawBudgetId instanceof Number number) {
+            return number.longValue();
+        }
+
+        if (rawBudgetId != null) {
+            try {
+                return Long.parseLong(rawBudgetId.toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        return null;
     }
 }

@@ -32,9 +32,12 @@ import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
+    // Service for managing transactions and spending patterns.
+
 
     private final TransactionRepository transactionRepository;
     private final UserNodeRepository userNodeRepository;
+    private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
@@ -52,6 +55,7 @@ public class TransactionService {
             CacheInvalidationService cacheInvalidationService) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
+        this.categoryNodeRepository = categoryNodeRepository;
         this.cacheInvalidationService = cacheInvalidationService;
         registerObserver(mongoEventLogger);
     }
@@ -574,15 +578,21 @@ public class TransactionService {
         String categoryType = (transaction.getType() == TransactionType.INCOME) ?
                 "INCOME_CATEGORY" : "EXPENSE_CATEGORY";
 
-        // g) Record in Neo4j with idempotency
-        SpentOnRelationship relationship = userNodeRepository.recordSpendingPattern(
+        // g) Record in Neo4j with idempotency (Soft dependency)
+        SpentOnRelationship relationship = null;
+        try {
+            relationship = userNodeRepository.recordSpendingPattern(
                 userId, name, currency,
                 transaction.getCategory().name(),
                 categoryType,
                 transactionId,
                 transaction.getAmount(),
                 transaction.getCompletedAt() != null ? transaction.getCompletedAt() : LocalDateTime.now()
-        );
+            );
+        } catch (Exception ex) {
+            // Section 6.3: Soft dependency — log and swallow
+            System.err.println("[WARN] Neo4j recordSpendingPattern failed: " + ex.getMessage());
+        }
 
         // h) Log event only if graph was mutated (relationship != null)
         if (relationship != null) {

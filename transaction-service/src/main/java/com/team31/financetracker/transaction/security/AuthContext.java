@@ -1,7 +1,11 @@
 package com.team31.financetracker.transaction.security;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.annotation.RequestScope;
 
+@Component
+@RequestScope
 public class AuthContext {
 
     private final HttpServletRequest request;

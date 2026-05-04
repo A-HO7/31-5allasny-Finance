@@ -21,10 +21,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService    jwtService;
     private final JdbcTemplate  jdbcTemplate;
+    private final AuthContext   authContext;
 
-    public JwtAuthenticationFilter(JwtService jwtService, JdbcTemplate jdbcTemplate) {
+    public JwtAuthenticationFilter(JwtService jwtService, JdbcTemplate jdbcTemplate, AuthContext authContext) {
         this.jwtService   = jwtService;
         this.jdbcTemplate = jdbcTemplate;
+        this.authContext  = authContext;
     }
 
     @Override
@@ -32,8 +34,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain         filterChain)
             throws ServletException, IOException {
-
-        AuthContext ctx = new AuthContext(request);
 
         // ── Build the Chain of Responsibility ──────────────────────────────
         TokenExtractionHandler    tokenExtractor     = new TokenExtractionHandler();
@@ -48,14 +48,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .setNext(roleAuthorizer);
         // ───────────────────────────────────────────────────────────────────
 
-        boolean passed = tokenExtractor.handle(ctx, response);
+        boolean passed = tokenExtractor.handle(authContext, response);
 
         if (passed) {
             // Populate Spring Security context so @PreAuthorize / hasRole work too
             var authToken = new UsernamePasswordAuthenticationToken(
-                    ctx.getEmail(),
+                    authContext.getEmail(),
                     null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + ctx.getRole()))
+                    List.of(new SimpleGrantedAuthority("ROLE_" + authContext.getRole()))
             );
             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authToken);

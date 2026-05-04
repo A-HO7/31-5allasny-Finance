@@ -32,6 +32,7 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final TransactionSplitService transactionSplitService;
     private final ObjectMapper objectMapper;
+    private final AuthContext authContext;
 
     public TransactionController(TransactionService transactionService,
             TransactionSplitService transactionSplitService,
@@ -40,6 +41,7 @@ public class TransactionController {
         this.transactionService = transactionService;
         this.transactionSplitService = transactionSplitService;
         this.objectMapper = objectMapper;
+        this.authContext = authContext;
     }
 
     // ── Transaction CRUD ──────────────────────────────────────────────────────
@@ -219,6 +221,12 @@ public class TransactionController {
     @PostMapping("/{transactionId}/record-pattern")
     @ResponseStatus(HttpStatus.OK)
     public void recordSpendingPattern(@PathVariable Long transactionId) {
+        // Ownership check
+        Transaction tx = transactionService.getTransactionById(transactionId);
+        if (!tx.getUserId().equals(authContext.getUserId()) && !"ADMIN".equals(authContext.getRole())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
         transactionService.recordSpendingPattern(transactionId);
     }
 

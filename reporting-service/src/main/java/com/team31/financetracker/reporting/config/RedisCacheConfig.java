@@ -32,6 +32,8 @@ public class RedisCacheConfig {
                         RedisCacheConfiguration.defaultCacheConfig().entryTtl(Duration.ofMinutes(15)))
                 .withCacheConfiguration("reporting-service::S5-F9",
                         RedisCacheConfiguration.defaultCacheConfig().entryTtl(Duration.ofMinutes(10)))
+                .withCacheConfiguration("reporting-service::S5-F10",
+                        RedisCacheConfiguration.defaultCacheConfig().entryTtl(Duration.ofMinutes(10)))
                 .build();
     }
 }

@@ -1,21 +1,30 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
-import com.team31.financetracker.account.model.Account;
-import com.team31.financetracker.account.model.AccountStatement;
-import com.team31.financetracker.account.model.AccountStatus;
-import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.query.Criteria;
+import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
+import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.account.dto.AccountDTO;
+import com.team31.financetracker.account.model.AccountSearchDocument;
+
+import org.springframework.data.elasticsearch.core.SearchHits;
+
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -30,14 +39,18 @@ public class AccountService {
     private final AccountStatementRepository accountStatementRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
     private final CacheInvalidator cacheInvalidator;
+    private final ElasticsearchOperations elasticsearchOperations;
+    private final ElasticsearchHitAdapter elasticsearchHitAdapter;
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
-            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1
+            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
         this.cacheInvalidator = cacheInvalidator1;
+        this.elasticsearchOperations = elasticsearchOperations;
+        this.elasticsearchHitAdapter = elasticsearchHitAdapter;
     }
 
     public void register(EntityObserver observer){
@@ -321,6 +334,36 @@ public class AccountService {
         result.getAccountStatements().size();
         cacheInvalidator.invalidateAccountData(accountId);
         return result;
+    }
+    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max)")
+    public List<AccountDTO> fullTextSearch(String query, String type, String status,
+                                           String currency, Double min, Double max) {
+
+        // 1. Define Criteria
+        Criteria criteria = new Criteria("name").contains(query)
+                .or(new Criteria("description").contains(query));
+
+        // 2. Add Filters
+        if (type != null) criteria = criteria.and(new Criteria("type").is(type));
+        if (status != null) criteria = criteria.and(new Criteria("status").is(status));
+        if (currency != null) criteria = criteria.and(new Criteria("currency").is(currency));
+        if (min != null) criteria = criteria.and(new Criteria("balance").greaterThanEqual(min));
+        if (max != null) criteria = criteria.and(new Criteria("balance").lessThanEqual(max));
+
+        // 3. Create Query with MS2 mandated Sort Order
+        Query searchQuery = new CriteriaQuery(criteria)
+                .addSort(Sort.by(Sort.Direction.DESC, "_score")) // Primary: Relevance
+                .addSort(Sort.by(Sort.Direction.DESC, "rating")) // Tie-breaker 1
+                .addSort(Sort.by(Sort.Direction.ASC, "id"));     // Tie-breaker 2[cite: 1]
+
+        // 4. Execute Search[cite: 1]
+        SearchHits<AccountSearchDocument> hits = elasticsearchOperations.search(searchQuery, AccountSearchDocument.class);
+
+        // 5. Stream through SearchHit objects to get Content[cite: 1]
+        return hits.getSearchHits().stream() // .getSearchHits() returns the List[cite: 1]
+                .map(SearchHit::getContent)  // Extract AccountSearchDocument[cite: 1]
+                .map(elasticsearchHitAdapter::adapt) // Convert to AccountDTO via Adapter[cite: 1]
+                .toList();
     }
 
     @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")

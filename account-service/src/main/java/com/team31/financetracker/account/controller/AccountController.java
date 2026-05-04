@@ -15,6 +15,7 @@ import com.team31.financetracker.account.service.AccountService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -51,6 +52,7 @@ public class AccountController {
     }
 
     @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> searchAccounts(
             @RequestParam(required = false) AccountStatus status,
             @RequestParam(required = false) Double minBalance,
@@ -59,31 +61,37 @@ public class AccountController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getAllAccounts() {
         return accountService.getAll();
     }
 
     @GetMapping("/email")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getByUserEmail(@RequestParam String email) {
         return accountService.getByUserEmail(email);
     }
 
     @GetMapping("/user/{userId}")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getAccountByUserId(@PathVariable Long userId) {
         return accountService.getByUserId(userId);
     }
 
     @GetMapping("/type/{type}")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getAccountsByType(@PathVariable AccountType type) {
         return accountService.getByType(type);
     }
 
     @GetMapping("/status/{status}")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getAccountsByStatus(@PathVariable AccountStatus status) {
         return accountService.getByStatus(status);
     }
 
     @GetMapping("/summary")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public AccountSummaryDTO getSummaryByQueryParams(@RequestParam MultiValueMap<String, String> queryParams) {
         Long account = findLongParam(queryParams, "accountId", "id", "account_id");
         if (account == null) {
@@ -93,6 +101,7 @@ public class AccountController {
     }
 
     @GetMapping("/{id}/summary/{rangeStart}/{rangeEnd}")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public AccountSummaryDTO getSummaryWithPathRange(
             @PathVariable Long id,
             @PathVariable String rangeStart,
@@ -106,6 +115,7 @@ public class AccountController {
     }
 
     @GetMapping("/{id}/summary")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public AccountSummaryDTO getSummary(
             @PathVariable Long id,
             @RequestParam MultiValueMap<String, String> queryParams) {

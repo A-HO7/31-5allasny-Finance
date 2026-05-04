@@ -99,4 +99,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
            nativeQuery = true)
     Map<String, Object> getTransactionAnalytics(@Param("start") LocalDateTime start,
                                                 @Param("endExclusive") LocalDateTime endExclusive);
+
+    // ── S3-F11/S3-F12: get user details for Neo4j node creation ────────────────
+
+    @Query(value = "SELECT name, preferences->>'currency' as currency FROM users WHERE id = :userId", nativeQuery = true)
+    Optional<Map<String, Object>> findUserDetailsById(@Param("userId") Long userId);
+
+    // ── S3-F12: check if user exists ────────────────────────────────────────────
+
+    @Query(value = "SELECT COUNT(*) > 0 FROM users WHERE id = :userId", nativeQuery = true)
+    boolean existsUserById(@Param("userId") Long userId);
 }

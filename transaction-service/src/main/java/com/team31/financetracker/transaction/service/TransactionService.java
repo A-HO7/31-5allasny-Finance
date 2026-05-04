@@ -7,6 +7,7 @@ import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
+import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.observer.EntityObserver;
@@ -17,6 +18,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
+import com.team31.financetracker.transaction.repository.UserNodeRepository;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
 
 import java.time.LocalDate;
@@ -31,6 +34,7 @@ import java.util.stream.Collectors;
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
+    private final UserNodeRepository userNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
@@ -42,9 +46,12 @@ public class TransactionService {
      * every write endpoint fires events from the first request onward.
      */
     public TransactionService(TransactionRepository transactionRepository,
+            UserNodeRepository userNodeRepository,
+            CategoryNodeRepository categoryNodeRepository,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService) {
         this.transactionRepository = transactionRepository;
+        this.userNodeRepository = userNodeRepository;
         this.cacheInvalidationService = cacheInvalidationService;
         registerObserver(mongoEventLogger);
     }
@@ -528,6 +535,34 @@ public class TransactionService {
                 .metadata(transaction.getMetadata())
                 .splits(splitDTOs)
                 .build();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S3-F12 — Get Category Recommendations for User (Neo4j read, cached)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Cacheable(value = "transaction-service", key = "'S3-F12::' + #userId + '-' + #limit + '-' + #categoryType")
+    public List<CategoryRecommendationDTO> getCategoryRecommendations(Long userId, Integer limit, String categoryType) {
+        // Check user exists
+        if (!transactionRepository.existsUserById(userId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
+        int actualLimit = (limit != null && limit > 0) ? limit : 5;
+
+        List<Map<String, Object>> raw = userNodeRepository.getCategoryRecommendations(userId, actualLimit);
+
+        List<CategoryRecommendationDTO> recommendations = raw.stream()
+                .map(row -> new CategoryRecommendationDTO(
+                        (String) row.get("category"),
+                        (String) row.get("categoryType"),
+                        ((Number) row.get("score")).intValue(),
+                        ((Number) row.get("averageAmount")).doubleValue()
+                ))
+                .filter(dto -> categoryType == null || categoryType.equals(dto.categoryType()))
+                .collect(Collectors.toList());
+
+        return recommendations;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

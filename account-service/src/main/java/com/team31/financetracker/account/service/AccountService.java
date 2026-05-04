@@ -10,7 +10,9 @@ import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
+import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,13 +29,15 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
-
+    private final CacheInvalidator cacheInvalidator;
     public AccountService(
             AccountRepository accountRepository,
-            AccountStatementRepository accountStatementRepository
+            AccountStatementRepository accountStatementRepository,
+            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
+        this.cacheInvalidator = cacheInvalidator1;
     }
 
     public void register(EntityObserver observer){
@@ -73,6 +77,7 @@ public class AccountService {
         }
     }
 
+    @Cacheable(value = "account-service::account", key = "#id")
     public Account getById(Long id) {
         return accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -120,13 +125,16 @@ public class AccountService {
         if (updated.getAccountDetails() != null) {
             existing.setAccountDetails(updated.getAccountDetails());
         }
-        return accountRepository.save(existing);
+        Account saved = accountRepository.save(existing);
+        cacheInvalidator.invalidateAccountData(id); // Clear stale cache
+        return saved;
     }
 
     public void delete(Long id) {
         accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         accountRepository.deleteById(id);
+        cacheInvalidator.invalidateAccountData(id);
     }
 
     public List<Account> getByUserEmail(String email) {
@@ -134,9 +142,11 @@ public class AccountService {
     }
 
     public int updateStatusById(Long id, AccountStatus status) {
-        return accountRepository.updateStatusById(id, status.name());
+        int rowsAffected =  accountRepository.updateStatusById(id, status.name());
+        cacheInvalidator.invalidateAccountData(id);
+        return rowsAffected;
     }
-
+    @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
         // Return all if no balance provided (TC_S2_69)
         if (minBalance == null || maxBalance == null) {
@@ -148,6 +158,7 @@ public class AccountService {
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
+
     }
 
     @Transactional
@@ -181,6 +192,7 @@ public class AccountService {
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);
+        cacheInvalidator.invalidateAccountData(accountId);
     }
 
     @Transactional
@@ -208,8 +220,10 @@ public class AccountService {
 
         // 5. Force Push to DB
         accountRepository.saveAndFlush(account);
+        cacheInvalidator.invalidateAccountData(id);
     }
-      
+
+    @Cacheable(value = "account-service::S2-F9", key = "'expired-statements'")
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
 
@@ -241,14 +255,18 @@ public class AccountService {
         }
 
         account.setAccountDetails(existing);
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+        cacheInvalidator.invalidateAccountData(id);
+        return saved;
     }
 
+    @Cacheable(value = "account-service::S2-F5", key = "#key + '-' + #value + '-' + #status")
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
     }
 
+    @Cacheable(value = "account-service::S2-F6", key = "#limit")
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
         return results.stream().map(row -> new TopAccountDTO(
@@ -294,16 +312,18 @@ public class AccountService {
         statement.setMetadata(metadata);
         accountStatementRepository.saveAndFlush(statement);
 
+
         // Re-fetch with statements eagerly loaded
         Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         // Force initialize inside transaction so Jackson can serialize it
         result.getAccountStatements().size();
-
+        cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
 
+    @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));

@@ -6,6 +6,8 @@ import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -35,4 +37,28 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, Long> {
     UserNode mergeUser(@Param("userId") Long userId,
                        @Param("name") String name,
                        @Param("currencyPreference") String currencyPreference);
+
+    /**
+     * S3-F12: Get category recommendations for a user.
+     * Finds categories that similar users spent on, but the target user hasn't.
+     * Returns list of {category, categoryType, score, averageAmount}.
+     */
+    @Query("""
+            MATCH (target:User {userId: $userId})-[:SPENT_ON]->(userCategory:Category)
+            WITH target, collect(userCategory.category) AS userCategories
+            MATCH (other:User)-[:SPENT_ON]->(userCategory:Category)
+            WHERE other <> target AND userCategory.category IN userCategories
+            WITH target, userCategories, collect(DISTINCT other) AS similarUsers
+            UNWIND similarUsers AS similarUser
+            MATCH (similarUser)-[r:SPENT_ON]->(recCategory:Category)
+            WHERE NOT recCategory.category IN userCategories
+            WITH recCategory.category AS category, recCategory.categoryType AS categoryType,
+                 count(DISTINCT similarUser) AS score,
+                 avg(r.totalAmount) AS averageAmount
+            ORDER BY score DESC, averageAmount DESC
+            LIMIT $limit
+            RETURN category, categoryType, score, averageAmount
+            """)
+    List<Map<String, Object>> getCategoryRecommendations(@Param("userId") Long userId,
+                                                         @Param("limit") int limit);
 }

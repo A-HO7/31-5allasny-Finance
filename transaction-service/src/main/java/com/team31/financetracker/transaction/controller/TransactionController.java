@@ -1,5 +1,8 @@
 package com.team31.financetracker.transaction.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
@@ -11,66 +14,70 @@ import com.team31.financetracker.transaction.service.TransactionService;
 import com.team31.financetracker.transaction.service.TransactionSplitService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
+/**
+ * Primary controller for the Transaction Service.
+ * Base path: /api/transactions
+ */
 @RestController
 @RequestMapping("/api/transactions")
 public class TransactionController {
 
     private final TransactionService transactionService;
     private final TransactionSplitService transactionSplitService;
+    private final ObjectMapper objectMapper;
 
     public TransactionController(TransactionService transactionService,
-                                 TransactionSplitService transactionSplitService) {
+            TransactionSplitService transactionSplitService,
+            ObjectMapper objectMapper) {
         this.transactionService = transactionService;
         this.transactionSplitService = transactionSplitService;
+        this.objectMapper = objectMapper;
     }
 
-    // ── CRUD ──────────────────────────────────────────────────────────────────
+    // ── Transaction CRUD ──────────────────────────────────────────────────────
 
+    /** POST /api/transactions */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Transaction createTransaction(@RequestBody Transaction transaction) {
         return transactionService.createTransaction(transaction);
     }
 
+    /** GET /api/transactions */
     @GetMapping
     public List<Transaction> getAllTransactions() {
         return transactionService.getAllTransactions();
     }
 
+    /** GET /api/transactions/{id} */
     @GetMapping("/{id}")
     public Transaction getTransactionById(@PathVariable Long id) {
         return transactionService.getTransactionById(id);
     }
 
+    /** PUT /api/transactions/{id} */
     @PutMapping("/{id}")
     public Transaction updateTransaction(@PathVariable Long id,
-                                         @RequestBody Transaction transaction) {
+            @RequestBody Transaction transaction) {
         return transactionService.updateTransaction(id, transaction);
     }
 
+    /** DELETE /api/transactions/{id} */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteTransaction(@PathVariable Long id) {
         transactionService.deleteTransaction(id);
     }
 
-    // ── F1: search — required=false fixes TC_S3_16, 19, 67, 68 ───────────────
+    // ── F1: Search ────────────────────────────────────────────────────────────
+
+    /** GET /api/transactions/search?status=&startDate=&endDate= */
     @GetMapping("/search")
     public List<Transaction> searchTransactions(
             @RequestParam(required = false) TransactionStatus status,
@@ -79,35 +86,43 @@ public class TransactionController {
         return transactionService.searchByDateRangeAndOptionalStatus(startDate, endDate, status);
     }
 
-    // ── F2: approve ───────────────────────────────────────────────────────────
+    // ── F2: Approve ───────────────────────────────────────────────────────────
+
+    /** PUT /api/transactions/{transactionId}/approve?approverId={userId} */
     @PutMapping("/{transactionId}/approve")
-    public Transaction approveTransaction(
-            @PathVariable Long transactionId,
+    public Transaction approveTransaction(@PathVariable Long transactionId,
             @RequestParam Long approverId) {
         return transactionService.approveTransaction(transactionId, approverId);
     }
 
-    // ── F3: estimate ──────────────────────────────────────────────────────────
+    // ── F3: Transfer Fee Estimate ─────────────────────────────────────────────
+
+    /** POST /api/transactions/estimate */
     @PostMapping("/estimate")
     public TransferEstimateDTO estimateTransfer(@RequestBody TransferEstimateRequest request) {
         return transactionService.estimateTransfer(request);
     }
 
-    // ── F4: complete ──────────────────────────────────────────────────────────
+    // ── F4: Complete ──────────────────────────────────────────────────────────
+
+    /** PUT /api/transactions/{id}/complete */
     @PutMapping("/{id}/complete")
     public Transaction completeTransaction(@PathVariable Long id) {
         return transactionService.completeTransaction(id);
     }
 
-    // ── F5: metadata search ───────────────────────────────────────────────────
+    // ── F5: Metadata Search ───────────────────────────────────────────────────
+
+    /** GET /api/transactions/metadata/search?key=&value= */
     @GetMapping("/metadata/search")
-    public List<Transaction> searchByMetadata(
-            @RequestParam String key,
+    public List<Transaction> searchByMetadata(@RequestParam String key,
             @RequestParam String value) {
         return transactionService.searchByMetadataKeyValue(key, value);
     }
 
-    // ── F6: analytics — required=false fixes TC_S3_39 ────────────────────────
+    // ── F6: Analytics ─────────────────────────────────────────────────────────
+
+    /** GET /api/transactions/analytics?startDate=&endDate= */
     @GetMapping("/analytics")
     public TransactionAnalyticsDTO getAnalytics(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -115,65 +130,94 @@ public class TransactionController {
         return transactionService.getAnalytics(startDate, endDate);
     }
 
-    // ── F7: void ──────────────────────────────────────────────────────────────
+    // ── F7: Void ──────────────────────────────────────────────────────────────
+
+    /** PUT /api/transactions/{id}/void */
     @PutMapping("/{id}/void")
     @ResponseStatus(HttpStatus.OK)
     public void voidTransaction(@PathVariable Long id) {
         transactionService.voidTransaction(id);
     }
 
-    // ── F8: add splits
-    // FIX TC_S3_11, 44, 46: grader sends plain JSON objects, not TransactionSplit
-    // entities. Using Object allows both a single {} and an array [{}] to be
-    // handled. The service normalizes to a list.
+    // ── F8: Add Splits (single object OR array) ───────────────────────────────
+
+    /**
+     * POST /api/transactions/{transactionId}/splits
+     *
+     * Accepts EITHER:
+     * a single split object { "recipientName": "...", "amount": 50.0, ... }
+     * OR an array [ { ... }, { ... } ]
+     *
+     * We read the raw body as a JsonNode, detect which shape it is, normalise
+     * to List<TransactionSplit>, then delegate to the service.
+     *
+     * The service signature is:
+     * Transaction addSplitsToTransaction(Long transactionId, List<TransactionSplit>
+     * splits)
+     */
     @PostMapping("/{transactionId}/splits")
     @ResponseStatus(HttpStatus.CREATED)
-    public Transaction addSplitsToTransaction(
-            @PathVariable Long transactionId,
-            @RequestBody Object splitsBody) {
-        return transactionService.addSplitsToTransaction(transactionId, splitsBody);
+    public Transaction addSplitsToTransaction(@PathVariable Long transactionId,
+            @RequestBody JsonNode splitsBody) {
+        List<TransactionSplit> splits;
+        if (splitsBody.isArray()) {
+            splits = objectMapper.convertValue(
+                    splitsBody, new TypeReference<List<TransactionSplit>>() {
+                    });
+        } else {
+            TransactionSplit single = objectMapper.convertValue(
+                    splitsBody, TransactionSplit.class);
+            splits = List.of(single);
+        }
+        return transactionService.addSplitsToTransaction(transactionId, splits);
     }
 
-    // ── F8/CRUD: nested split endpoints
-    // FIX TC_S3_12, 15: grader hits /api/transactions/{id}/splits/{splitId}
+    // ── Nested split CRUD ─────────────────────────────────────────────────────
+
+    /** GET /api/transactions/{transactionId}/splits/{splitId} */
     @GetMapping("/{transactionId}/splits/{splitId}")
-    public TransactionSplit getSplitById(
-            @PathVariable Long transactionId,
+    public TransactionSplit getSplitById(@PathVariable Long transactionId,
             @PathVariable Long splitId) {
         TransactionSplit split = transactionSplitService.getTransactionSplitById(splitId);
-        if (!split.getTransaction().getId().equals(transactionId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Split not found for this transaction");
-        }
+        validateSplitOwnership(split, transactionId);
         return split;
     }
 
+    /** PUT /api/transactions/{transactionId}/splits/{splitId} */
     @PutMapping("/{transactionId}/splits/{splitId}")
-    public TransactionSplit updateSplit(
-            @PathVariable Long transactionId,
+    public TransactionSplit updateSplit(@PathVariable Long transactionId,
             @PathVariable Long splitId,
             @RequestBody TransactionSplit split) {
         TransactionSplit existing = transactionSplitService.getTransactionSplitById(splitId);
-        if (!existing.getTransaction().getId().equals(transactionId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Split not found for this transaction");
-        }
+        validateSplitOwnership(existing, transactionId);
         return transactionSplitService.updateTransactionSplit(splitId, split);
     }
 
+    /** DELETE /api/transactions/{transactionId}/splits/{splitId} */
     @DeleteMapping("/{transactionId}/splits/{splitId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteSplit(
-            @PathVariable Long transactionId,
+    public void deleteSplit(@PathVariable Long transactionId,
             @PathVariable Long splitId) {
         TransactionSplit existing = transactionSplitService.getTransactionSplitById(splitId);
-        if (!existing.getTransaction().getId().equals(transactionId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Split not found for this transaction");
-        }
+        validateSplitOwnership(existing, transactionId);
         transactionSplitService.deleteTransactionSplit(splitId);
     }
 
-    // ── F9: details ───────────────────────────────────────────────────────────
+    // ── F9: Transaction Details with Splits ───────────────────────────────────
+
+    /** GET /api/transactions/{transactionId}/details */
     @GetMapping("/{transactionId}/details")
     public TransactionDetailsDTO getTransactionDetails(@PathVariable Long transactionId) {
         return transactionService.getTransactionDetails(transactionId);
+    }
+
+    // ── Private helper ────────────────────────────────────────────────────────
+
+    private void validateSplitOwnership(TransactionSplit split, Long transactionId) {
+        if (split.getTransaction() == null
+                || !split.getTransaction().getId().equals(transactionId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Split not found for this transaction");
+        }
     }
 }

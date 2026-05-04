@@ -2,8 +2,12 @@ server:
   port: 8080
 
 spring:
+  main:
+    lazy-initialization: true
   application:
     name: budget-service
+  cache:
+    type: redis
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -17,19 +21,26 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
     redis:
-      host: redis
+      host: ${REDIS_HOST:localhost}
       port: 6379
       password: redispass
     mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      uri: mongodb://root:rootpass@${MONGO_HOST:localhost}:27017/financemongo?authSource=admin
     cassandra:
-      contact-points: cassandra
+      contact-points: ${CASSANDRA_HOST:localhost}
       port: 9042
-      local-datacenter: datacenter1
+      local-datacenter: ${CASSANDRA_DC:datacenter1}
       keyspace-name: financeks
       schema-action: CREATE_IF_NOT_EXISTS
-
+  mongodb:
+    uri: mongodb://root:rootpass@${MONGO_HOST:localhost}:27017/financemongo?authSource=admin
+  cassandra:
+    contact-points: ${CASSANDRA_HOST:localhost}
+    port: 9042
+    local-datacenter: ${CASSANDRA_DC:datacenter1}
+    keyspace-name: financeks
+    schema-action: CREATE_IF_NOT_EXISTS
 
 jwt:
-  secret: "<Base64-encoded shared secret across all 5 services>"
+  secret: "PEVxkwxSjgh4yIP8Jko0zQJsk/1SOWWBNMoo/FMnuII="
   expiration: 86400000 # 24 hours in ms

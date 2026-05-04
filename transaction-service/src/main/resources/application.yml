@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: transaction-service
+
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -17,15 +18,16 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
     redis:
-      host: redis
-      port: 6379
-      password: redispass
-    mongodb:
-      uri: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:redispass}
     neo4j:
-      uri: bolt://neo4j:7687
+      uri: ${SPRING_DATA_NEO4J_URI:bolt://localhost:7687}
       username: neo4j
       password: neo4jpass
+
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
 
 jwt:
   secret: "<Base64-encoded shared secret across all 5 services>"

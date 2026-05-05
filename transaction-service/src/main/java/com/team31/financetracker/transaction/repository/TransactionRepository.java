@@ -97,6 +97,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        Map<String, Object> getTransactionAnalytics(@Param("start") LocalDateTime start,
                      @Param("endExclusive") LocalDateTime endExclusive);
 
+       @Query("SELECT t.category, COUNT(t) FROM Transaction t " +
+                     "WHERE t.transactionDate >= :start AND t.transactionDate < :endExclusive " +
+                     "GROUP BY t.category")
+       List<Object[]> countTransactionsByCategory(@Param("start") LocalDateTime start,
+                     @Param("endExclusive") LocalDateTime endExclusive);
+
+       @Query("SELECT t.status, COUNT(t) FROM Transaction t " +
+                     "WHERE t.transactionDate >= :start AND t.transactionDate < :endExclusive " +
+                     "GROUP BY t.status")
+       List<Object[]> countTransactionsByStatus(@Param("start") LocalDateTime start,
+                     @Param("endExclusive") LocalDateTime endExclusive);
+
        // ── S3-F11: get userId for transaction via accounts join ───────────────────
 
        @Query(value = "SELECT a.user_id FROM transactions t JOIN accounts a ON t.account_id = a.id WHERE t.id = :transactionId", nativeQuery = true)

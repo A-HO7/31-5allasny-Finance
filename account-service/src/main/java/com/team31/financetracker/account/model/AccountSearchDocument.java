@@ -1,5 +1,6 @@
 package com.team31.financetracker.account.model;
 
+import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
@@ -14,6 +15,7 @@ import lombok.*;
 public class AccountSearchDocument {
 
     @Id
+    @Field(type = FieldType.Keyword)
     private String id;
 
     @Field(type = FieldType.Text, analyzer = "standard")

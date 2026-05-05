@@ -5,6 +5,7 @@ public enum TransactionCategory {
     FOOD,
     TRANSPORT,
     RENT,
+    ENTERTAINMENT,
     SAVINGS,
     TRANSFER,
     OTHER

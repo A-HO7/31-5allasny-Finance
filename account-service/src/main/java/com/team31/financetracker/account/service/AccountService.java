@@ -1,9 +1,10 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
-import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
-import com.team31.financetracker.account.dto.TopAccountDTO;
-import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
+import com.team31.financetracker.account.dto.*;
+import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
 import com.team31.financetracker.account.repository.AccountRepository;
@@ -17,10 +18,12 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.query.Query;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import com.team31.financetracker.account.dto.AccountDTO;
 import com.team31.financetracker.account.model.AccountSearchDocument;
 
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -32,25 +35,41 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class AccountService {
+    private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
     private final CacheInvalidator cacheInvalidator;
     private final ElasticsearchOperations elasticsearchOperations;
     private final ElasticsearchHitAdapter elasticsearchHitAdapter;
+    private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
+    private final TopAccountProjectionAdapter topAccountProjectionAdapter;
+    private final RedisTemplate<String, Object> redisTemplate;
+
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
-            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter
+            CacheInvalidator cacheInvalidator,
+            CacheInvalidator cacheInvalidator1,
+            ElasticsearchOperations elasticsearchOperations,
+            ElasticsearchHitAdapter elasticsearchHitAdapter,
+            AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
+            TopAccountProjectionAdapter topAccountProjectionAdapter,
+            RedisTemplate<String, Object> redisTemplate
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
         this.cacheInvalidator = cacheInvalidator1;
         this.elasticsearchOperations = elasticsearchOperations;
         this.elasticsearchHitAdapter = elasticsearchHitAdapter;
+        this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
+        this.topAccountProjectionAdapter = topAccountProjectionAdapter;
+        this.redisTemplate = redisTemplate;
     }
 
     public void register(EntityObserver observer){
@@ -63,7 +82,11 @@ public class AccountService {
 
     public void notifyObservers(String eventType, Object payload){
         for (EntityObserver observer : observers) {
-            observer.onEvent(eventType, payload);
+            try {
+                observer.onEvent(eventType, payload);
+            } catch (Exception e) {
+                log.warn("Observer notification failed for event [{}]: {}", eventType, e.getMessage());
+            }
         }
     }
 
@@ -205,6 +228,12 @@ public class AccountService {
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.RATED, account, Map.of(
+                "statementId", statementId,
+                "rating", ratingInt,
+                "newAverage", nextAvg,
+                "totalRatings", nextTotal
+        ));
         cacheInvalidator.invalidateAccountData(accountId);
     }
 
@@ -233,6 +262,10 @@ public class AccountService {
 
         // 5. Force Push to DB
         accountRepository.saveAndFlush(account);
+        AccountEventActions action = newStatus == AccountStatus.FROZEN
+                ? AccountEventActions.FROZEN
+                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+        notifyAccountEvent(action, account, Map.of("status", account.getStatus().name()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -245,13 +278,13 @@ public class AccountService {
                             .filter(s -> s.getExpiryDate().isBefore(LocalDate.now()))
                             .toList();
 
-                    return new AccountStatementAlertDTO(
-                            account.getId(),
-                            account.getName(),
-                            account.getStatus().name(),
-                            expired,
-                            expired.size()
-                    );
+                    return AccountStatementAlertDTO.builder()
+                            .accountId(account.getId())
+                            .accountName(account.getName())
+                            .accountStatus(account.getStatus().name())
+                            .expiredStatements(expired)
+                            .expiredCount(expired.size())
+                            .build();
                 })
                 .filter(dto -> dto.expiredCount() > 0)
                 .toList();
@@ -269,6 +302,7 @@ public class AccountService {
 
         account.setAccountDetails(existing);
         Account saved = accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.DETAILS_UPDATED, saved, Map.of("updatedKeys", existing.keySet()));
         cacheInvalidator.invalidateAccountData(id);
         return saved;
     }
@@ -282,12 +316,9 @@ public class AccountService {
     @Cacheable(value = "account-service::S2-F6", key = "#limit")
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
-        return results.stream().map(row -> new TopAccountDTO(
-                ((Number) row[0]).longValue(),
-                (String) row[1],
-                ((Number) row[2]).doubleValue(),
-                ((Number) row[3]).longValue()
-        )).toList();
+        return results.stream()
+                .map(topAccountProjectionAdapter::adapt)
+                .toList();
     }
 
     @Transactional
@@ -374,19 +405,82 @@ public class AccountService {
         Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
 
         if (resultRaw == null) {
-            return new AccountSummaryDTO(id, account.getName(), 0.0, 0.0, 0.0, 0L);
+            return AccountSummaryDTO.builder()
+                    .accountId(id)
+                    .name(account.getName())
+                    .totalDeposits(0.0)
+                    .totalWithdrawals(0.0)
+                    .netChange(0.0)
+                    .totalTransactions(0L)
+                    .build();
         }
 
         Object[] row = (Object[]) resultRaw;
+        return accountSummaryProjectionAdapter.adapt(row);
+    }
 
-        Long accountId = ((Number) row[0]).longValue();
-        String name = (String) row[1];
-        Double totalDeposits = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
-        Double totalWithdrawals = row[3] != null ? ((Number) row[3]).doubleValue() : 0.0;
-        Long transactionCount = ((Number) row[4]).longValue();
+    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", account.getId());
+        payload.put("action", action.name());
+        payload.put("name", account.getName());
+        if (details != null) {
+            payload.putAll(details);
+        }
+        notifyObservers(action.name(), payload);
+    }
 
-        Double netChange = totalDeposits - totalWithdrawals;
+    public AccountPerformanceDashboardDTO getDashboard(
+            Long accountId,
+            Long requestingUserId,
+            String requestingUserRole
+    ) {
+        Account account = getById(accountId);
 
-        return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
+        boolean isAdmin = "ADMIN".equals(requestingUserRole);
+        boolean isOwner =
+                requestingUserId != null
+                &&
+                requestingUserId.equals(account.getUserId());
+
+        if (!isOwner && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
+        String cacheKey = "account-service::S2-F12::" + accountId;
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", accountId);
+        payload.put("requestedBy", requestingUserId);
+        payload.put("requestedByRole", requestingUserRole);
+        notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
+
+        if (cached != null) {
+            return (AccountPerformanceDashboardDTO) cached;
+        }
+
+        Object[] stats = accountRepository.getTransactionStats(accountId);
+        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
+
+        Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
+        Double totalIncome = stats[1] != null ? ((Number) stats[1]).doubleValue() : 0.0;
+        Double totalExpenses = stats[2] != null ? ((Number) stats[2]).doubleValue() : 0.0;
+
+        AccountPerformanceDashboardDTO dto = AccountPerformanceDashboardDTO.builder()
+                .accountId(accountId)
+                .name(account.getName())
+                .type(account.getType().name())
+                .balance(account.getBalance())
+                .totalTransactions(totalTransactions)
+                .totalIncome(totalIncome)
+                .totalExpenses(totalExpenses)
+                .netChange(totalIncome - totalExpenses)
+                .activeStatementsCount(activeStatements)
+                .build();
+
+        redisTemplate.opsForValue().set(cacheKey, dto, 10, TimeUnit.MINUTES);
+
+        return dto;
     }
 }

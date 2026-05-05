@@ -70,6 +70,8 @@ public class Budget implements Serializable {
         if (metadata == null) {
             metadata = new HashMap<>();
         }
+
+        metadata.putIfAbsent("healthWeight", 1.0);
         if (category == null) {
             category = Category.OTHER;
         }

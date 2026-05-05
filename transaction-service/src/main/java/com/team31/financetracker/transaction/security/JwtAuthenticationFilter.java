@@ -48,7 +48,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // ───────────────────────────────────────────────────────────────────
 
         boolean passed = tokenExtractor.handle(authContext, response);
-
         if (passed) {
             // Populate Spring Security context so @PreAuthorize / hasRole work too
             var authToken = new UsernamePasswordAuthenticationToken(

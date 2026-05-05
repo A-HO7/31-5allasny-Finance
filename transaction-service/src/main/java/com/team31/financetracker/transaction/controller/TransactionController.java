@@ -216,9 +216,27 @@ public class TransactionController {
         return transactionService.getTransactionDetails(transactionId);
     }
 
+    // ── S3-F11: Record User-Category Spending Pattern ────────────────────────
+
+    /** POST /api/transactions/{transactionId}/record-pattern */
+    @PostMapping("/{transactionId}/record-pattern")
+    @ResponseStatus(HttpStatus.OK)
+    public void recordSpendingPattern(@PathVariable Long transactionId) {
+        // Ownership check
+        Transaction tx = transactionService.getTransactionById(transactionId);
+        if (!tx.getUserId().equals(authContext.getUserId()) && !"ADMIN".equals(authContext.getRole())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
+        transactionService.recordSpendingPattern(transactionId);
+    }
+
     // ── S3-F12: Get Category Recommendations for User ───────────────────────
 
-    /** GET /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type} */
+    /**
+     * GET
+     * /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type}
+     */
     @GetMapping("/recommendations")
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             @RequestParam Long userId,

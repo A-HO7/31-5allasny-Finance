@@ -6,9 +6,10 @@ spring:
     name: user-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/financedb
-    username: postgres
-    password: postgres
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/financedb}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -16,11 +17,13 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:redispass}
+
   mongodb:
     uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
 

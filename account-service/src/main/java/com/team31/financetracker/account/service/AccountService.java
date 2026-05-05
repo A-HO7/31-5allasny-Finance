@@ -6,6 +6,7 @@ import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
 import com.team31.financetracker.account.repository.AccountRepository;
@@ -19,6 +20,8 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.query.Criteria;
 import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.query.Query;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -37,6 +40,8 @@ import java.util.Map;
 
 @Service
 public class AccountService {
+    private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
@@ -72,7 +77,11 @@ public class AccountService {
 
     public void notifyObservers(String eventType, Object payload){
         for (EntityObserver observer : observers) {
-            observer.onEvent(eventType, payload);
+            try {
+                observer.onEvent(eventType, payload);
+            } catch (Exception e) {
+                log.warn("Observer notification failed for event [{}]: {}", eventType, e.getMessage());
+            }
         }
     }
 
@@ -214,6 +223,12 @@ public class AccountService {
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.RATED, account, Map.of(
+                "statementId", statementId,
+                "rating", ratingInt,
+                "newAverage", nextAvg,
+                "totalRatings", nextTotal
+        ));
         cacheInvalidator.invalidateAccountData(accountId);
     }
 
@@ -242,6 +257,10 @@ public class AccountService {
 
         // 5. Force Push to DB
         accountRepository.saveAndFlush(account);
+        AccountEventActions action = newStatus == AccountStatus.FROZEN
+                ? AccountEventActions.FROZEN
+                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+        notifyAccountEvent(action, account, Map.of("status", account.getStatus().name()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -278,6 +297,7 @@ public class AccountService {
 
         account.setAccountDetails(existing);
         Account saved = accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.DETAILS_UPDATED, saved, Map.of("updatedKeys", existing.keySet()));
         cacheInvalidator.invalidateAccountData(id);
         return saved;
     }
@@ -392,5 +412,16 @@ public class AccountService {
 
         Object[] row = (Object[]) resultRaw;
         return accountSummaryProjectionAdapter.adapt(row);
+    }
+
+    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", account.getId());
+        payload.put("action", action.name());
+        payload.put("name", account.getName());
+        if (details != null) {
+            payload.putAll(details);
+        }
+        notifyObservers(action.name(), payload);
     }
 }

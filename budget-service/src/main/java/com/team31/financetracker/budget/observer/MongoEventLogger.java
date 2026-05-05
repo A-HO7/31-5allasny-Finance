@@ -1,54 +1,75 @@
 package com.team31.financetracker.budget.observer;
 
+import com.team31.financetracker.budget.factory.EventFactory;
 import com.team31.financetracker.budget.model.BudgetEvent;
+import com.team31.financetracker.budget.model.MongoEvent;
 import com.team31.financetracker.budget.repository.BudgetEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Observer Pattern (DP-2) — concrete observer that persists a {@link BudgetEvent}
- * to MongoDB whenever a subject calls {@link #onEvent(String, Object)}.
+ * Observer Pattern (DP-2) — concrete observer that persists a BudgetEvent
+ * to MongoDB whenever a subject calls onEvent(String, Object).
  *
- * <p><b>Failure policy:</b> Any MongoDB exception is caught, logged at WARN level,
- * and NOT re-thrown. The upstream Cassandra write must not be rolled back on a
- * Mongo write failure.
+ * Failure policy: Any MongoDB exception is caught, logged at WARN level,
+ * and NOT re-thrown. The upstream database write must not be rolled back on
+ * a Mongo write failure.
  */
 @Component
 public class MongoEventLogger implements EntityObserver {
 
     private static final Logger log = LoggerFactory.getLogger(MongoEventLogger.class);
 
-    private final BudgetEventRepository eventRepository;
+    private final EventFactory eventFactory;
+    private final BudgetEventRepository budgetEventRepository;
 
-    public MongoEventLogger(BudgetEventRepository eventRepository) {
-        this.eventRepository = eventRepository;
+    public MongoEventLogger(EventFactory eventFactory,
+                            BudgetEventRepository budgetEventRepository) {
+        this.eventFactory = eventFactory;
+        this.budgetEventRepository = budgetEventRepository;
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void onEvent(String eventType, Object payload) {
         try {
             Map<String, Object> details = new HashMap<>();
-            Long budgetId = null;
 
-            if (payload instanceof Map<?, ?> rawMap) {
-                Map<String, Object> map = (Map<String, Object>) rawMap;
-                Object bid = map.get("budgetId");
-                if (bid instanceof Number n) budgetId = n.longValue();
-                details.put("spent_amount", map.get("spentAmount"));
-                details.put("percent_used", map.get("percentUsed"));
-                details.put("category", map.get("category"));
+            if (payload instanceof Map<?, ?> map) {
+                map.forEach((key, value) -> details.put(String.valueOf(key), value));
+            } else if (payload != null) {
+                details.put("payload", payload.toString());
             }
 
-            BudgetEvent event = new BudgetEvent(budgetId, eventType, LocalDateTime.now(), details);
-            eventRepository.save(event);
+            Long budgetId = extractBudgetId(details);
+
+            MongoEvent event = eventFactory.createEvent(budgetId, eventType, details);
+
+            budgetEventRepository.save((BudgetEvent) event);
+
         } catch (Exception ex) {
             log.warn("MongoEventLogger failed to persist event [{}]: {}", eventType, ex.getMessage(), ex);
         }
+    }
+
+    private Long extractBudgetId(Map<String, Object> details) {
+        Object rawBudgetId = details.get("budgetId");
+
+        if (rawBudgetId instanceof Number number) {
+            return number.longValue();
+        }
+
+        if (rawBudgetId != null) {
+            try {
+                return Long.parseLong(rawBudgetId.toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        return null;
     }
 }

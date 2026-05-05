@@ -12,6 +12,7 @@ public class BudgetEvent implements MongoEvent {
 
     public static final String USAGE_RECORDED   = "USAGE_RECORDED";
     public static final String ANALYTICS_VIEWED = "ANALYTICS_VIEWED";
+    public static final String DASHBOARD_VIEWED = "DASHBOARD_VIEWED";
     public static final String METADATA_UPDATED = "METADATA_UPDATED";
     public static final String BATCH_CREATED    = "BATCH_CREATED";
     public static final String PURGED           = "PURGED";
@@ -33,27 +34,63 @@ public class BudgetEvent implements MongoEvent {
     @Field("details")
     private Map<String, Object> details;
 
-    public BudgetEvent() {}
-
-    public BudgetEvent(Long budgetId, String action, LocalDateTime timestamp, Map<String, Object> details) {
-        this.budgetId  = budgetId;
-        this.action    = action;
-        this.timestamp = timestamp;
-        this.details   = details;
+    public BudgetEvent() {
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public BudgetEvent(Long budgetId, String action, LocalDateTime timestamp, Map<String, Object> details) {
+        this.budgetId = budgetId;
+        this.action = action;
+        this.timestamp = timestamp;
+        this.details = details;
+    }
 
-    public Long getBudgetId() { return budgetId; }
-    public void setBudgetId(Long budgetId) { this.budgetId = budgetId; }
+    public BudgetEvent(String action, Map<String, Object> details) {
+        this.action = action;
+        this.timestamp = LocalDateTime.now();
+        this.details = details;
+    }
 
-    public String getAction() { return action; }
-    public void setAction(String action) { this.action = action; }
+    @Override
+    public String getId() {
+        return id;
+    }
 
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    public Map<String, Object> getDetails() { return details; }
-    public void setDetails(Map<String, Object> details) { this.details = details; }
+    public Long getBudgetId() {
+        return budgetId;
+    }
+
+    public void setBudgetId(Long budgetId) {
+        this.budgetId = budgetId;
+    }
+
+    @Override
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    @Override
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    @Override
+    public Map<String, Object> getDetails() {
+        return details;
+    }
+
+    public void setDetails(Map<String, Object> details) {
+        this.details = details;
+    }
 }

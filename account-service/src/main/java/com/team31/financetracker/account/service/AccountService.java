@@ -1,6 +1,8 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
+import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
@@ -41,16 +43,23 @@ public class AccountService {
     private final CacheInvalidator cacheInvalidator;
     private final ElasticsearchOperations elasticsearchOperations;
     private final ElasticsearchHitAdapter elasticsearchHitAdapter;
+    private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
+    private final TopAccountProjectionAdapter topAccountProjectionAdapter;
+
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
-            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter
+            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter,
+            AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
+            TopAccountProjectionAdapter topAccountProjectionAdapter
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
         this.cacheInvalidator = cacheInvalidator1;
         this.elasticsearchOperations = elasticsearchOperations;
         this.elasticsearchHitAdapter = elasticsearchHitAdapter;
+        this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
+        this.topAccountProjectionAdapter = topAccountProjectionAdapter;
     }
 
     public void register(EntityObserver observer){
@@ -245,13 +254,13 @@ public class AccountService {
                             .filter(s -> s.getExpiryDate().isBefore(LocalDate.now()))
                             .toList();
 
-                    return new AccountStatementAlertDTO(
-                            account.getId(),
-                            account.getName(),
-                            account.getStatus().name(),
-                            expired,
-                            expired.size()
-                    );
+                    return AccountStatementAlertDTO.builder()
+                            .accountId(account.getId())
+                            .accountName(account.getName())
+                            .accountStatus(account.getStatus().name())
+                            .expiredStatements(expired)
+                            .expiredCount(expired.size())
+                            .build();
                 })
                 .filter(dto -> dto.expiredCount() > 0)
                 .toList();
@@ -282,12 +291,9 @@ public class AccountService {
     @Cacheable(value = "account-service::S2-F6", key = "#limit")
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
-        return results.stream().map(row -> new TopAccountDTO(
-                ((Number) row[0]).longValue(),
-                (String) row[1],
-                ((Number) row[2]).doubleValue(),
-                ((Number) row[3]).longValue()
-        )).toList();
+        return results.stream()
+                .map(topAccountProjectionAdapter::adapt)
+                .toList();
     }
 
     @Transactional
@@ -374,19 +380,17 @@ public class AccountService {
         Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
 
         if (resultRaw == null) {
-            return new AccountSummaryDTO(id, account.getName(), 0.0, 0.0, 0.0, 0L);
+            return AccountSummaryDTO.builder()
+                    .accountId(id)
+                    .name(account.getName())
+                    .totalDeposits(0.0)
+                    .totalWithdrawals(0.0)
+                    .netChange(0.0)
+                    .totalTransactions(0L)
+                    .build();
         }
 
         Object[] row = (Object[]) resultRaw;
-
-        Long accountId = ((Number) row[0]).longValue();
-        String name = (String) row[1];
-        Double totalDeposits = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
-        Double totalWithdrawals = row[3] != null ? ((Number) row[3]).doubleValue() : 0.0;
-        Long transactionCount = ((Number) row[4]).longValue();
-
-        Double netChange = totalDeposits - totalWithdrawals;
-
-        return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
+        return accountSummaryProjectionAdapter.adapt(row);
     }
 }

@@ -28,7 +28,7 @@ public class RoleAuthorizationHandler extends AuthHandler {
 
         // Replace with endpoints that require ADMIN role in account-service
         // (OPTIONAL: Controllers already use PreAuthorize)
-        boolean isAdminEndpoint = requestURI.startsWith("");
+        boolean isAdminEndpoint = requestURI.startsWith("/api/accounts/search");
 
         if (isAdminEndpoint && !isAdmin) {
             context.getResponse().setStatus(HttpServletResponse.SC_FORBIDDEN);

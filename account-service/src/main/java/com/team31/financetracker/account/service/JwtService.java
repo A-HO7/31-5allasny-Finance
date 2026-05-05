@@ -17,17 +17,21 @@ import java.util.Date;
 public class JwtService {
 
     private SecretKey getSigningKey() {
-        String secret = JwtConfigurationManager.getInstance().getSecret();
-        byte[] keyBytes = Base64.getDecoder().decode(secret);
+        byte[] keyBytes = JwtConfigurationManager.getInstance().getSecret().getBytes();
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
     public Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)  // parses a signed JWS and verifies signature
+                    .getPayload();
+        } catch (JwtException e) {
+            // rethrow or wrap to allow upper layers to handle authentication failures
+            throw e;
+        }
     }
 
     public String extractEmail(String token) {
@@ -35,7 +39,12 @@ public class JwtService {
     }
 
     public Long extractUserId(String token) {
-        Object uid = extractAllClaims(token).get("uid");
+        Claims claims = extractAllClaims(token);
+
+        Object uid = claims.get("uid");
+        if (uid == null) uid = claims.get("userId");
+        if (uid == null) uid = claims.get("id");
+
         if (uid == null) return null;
         if (uid instanceof Number n) return n.longValue();
         return Long.parseLong(uid.toString());
@@ -49,8 +58,10 @@ public class JwtService {
     public boolean isTokenValid(String token) {
         try {
             Claims claims = extractAllClaims(token);
-            return claims.getExpiration().after(new Date());
-        } catch (Exception e) {
+            Date exp = claims.getExpiration();
+            return exp != null && exp.after(new Date());
+        } catch (JwtException | IllegalArgumentException e) {
+            // log e if needed
             return false;
         }
     }

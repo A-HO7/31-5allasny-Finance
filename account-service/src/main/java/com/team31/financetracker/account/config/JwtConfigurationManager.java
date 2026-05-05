@@ -10,7 +10,7 @@ public class JwtConfigurationManager {
         String envSecret = System.getenv("JWT_SECRET");
         this.secret = (envSecret != null && !envSecret.isBlank())
                 ? envSecret
-                : "n2p1MF4+anaXiUsAmAznZtdjV8rDZAoscZLaa686hnE=";
+                : "ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev";
 
         String envExp = System.getenv("JWT_EXPIRATION_MS");
         this.expirationMs = (envExp != null && !envExp.isBlank())

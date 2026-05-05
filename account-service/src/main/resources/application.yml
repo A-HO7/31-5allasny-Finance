@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 1234
 
 spring:
   application:
@@ -28,5 +28,5 @@ spring:
     uris: ${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}
 
 jwt:
-  secret: "n2p1MF4+anaXiUsAmAznZtdjV8rDZAoscZLaa686hnE="
+  secret: "ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev"
   expiration: 86400000 # 24 hours in ms

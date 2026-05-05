@@ -1,7 +1,10 @@
 package com.team31.financetracker.user.dto;
 
-public class UserTransactionSummaryDTO {
+import java.io.Serializable;
 
+public class UserTransactionSummaryDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
     private Long userId;
     private String name;
     private Long totalTransactions;

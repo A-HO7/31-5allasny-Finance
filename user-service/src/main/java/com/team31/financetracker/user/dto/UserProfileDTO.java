@@ -1,9 +1,12 @@
 package com.team31.financetracker.user.dto;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 
-public class UserProfileDTO {
+public class UserProfileDTO implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         private final Long userId;
         private final String name;
         private final String email;

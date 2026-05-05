@@ -9,4 +9,5 @@ public record ActivityEventDTO(
         LocalDateTime timestamp,
         Map<String, Object> details
 ) implements Serializable {
+    private static final long serialVersionUID = 1L;
 }

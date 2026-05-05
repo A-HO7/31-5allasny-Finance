@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.config.auth;
 
+import com.team31.financetracker.user.model.User;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,6 +14,7 @@ public class AuthContext {
     private String token;
     private String userEmail;
     private UserDetails userDetails;
+    private User authenticatedUser;
 
     public AuthContext(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) {
         this.request = request;
@@ -32,4 +34,7 @@ public class AuthContext {
     
     public UserDetails getUserDetails() { return userDetails; }
     public void setUserDetails(UserDetails userDetails) { this.userDetails = userDetails; }
+
+    public User getAuthenticatedUser() { return authenticatedUser; }
+    public void setAuthenticatedUser(User user) { this.authenticatedUser = user; }
 }

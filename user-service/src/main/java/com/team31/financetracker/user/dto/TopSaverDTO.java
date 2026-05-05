@@ -1,7 +1,10 @@
 package com.team31.financetracker.user.dto;
 
-public class TopSaverDTO {
+import java.io.Serializable;
 
+public class TopSaverDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
     private Long userId;
     private String name;
     private Double netSavings;

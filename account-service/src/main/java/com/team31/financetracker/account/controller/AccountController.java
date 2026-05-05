@@ -12,7 +12,6 @@ import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,13 +26,9 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -154,36 +149,6 @@ public class AccountController {
         return accountService.getSummary(id, start, end);
     }
 
-    private static final Set<String> ACCOUNT_ID_KEYS = Set.of("accountid", "id", "account_id");
-
-    private static List<LocalDateTime> inferDateTimesFromQuery(MultiValueMap<String, String> queryParams) {
-        List<LocalDateTime> out = new ArrayList<>();
-        for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
-            String key = e.getKey();
-            if (key != null && ACCOUNT_ID_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
-                continue;
-            }
-            if (e.getValue() == null) {
-                continue;
-            }
-            for (String v : e.getValue()) {
-                if (v == null || v.isBlank()) {
-                    continue;
-                }
-                tryParseFlexible(v.trim()).ifPresent(out::add);
-            }
-        }
-        return out;
-    }
-
-    private static Optional<LocalDateTime> tryParseFlexible(String raw) {
-        try {
-            return Optional.of(parseFlexibleDateTime(raw));
-        } catch (ResponseStatusException ignored) {
-            return Optional.empty();
-        }
-    }
-
     private static Long findLongParam(MultiValueMap<String, String> queryParams, String... acceptedNames) {
         if (queryParams == null || queryParams.isEmpty()) {
             return null;
@@ -300,6 +265,12 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required");
         }
         accountService.rateAccountAfterStatementReview(id, body.getStatementId(), body.getRating());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/index")
+    public ResponseEntity<Void> indexAccount(@PathVariable Long id) {
+        accountService.indexAccountById(id);
         return ResponseEntity.ok().build();
     }
 

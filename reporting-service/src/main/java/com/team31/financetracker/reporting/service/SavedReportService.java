@@ -453,7 +453,8 @@ public class SavedReportService {
                 "reporting-service::S5-F1::*",
                 "reporting-service::S5-F3::*",
                 "reporting-service::S5-F6::*",
-                "reporting-service::S5-F8::*"
+                "reporting-service::S5-F8::*",
+                "reporting-service::S5-F10::*"
         );
     }
 }

@@ -39,9 +39,10 @@ public class RoleAuthorizationHandler extends AuthHandler {
         boolean isAdmin = authentication.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 
-        // Analytics endpoints require ADMIN role
+        // Analytics endpoints require ADMIN role, EXCEPT for the Financial Health Score (S5-F10)
+        // which allows ownership-based access (validated in the controller).
         boolean isAnalyticsEndpoint =
-                requestURI.startsWith("/api/reports/analytics") ||
+                (requestURI.startsWith("/api/reports/analytics") && !requestURI.equals("/api/reports/analytics/health")) ||
                 requestURI.startsWith("/api/reports/audit")     ||
                 requestURI.startsWith("/api/reports/health-score");
 

@@ -1,6 +1,5 @@
 package com.team31.financetracker.transaction.security;
 
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,27 +18,27 @@ import java.util.List;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService    jwtService;
-    private final JdbcTemplate  jdbcTemplate;
-    private final AuthContext   authContext;
+    private final JwtService jwtService;
+    private final JdbcTemplate jdbcTemplate;
+    private final AuthContext authContext;
 
     public JwtAuthenticationFilter(JwtService jwtService, JdbcTemplate jdbcTemplate, AuthContext authContext) {
-        this.jwtService   = jwtService;
+        this.jwtService = jwtService;
         this.jdbcTemplate = jdbcTemplate;
-        this.authContext  = authContext;
+        this.authContext = authContext;
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest  request,
-                                    HttpServletResponse response,
-                                    FilterChain         filterChain)
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain)
             throws ServletException, IOException {
 
         // ── Build the Chain of Responsibility ──────────────────────────────
-        TokenExtractionHandler    tokenExtractor     = new TokenExtractionHandler();
+        TokenExtractionHandler tokenExtractor = new TokenExtractionHandler();
         SignatureValidationHandler signatureValidator = new SignatureValidationHandler(jwtService);
-        UserLoaderHandler          userLoader         = new UserLoaderHandler(jdbcTemplate);
-        RoleAuthorizationHandler   roleAuthorizer     = new RoleAuthorizationHandler();
+        UserLoaderHandler userLoader = new UserLoaderHandler(jdbcTemplate);
+        RoleAuthorizationHandler roleAuthorizer = new RoleAuthorizationHandler();
 
         // Fluent chain: each setNext() returns the argument
         tokenExtractor
@@ -49,14 +48,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // ───────────────────────────────────────────────────────────────────
 
         boolean passed = tokenExtractor.handle(authContext, response);
-
         if (passed) {
             // Populate Spring Security context so @PreAuthorize / hasRole work too
             var authToken = new UsernamePasswordAuthenticationToken(
                     authContext.getEmail(),
                     null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + authContext.getRole()))
-            );
+                    List.of(new SimpleGrantedAuthority("ROLE_" + authContext.getRole())));
             authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authToken);
             filterChain.doFilter(request, response);

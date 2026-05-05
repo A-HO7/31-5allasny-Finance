@@ -8,6 +8,7 @@ import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
+import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.transaction.security.AuthContext;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
@@ -228,6 +229,29 @@ public class TransactionController {
                     org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
         }
         transactionService.recordSpendingPattern(transactionId);
+    }
+
+    // ── S3-F12: Get Category Recommendations for User ───────────────────────
+
+    /**
+     * GET
+     * /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type}
+     */
+    @GetMapping("/recommendations")
+    public List<CategoryRecommendationDTO> getCategoryRecommendations(
+            @RequestParam Long userId,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String categoryType) {
+
+        // Ownership check: caller uid == userId OR role == ADMIN
+        Long callerId = authContext.getUserId();
+        String role = authContext.getRole();
+        if (!userId.equals(callerId) && !"ADMIN".equals(role)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: can only view own recommendations or be ADMIN");
+        }
+
+        return transactionService.getCategoryRecommendations(userId, limit, categoryType);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

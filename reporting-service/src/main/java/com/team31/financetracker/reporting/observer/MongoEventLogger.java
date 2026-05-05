@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import com.team31.financetracker.reporting.util.RedisCacheEvictor;
 
 /**
  * Concrete GoF Observer (DP-2) that persists events to MongoDB.
@@ -28,16 +30,25 @@ public class MongoEventLogger implements EntityObserver {
 
     private static final Logger log = LoggerFactory.getLogger(MongoEventLogger.class);
 
+    private static final Set<String> DATA_MUTATING = Set.of(
+            "GENERATED", "FAILED", "REGENERATED", "REGENERATION_DENIED", "ARCHIVED", "TEMPLATE_APPLIED"
+    );
+
     private final EventType boundEventType;
     private final ReportAuditEventRepository repository;
+    private final RedisCacheEvictor redisCacheEvictor;
 
     /**
      * @param boundEventType the fixed EventType this logger is bound to (REPORT_AUDIT for reporting-service)
      * @param repository     Spring Data MongoDB repository for persisting events
+     * @param redisCacheEvictor For wildcard invalidation on data-mutating events
      */
-    public MongoEventLogger(EventType boundEventType, ReportAuditEventRepository repository) {
+    public MongoEventLogger(EventType boundEventType, 
+                            ReportAuditEventRepository repository,
+                            RedisCacheEvictor redisCacheEvictor) {
         this.boundEventType = boundEventType;
         this.repository = repository;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
 
     /**
@@ -56,6 +67,12 @@ public class MongoEventLogger implements EntityObserver {
             Map<String, Object> params = buildParams(eventType, payload);
             ReportAuditEvent event = (ReportAuditEvent) EventFactory.createEvent(boundEventType, params);
             repository.save(event);
+            
+            // Invalidate analytics caches on data-mutating events only.
+            // Exclude ANALYTICS_VIEWED / DASHBOARD_VIEWED to avoid self-defeating loops.
+            if (DATA_MUTATING.contains(eventType)) {
+                redisCacheEvictor.evictByPatterns("reporting-service::S5-F10::*");
+            }
         } catch (Exception e) {
             // Soft dependency: log and continue — never rethrow to the upstream PG transaction
             log.warn("MongoEventLogger failed to persist event '{}': {}", eventType, e.getMessage(), e);

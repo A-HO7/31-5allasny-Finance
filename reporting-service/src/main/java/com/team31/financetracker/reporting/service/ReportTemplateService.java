@@ -4,33 +4,44 @@ import com.team31.financetracker.reporting.model.ReportTemplate;
 import com.team31.financetracker.reporting.repository.ReportTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.team31.financetracker.reporting.dto.TemplateUsageDTO;
-import java.time.LocalDateTime;
-import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.adapter.TemplateUsageAdapter;
 
 @Service
 public class ReportTemplateService {
 
     private final ReportTemplateRepository repository;
+    private final TemplateUsageAdapter templateUsageAdapter;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
 
-    public ReportTemplateService(ReportTemplateRepository repository) {
+    public ReportTemplateService(ReportTemplateRepository repository, TemplateUsageAdapter templateUsageAdapter,com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
+        this.templateUsageAdapter = templateUsageAdapter;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
 
     public ReportTemplate createReportTemplate(ReportTemplate template) {
         if (template.getCode() != null && repository.existsByCode(template.getCode())) {
             throw new IllegalArgumentException("Template code must be unique");
         }
-        return repository.save(template);
+        ReportTemplate saved = repository.save(template);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + saved.getId(),
+                "reporting-service::S5-F9::*"
+        );
+        return saved;
     }
 
     public List<ReportTemplate> getAllReportTemplates() {
         return repository.findAll();
     }
 
+    @Cacheable(value = "reporting-service::report-template", key = "#id")
     public ReportTemplate getReportTemplateById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("ReportTemplate not found with id: " + id));
     }
@@ -59,46 +70,33 @@ public class ReportTemplateService {
             existing.setActive(updatedTemplate.getActive());
         }
 
-        return repository.save(existing);
+        ReportTemplate saved = repository.save(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + saved.getId(),
+                "reporting-service::S5-F9::*"
+        );
+        return saved;
     }
 
     @Transactional
     public void deleteReportTemplate(Long id) {
         ReportTemplate existing = getReportTemplateById(id);
         repository.delete(existing);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::report-template::" + id,
+                "reporting-service::S5-F9::*"
+        );
     }
 
+    /**
+     * S5-F9 — returns top-used templates as DTOs.
+     * Uses native SQL returning Object[], mapped via TemplateUsageAdapter (Adapter Pattern).
+     */
+    @Cacheable(value = "reporting-service::S5-F9", key = "#limit")
     public List<TemplateUsageDTO> getTopUsedTemplates(int limit) {
         List<Object[]> rows = repository.findTopUsedTemplates(limit);
-        return rows.stream().map(row -> {
-            Long templateId = ((Number) row[0]).longValue();
-            String code = (String) row[1];
-            String templateType = (String) row[2];
-            Double maxPages = ((Number) row[3]).doubleValue();
-            Integer timesUsed = ((Number) row[4]).intValue();
-            Double totalPagesGenerated = ((Number) row[5]).doubleValue();
-            Boolean active = (Boolean) row[6];
-            LocalDateTime expiryDate = null;
-            if (row[7] != null) {
-                if (row[7] instanceof java.sql.Timestamp) {
-                    expiryDate = ((java.sql.Timestamp) row[7]).toLocalDateTime();
-                } else if (row[7] instanceof LocalDateTime) {
-                    expiryDate = (LocalDateTime) row[7];
-                } else {
-                    expiryDate = LocalDateTime.parse(row[7].toString());
-                }
-            }
-            Boolean expired = expiryDate != null && expiryDate.isBefore(LocalDateTime.now());
-            return TemplateUsageDTO.builder()
-                    .templateId(templateId)
-                    .code(code)
-                    .templateType(templateType)
-                    .maxPages(maxPages)
-                    .timesUsed(timesUsed)
-                    .totalPagesGenerated(totalPagesGenerated)
-                    .active(active)
-                    .expired(expired)
-                    .build();
-        }).collect(Collectors.toList());
+        return rows.stream()
+                .map(templateUsageAdapter::adapt)
+                .collect(Collectors.toList());
     }
 }

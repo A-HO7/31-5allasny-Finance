@@ -4,6 +4,7 @@ import com.team31.financetracker.reporting.model.SavedReport;
 import com.team31.financetracker.reporting.repository.SavedReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -26,19 +27,35 @@ import java.time.temporal.ChronoUnit;
 
 import com.team31.financetracker.reporting.dto.ReportDetailsDTO;
 import java.util.stream.Collectors;
+import com.team31.financetracker.reporting.adapter.ReportAnalyticsAdapter;
+import com.team31.financetracker.reporting.dto.ReportTypeBreakdownProjection;
+import com.team31.financetracker.reporting.adapter.MongoDocumentAdapter;
+import com.team31.financetracker.reporting.dto.ReportAuditEventDTO;
+import com.team31.financetracker.reporting.mongo.ReportAuditEvent;
+import com.team31.financetracker.reporting.mongo.ReportAuditEventRepository;
 import com.team31.financetracker.reporting.observer.EntityObserver;
 import com.team31.financetracker.reporting.observer.MongoEventLogger;
 import java.util.concurrent.CopyOnWriteArrayList;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class SavedReportService {
+
+    private static final Logger log = LoggerFactory.getLogger(SavedReportService.class);
 
     private final SavedReportRepository repository;
     private final ReportTemplateRepository templateRepository;
     private final ReportTemplateUsageRepository usageRepository;
     private final ReportTemplateUsageService reportTemplateUsageService;
     private final MongoEventLogger mongoEventLogger;
+    private final ReportAnalyticsAdapter reportAnalyticsAdapter;
+
+    private final MongoDocumentAdapter mongoDocumentAdapter;
+    private final ReportAuditEventRepository auditEventRepository;
+    //private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
+    private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
@@ -46,12 +63,22 @@ public class SavedReportService {
                               ReportTemplateRepository templateRepository, 
                               ReportTemplateUsageRepository usageRepository,
                               ReportTemplateUsageService reportTemplateUsageService,
-                              MongoEventLogger mongoEventLogger) {
+                              MongoEventLogger mongoEventLogger,
+                              ReportAnalyticsAdapter reportAnalyticsAdapter,
+
+                              MongoDocumentAdapter mongoDocumentAdapter,
+                              ReportAuditEventRepository auditEventRepository,
+                              com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
         this.repository = repository;
         this.templateRepository = templateRepository;
         this.usageRepository = usageRepository;
         this.reportTemplateUsageService = reportTemplateUsageService;
         this.mongoEventLogger = mongoEventLogger;
+        this.reportAnalyticsAdapter = reportAnalyticsAdapter;
+
+        this.mongoDocumentAdapter = mongoDocumentAdapter;
+        this.auditEventRepository = auditEventRepository;
+        this.redisCacheEvictor = redisCacheEvictor;
     }
     
     @PostConstruct
@@ -80,13 +107,32 @@ public class SavedReportService {
     public SavedReport createSavedReport(SavedReport savedReport) {
         SavedReport saved = repository.save(savedReport);
         notifyReportEvent("REPORT_CREATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
+    }
+
+    /**
+     * Reads all MongoDB audit events for a given report and converts them
+     * via MongoDocumentAdapter (Adapter Pattern — NoSQL read path for S5).
+     */
+    public List<ReportAuditEventDTO> getReportAuditTrail(Long reportId) {
+        List<ReportAuditEvent> events;
+        try {
+            events = auditEventRepository.findByReportIdOrderByTimestampDesc(reportId);
+        } catch (Exception e) {
+            log.warn("Could not retrieve audit trail from MongoDB for reportId {}: {}", reportId, e.getMessage());
+            events = new java.util.ArrayList<>();
+        }
+        return events.stream()
+                .map(mongoDocumentAdapter::adapt)
+                .collect(Collectors.toList());
     }
 
     public List<SavedReport> getAllSavedReports() {
         return repository.findAll();
     }
 
+    @Cacheable(value = "reporting-service::S5-F1")
     public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
                                            LocalDate startDate, LocalDate endDate) {
         boolean hasType   = reportType != null;
@@ -97,6 +143,7 @@ public class SavedReportService {
         return repository.searchReports(hasType, reportType, hasStatus, status, hasStart, startDate, hasEnd, endDate);
     }
 
+    @Cacheable(value = "reporting-service::saved-report", key = "#id")
     public SavedReport getSavedReportById(Long id) {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("SavedReport not found with id: " + id));
     }
@@ -115,6 +162,7 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(existing);
         notifyReportEvent("REPORT_UPDATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -123,6 +171,7 @@ public class SavedReportService {
         SavedReport existing = getSavedReportById(id);
         notifyReportEvent("REPORT_DELETED", existing, null);
         repository.delete(existing);
+        evictWildcardCaches(id);
     }
 
     @Transactional
@@ -144,32 +193,32 @@ public class SavedReportService {
         
         SavedReport saved = repository.save(report);
         notifyReportEvent("ARCHIVED", saved, Map.of("reason", reason));
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
+    @Cacheable(value = "reporting-service::S5-F3", key = "#userId")
     public UserReportSummaryDTO getUserReportSummary(Long userId) {
         ensureUserExists(userId);
 
         // Step b & c: Query grouped counts, build typeBreakdown map
-        List<Object[]> rows;
+        List<ReportTypeBreakdownProjection> rows;
         try {
             rows = repository.countGeneratedReportsByType(userId);
         } catch (Exception e) {
             rows = new java.util.ArrayList<>();
         }
         
+        long totalReports = repository.countByUserId(userId);
+
+        // Step d & e: Build and return DTO manually (Projection)
         Map<String, Integer> typeBreakdown = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            String type = row[0].toString();
-            Integer count = ((Number) row[1]).intValue();
-            typeBreakdown.put(type, count);
+        for (ReportTypeBreakdownProjection row : rows) {
+            typeBreakdown.put(row.getReportType(), row.getCount());
         }
 
-        // Step d: Calculate totals
-        long totalReports = repository.countByUserId(userId);
         long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
 
-        // Step e: Build and return DTO
         return UserReportSummaryDTO.builder()
                 .userId(userId)
                 .totalReports(totalReports)
@@ -213,11 +262,13 @@ public class SavedReportService {
             config.put("failureReason", "Simulated failure");
             SavedReport saved = repository.save(newReport);
             notifyReportEvent("FAILED", saved, null);
+            evictWildcardCaches(saved.getId());
             return saved;
         }
 
         SavedReport saved = repository.save(newReport);
         notifyReportEvent("GENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
 
@@ -248,6 +299,12 @@ public class SavedReportService {
             report.setReportTemplateUsages(new java.util.ArrayList<>(java.util.List.of(savedUsage)));
         }
         notifyReportEvent("TEMPLATE_APPLIED", report, null);
+        
+        evictWildcardCaches(reportId);
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F9::*",
+                "reporting-service::report-template-usage::*"
+        );
         
         return savedUsage;
     }
@@ -280,8 +337,10 @@ public class SavedReportService {
 
         SavedReport saved = repository.save(report);
         notifyReportEvent("REGENERATED", saved, null);
+        evictWildcardCaches(saved.getId());
         return saved;
     }
+    @Cacheable(value = "reporting-service::S5-F8", key = "#reportId")
     public ReportDetailsDTO getReportDetails(Long reportId) {
         SavedReport report = repository.findById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found with id: " + reportId));
@@ -314,6 +373,7 @@ public class SavedReportService {
                 .build();
     }
 
+    @Cacheable(value = "reporting-service::S5-F6")
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
         // Step a: Validate — both must be provided or both must be absent
         if ((startDate == null) != (endDate == null)) {
@@ -329,31 +389,10 @@ public class SavedReportService {
 
         // Step c: Execute aggregation query
         List<Object[]> results = repository.getReportAnalytics(start, end);
-        if (results == null || results.isEmpty() || results.get(0) == null) {
-            return ReportAnalyticsDTO.builder()
-                    .totalGenerated(0)
-                    .totalReports(0)
-                    .averagePeriodDays(0.0)
-                    .archivedCount(0)
-                    .failedCount(0)
-                    .build();
-        }
-
-        Object[] row = results.get(0);
-        long   totalReports      = (row[0] != null) ? ((Number) row[0]).longValue() : 0;
-        long   totalGenerated    = (row[1] != null) ? ((Number) row[1]).longValue() : 0;
-        double averagePeriodDays = (row[2] != null) ? ((Number) row[2]).doubleValue() : 0.0;
-        long   archivedCount     = (row[3] != null) ? ((Number) row[3]).longValue() : 0;
-        long   failedCount       = (row[4] != null) ? ((Number) row[4]).longValue() : 0;
-
-        // Step d: Build and return DTO
-        ReportAnalyticsDTO dto = ReportAnalyticsDTO.builder()
-                .totalGenerated(totalGenerated)
-                .totalReports(totalReports)
-                .averagePeriodDays(averagePeriodDays)
-                .archivedCount(archivedCount)
-                .failedCount(failedCount)
-                .build();
+        Object[] row = (results != null && !results.isEmpty()) ? results.get(0) : null;
+        
+        // Step d: Build and return DTO via Adapter
+        ReportAnalyticsDTO dto = reportAnalyticsAdapter.adapt(row);
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }
@@ -405,5 +444,17 @@ public class SavedReportService {
                 throw new RuntimeException("User not found with id: " + userId);
             }
         }
+    }
+    private void evictWildcardCaches(Long entityId) {
+        if (entityId != null) {
+            redisCacheEvictor.evictByPatterns("reporting-service::saved-report::" + entityId);
+        }
+        redisCacheEvictor.evictByPatterns(
+                "reporting-service::S5-F1::*",
+                "reporting-service::S5-F3::*",
+                "reporting-service::S5-F6::*",
+                "reporting-service::S5-F8::*",
+                "reporting-service::S5-F10::*"
+        );
     }
 }

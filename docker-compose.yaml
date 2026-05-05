@@ -63,7 +63,7 @@ services:
 
   # Elasticsearch
   elasticsearch:
-    image: elasticsearch:8.19.12
+    image: elasticsearch:9.0.3
     container_name: finance-elasticsearch
     ports:
       - "9200:9200"

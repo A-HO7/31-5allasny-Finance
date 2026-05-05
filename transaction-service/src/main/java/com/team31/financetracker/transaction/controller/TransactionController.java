@@ -9,6 +9,8 @@ import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
+import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
+import com.team31.financetracker.transaction.security.AuthContext;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.service.TransactionService;
@@ -32,13 +34,16 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final TransactionSplitService transactionSplitService;
     private final ObjectMapper objectMapper;
+    private final AuthContext authContext;
 
     public TransactionController(TransactionService transactionService,
             TransactionSplitService transactionSplitService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AuthContext authContext) {
         this.transactionService = transactionService;
         this.transactionSplitService = transactionSplitService;
         this.objectMapper = objectMapper;
+        this.authContext = authContext;
     }
 
     // ── Transaction CRUD ──────────────────────────────────────────────────────
@@ -219,6 +224,44 @@ public class TransactionController {
     @GetMapping("/{transactionId}/details")
     public TransactionDetailsDTO getTransactionDetails(@PathVariable Long transactionId) {
         return transactionService.getTransactionDetails(transactionId);
+    }
+
+    // ── S3-F11: Record User-Category Spending Pattern ────────────────────────
+
+    /** POST /api/transactions/{transactionId}/record-pattern */
+    @PostMapping("/{transactionId}/record-pattern")
+    @ResponseStatus(HttpStatus.OK)
+    public void recordSpendingPattern(@PathVariable Long transactionId) {
+        // Ownership check
+        Transaction tx = transactionService.getTransactionById(transactionId);
+        if (!tx.getUserId().equals(authContext.getUserId()) && !"ADMIN".equals(authContext.getRole())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
+        transactionService.recordSpendingPattern(transactionId);
+    }
+
+    // ── S3-F12: Get Category Recommendations for User ───────────────────────
+
+    /**
+     * GET
+     * /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type}
+     */
+    @GetMapping("/recommendations")
+    public List<CategoryRecommendationDTO> getCategoryRecommendations(
+            @RequestParam Long userId,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String categoryType) {
+
+        // Ownership check: caller uid == userId OR role == ADMIN
+        Long callerId = authContext.getUserId();
+        String role = authContext.getRole();
+        if (!userId.equals(callerId) && !"ADMIN".equals(role)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: can only view own recommendations or be ADMIN");
+        }
+
+        return transactionService.getCategoryRecommendations(userId, limit, categoryType);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

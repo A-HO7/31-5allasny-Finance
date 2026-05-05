@@ -1,19 +1,35 @@
 package com.team31.financetracker.account.service;
 
+import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
+import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
+import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
 import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.mongo.AccountEventActions;
+import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
-import com.team31.financetracker.account.model.Account;
-import com.team31.financetracker.account.model.AccountStatement;
-import com.team31.financetracker.account.model.AccountStatus;
-import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
+import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.query.Criteria;
+import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
+import org.springframework.data.elasticsearch.core.query.Query;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.account.dto.AccountDTO;
+import com.team31.financetracker.account.model.AccountSearchDocument;
+
+import org.springframework.data.elasticsearch.core.SearchHits;
+
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -24,16 +40,31 @@ import java.util.Map;
 
 @Service
 public class AccountService {
+    private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
+    private final CacheInvalidator cacheInvalidator;
+    private final ElasticsearchOperations elasticsearchOperations;
+    private final ElasticsearchHitAdapter elasticsearchHitAdapter;
+    private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
+    private final TopAccountProjectionAdapter topAccountProjectionAdapter;
 
     public AccountService(
             AccountRepository accountRepository,
-            AccountStatementRepository accountStatementRepository
+            AccountStatementRepository accountStatementRepository,
+            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter,
+            AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
+            TopAccountProjectionAdapter topAccountProjectionAdapter
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
+        this.cacheInvalidator = cacheInvalidator1;
+        this.elasticsearchOperations = elasticsearchOperations;
+        this.elasticsearchHitAdapter = elasticsearchHitAdapter;
+        this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
+        this.topAccountProjectionAdapter = topAccountProjectionAdapter;
     }
 
     public void register(EntityObserver observer){
@@ -46,7 +77,11 @@ public class AccountService {
 
     public void notifyObservers(String eventType, Object payload){
         for (EntityObserver observer : observers) {
-            observer.onEvent(eventType, payload);
+            try {
+                observer.onEvent(eventType, payload);
+            } catch (Exception e) {
+                log.warn("Observer notification failed for event [{}]: {}", eventType, e.getMessage());
+            }
         }
     }
 
@@ -73,6 +108,7 @@ public class AccountService {
         }
     }
 
+    @Cacheable(value = "account-service::account", key = "#id")
     public Account getById(Long id) {
         return accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -120,13 +156,16 @@ public class AccountService {
         if (updated.getAccountDetails() != null) {
             existing.setAccountDetails(updated.getAccountDetails());
         }
-        return accountRepository.save(existing);
+        Account saved = accountRepository.save(existing);
+        cacheInvalidator.invalidateAccountData(id); // Clear stale cache
+        return saved;
     }
 
     public void delete(Long id) {
         accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         accountRepository.deleteById(id);
+        cacheInvalidator.invalidateAccountData(id);
     }
 
     public List<Account> getByUserEmail(String email) {
@@ -134,9 +173,11 @@ public class AccountService {
     }
 
     public int updateStatusById(Long id, AccountStatus status) {
-        return accountRepository.updateStatusById(id, status.name());
+        int rowsAffected =  accountRepository.updateStatusById(id, status.name());
+        cacheInvalidator.invalidateAccountData(id);
+        return rowsAffected;
     }
-
+    @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
         // Return all if no balance provided (TC_S2_69)
         if (minBalance == null || maxBalance == null) {
@@ -148,6 +189,7 @@ public class AccountService {
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
+
     }
 
     @Transactional
@@ -181,6 +223,13 @@ public class AccountService {
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
         accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.RATED, account, Map.of(
+                "statementId", statementId,
+                "rating", ratingInt,
+                "newAverage", nextAvg,
+                "totalRatings", nextTotal
+        ));
+        cacheInvalidator.invalidateAccountData(accountId);
     }
 
     @Transactional
@@ -208,8 +257,14 @@ public class AccountService {
 
         // 5. Force Push to DB
         accountRepository.saveAndFlush(account);
+        AccountEventActions action = newStatus == AccountStatus.FROZEN
+                ? AccountEventActions.FROZEN
+                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+        notifyAccountEvent(action, account, Map.of("status", account.getStatus().name()));
+        cacheInvalidator.invalidateAccountData(id);
     }
-      
+
+    @Cacheable(value = "account-service::S2-F9", key = "'expired-statements'")
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         List<Account> accounts = accountRepository.findAccountsWithExpiredStatementsNative();
 
@@ -218,13 +273,13 @@ public class AccountService {
                             .filter(s -> s.getExpiryDate().isBefore(LocalDate.now()))
                             .toList();
 
-                    return new AccountStatementAlertDTO(
-                            account.getId(),
-                            account.getName(),
-                            account.getStatus().name(),
-                            expired,
-                            expired.size()
-                    );
+                    return AccountStatementAlertDTO.builder()
+                            .accountId(account.getId())
+                            .accountName(account.getName())
+                            .accountStatus(account.getStatus().name())
+                            .expiredStatements(expired)
+                            .expiredCount(expired.size())
+                            .build();
                 })
                 .filter(dto -> dto.expiredCount() > 0)
                 .toList();
@@ -241,22 +296,24 @@ public class AccountService {
         }
 
         account.setAccountDetails(existing);
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+        notifyAccountEvent(AccountEventActions.DETAILS_UPDATED, saved, Map.of("updatedKeys", existing.keySet()));
+        cacheInvalidator.invalidateAccountData(id);
+        return saved;
     }
 
+    @Cacheable(value = "account-service::S2-F5", key = "#key + '-' + #value + '-' + #status")
     public List<Account> searchByDetail(String key, String value, AccountStatus status) {
         String statusValue = status == null ? null : status.name();
         return accountRepository.findByDetailKeyValueAndOptionalStatus(key, value, statusValue);
     }
 
+    @Cacheable(value = "account-service::S2-F6", key = "#limit")
     public List<TopAccountDTO> getTopBalanceAccounts(int limit) {
         List<Object[]> results = accountRepository.getTopBalanceAccountsNative(limit);
-        return results.stream().map(row -> new TopAccountDTO(
-                ((Number) row[0]).longValue(),
-                (String) row[1],
-                ((Number) row[2]).doubleValue(),
-                ((Number) row[3]).longValue()
-        )).toList();
+        return results.stream()
+                .map(topAccountProjectionAdapter::adapt)
+                .toList();
     }
 
     @Transactional
@@ -294,16 +351,48 @@ public class AccountService {
         statement.setMetadata(metadata);
         accountStatementRepository.saveAndFlush(statement);
 
+
         // Re-fetch with statements eagerly loaded
         Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         // Force initialize inside transaction so Jackson can serialize it
         result.getAccountStatements().size();
-
+        cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
+    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max)")
+    public List<AccountDTO> fullTextSearch(String query, String type, String status,
+                                           String currency, Double min, Double max) {
 
+        // 1. Define Criteria
+        Criteria criteria = new Criteria("name").contains(query)
+                .or(new Criteria("description").contains(query));
+
+        // 2. Add Filters
+        if (type != null) criteria = criteria.and(new Criteria("type").is(type));
+        if (status != null) criteria = criteria.and(new Criteria("status").is(status));
+        if (currency != null) criteria = criteria.and(new Criteria("currency").is(currency));
+        if (min != null) criteria = criteria.and(new Criteria("balance").greaterThanEqual(min));
+        if (max != null) criteria = criteria.and(new Criteria("balance").lessThanEqual(max));
+
+        // 3. Create Query with MS2 mandated Sort Order
+        Query searchQuery = new CriteriaQuery(criteria)
+                .addSort(Sort.by(Sort.Direction.DESC, "_score")) // Primary: Relevance
+                .addSort(Sort.by(Sort.Direction.DESC, "rating")) // Tie-breaker 1
+                .addSort(Sort.by(Sort.Direction.ASC, "id"));     // Tie-breaker 2[cite: 1]
+
+        // 4. Execute Search[cite: 1]
+        SearchHits<AccountSearchDocument> hits = elasticsearchOperations.search(searchQuery, AccountSearchDocument.class);
+
+        // 5. Stream through SearchHit objects to get Content[cite: 1]
+        return hits.getSearchHits().stream() // .getSearchHits() returns the List[cite: 1]
+                .map(SearchHit::getContent)  // Extract AccountSearchDocument[cite: 1]
+                .map(elasticsearchHitAdapter::adapt) // Convert to AccountDTO via Adapter[cite: 1]
+                .toList();
+    }
+
+    @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
     public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
@@ -311,19 +400,28 @@ public class AccountService {
         Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
 
         if (resultRaw == null) {
-            return new AccountSummaryDTO(id, account.getName(), 0.0, 0.0, 0.0, 0L);
+            return AccountSummaryDTO.builder()
+                    .accountId(id)
+                    .name(account.getName())
+                    .totalDeposits(0.0)
+                    .totalWithdrawals(0.0)
+                    .netChange(0.0)
+                    .totalTransactions(0L)
+                    .build();
         }
 
         Object[] row = (Object[]) resultRaw;
+        return accountSummaryProjectionAdapter.adapt(row);
+    }
 
-        Long accountId = ((Number) row[0]).longValue();
-        String name = (String) row[1];
-        Double totalDeposits = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
-        Double totalWithdrawals = row[3] != null ? ((Number) row[3]).doubleValue() : 0.0;
-        Long transactionCount = ((Number) row[4]).longValue();
-
-        Double netChange = totalDeposits - totalWithdrawals;
-
-        return new AccountSummaryDTO(accountId, name, totalDeposits, totalWithdrawals, netChange, transactionCount);
+    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", account.getId());
+        payload.put("action", action.name());
+        payload.put("name", account.getName());
+        if (details != null) {
+            payload.putAll(details);
+        }
+        notifyObservers(action.name(), payload);
     }
 }

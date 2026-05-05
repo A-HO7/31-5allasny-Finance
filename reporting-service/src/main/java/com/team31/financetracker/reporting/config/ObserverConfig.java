@@ -10,8 +10,9 @@ import org.springframework.context.annotation.Configuration;
 public class ObserverConfig {
 
     @Bean
-    public MongoEventLogger mongoEventLogger(ReportAuditEventRepository repository) {
-        return new MongoEventLogger(EventType.REPORT_AUDIT, repository);
+    public MongoEventLogger mongoEventLogger(ReportAuditEventRepository repository,
+                                             com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor) {
+        return new MongoEventLogger(EventType.REPORT_AUDIT, repository, redisCacheEvictor);
     }
 
 }

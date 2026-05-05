@@ -3,9 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
-import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
-import com.team31.financetracker.account.dto.TopAccountDTO;
-import com.team31.financetracker.account.dto.AccountSummaryDTO;
+import com.team31.financetracker.account.dto.*;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
@@ -22,10 +20,10 @@ import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.elasticsearch.core.query.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import com.team31.financetracker.account.dto.AccountDTO;
 import com.team31.financetracker.account.model.AccountSearchDocument;
 
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -37,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class AccountService {
@@ -50,13 +49,18 @@ public class AccountService {
     private final ElasticsearchHitAdapter elasticsearchHitAdapter;
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
-            CacheInvalidator cacheInvalidator, CacheInvalidator cacheInvalidator1, ElasticsearchOperations elasticsearchOperations, ElasticsearchHitAdapter elasticsearchHitAdapter,
+            CacheInvalidator cacheInvalidator,
+            CacheInvalidator cacheInvalidator1,
+            ElasticsearchOperations elasticsearchOperations,
+            ElasticsearchHitAdapter elasticsearchHitAdapter,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
-            TopAccountProjectionAdapter topAccountProjectionAdapter
+            TopAccountProjectionAdapter topAccountProjectionAdapter,
+            RedisTemplate<String, Object> redisTemplate
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -65,6 +69,7 @@ public class AccountService {
         this.elasticsearchHitAdapter = elasticsearchHitAdapter;
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
+        this.redisTemplate = redisTemplate;
     }
 
     public void register(EntityObserver observer){
@@ -423,5 +428,59 @@ public class AccountService {
             payload.putAll(details);
         }
         notifyObservers(action.name(), payload);
+    }
+
+    public AccountPerformanceDashboardDTO getDashboard(
+            Long accountId,
+            Long requestingUserId,
+            String requestingUserRole
+    ) {
+        Account account = getById(accountId);
+
+        boolean isAdmin = "ADMIN".equals(requestingUserRole);
+        boolean isOwner =
+                requestingUserId != null
+                &&
+                requestingUserId.equals(account.getUserId());
+
+        if (!isOwner && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
+        String cacheKey = "account-service::S2-F12::" + accountId;
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", accountId);
+        payload.put("requestedBy", requestingUserId);
+        payload.put("requestedByRole", requestingUserRole);
+        notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
+
+        if (cached != null) {
+            return (AccountPerformanceDashboardDTO) cached;
+        }
+
+        Object[] stats = accountRepository.getTransactionStats(accountId);
+        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
+
+        Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
+        Double totalIncome = stats[1] != null ? ((Number) stats[1]).doubleValue() : 0.0;
+        Double totalExpenses = stats[2] != null ? ((Number) stats[2]).doubleValue() : 0.0;
+
+        AccountPerformanceDashboardDTO dto = AccountPerformanceDashboardDTO.builder()
+                .accountId(accountId)
+                .name(account.getName())
+                .type(account.getType().name())
+                .balance(account.getBalance())
+                .totalTransactions(totalTransactions)
+                .totalIncome(totalIncome)
+                .totalExpenses(totalExpenses)
+                .netChange(totalIncome - totalExpenses)
+                .activeStatementsCount(activeStatements)
+                .build();
+
+        redisTemplate.opsForValue().set(cacheKey, dto, 10, TimeUnit.MINUTES);
+
+        return dto;
     }
 }

@@ -129,12 +129,12 @@ public class SavedReportController {
     }
 
     @PostMapping("/{reportId}/templates/{templateId}")
-    public ResponseEntity<ReportTemplateUsage> applyTemplateToReport(@PathVariable Long reportId, @PathVariable Long templateId) {
+    public ResponseEntity<?> applyTemplateToReport(@PathVariable Long reportId, @PathVariable Long templateId) {
         try {
             ReportTemplateUsage usage = service.applyTemplateToReport(reportId, templateId);
             return ResponseEntity.ok(usage);
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

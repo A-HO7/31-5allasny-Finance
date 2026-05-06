@@ -60,14 +60,16 @@ public class AccountController {
     @GetMapping("/search/full-text") // Resulting path: /api/accounts/search/full-text
     @PreAuthorize("hasAnyRole('PERSONAL', 'BUSINESS', 'ADMIN')")
     public List<AccountDTO> fullTextSearch(
-            @RequestParam String query,
+            @RequestParam(required = false, defaultValue = "") String query,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String currency,
             @RequestParam(required = false) Double minBalance,
-            @RequestParam(required = false) Double maxBalance) {
+            @RequestParam(required = false) Double maxBalance,
+            @RequestParam(required = false) Double minRating,
+            @RequestParam(required = false) Double maxRating) {
 
-        return accountService.fullTextSearch(query, type, status, currency, minBalance, maxBalance);
+        return accountService.fullTextSearch(query, type, status, currency, minBalance, maxBalance, minRating, maxRating);
     }
 
     @GetMapping("/{id}/dashboard")

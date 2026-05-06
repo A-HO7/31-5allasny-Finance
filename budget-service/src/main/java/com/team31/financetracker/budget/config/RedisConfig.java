@@ -17,8 +17,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.core.RedisTemplate;
+
 import java.time.Duration;
 
 /**
@@ -86,6 +85,7 @@ public class RedisConfig implements CachingConfigurer {
                 .withCacheConfiguration("budget-service",
                         defaultConfig.entryTtl(Duration.ofMinutes(15)))
                 .build();
+
         log.info("Built RedisCacheManager: {}", mgr.getClass().getName());
         return mgr;
     }
@@ -97,10 +97,10 @@ public class RedisConfig implements CachingConfigurer {
             java.util.Map<String, CacheManager> beans = ctx.getBeansOfType(CacheManager.class);
             log.info("All CacheManager beans:");
             beans.forEach((name, bean) ->
-                log.info("  [{}] -> {}", name, bean.getClass().getName()));
-            CacheManager primary = null;
+                    log.info("  [{}] -> {}", name, bean.getClass().getName()));
+
             try {
-                primary = ctx.getBean(CacheManager.class);
+                CacheManager primary = ctx.getBean(CacheManager.class);
                 log.info("Active primary CacheManager: {}", primary.getClass().getName());
             } catch (Exception e) {
                 log.info("No active primary CacheManager or multiple found: {}", e.getMessage());
@@ -112,54 +112,32 @@ public class RedisConfig implements CachingConfigurer {
     public CacheErrorHandler errorHandler() {
         return new SimpleCacheErrorHandler() {
             @Override
-            public void handleCacheGetError(RuntimeException exception, org.springframework.cache.Cache cache, Object key) {
+            public void handleCacheGetError(RuntimeException exception,
+                                            org.springframework.cache.Cache cache,
+                                            Object key) {
                 log.warn("Cache GET error for key {}: {}", key, exception.getMessage());
             }
 
             @Override
-            public void handleCachePutError(RuntimeException exception, org.springframework.cache.Cache cache, Object key, Object value) {
+            public void handleCachePutError(RuntimeException exception,
+                                            org.springframework.cache.Cache cache,
+                                            Object key,
+                                            Object value) {
                 log.warn("Cache PUT error for key {}: {}", key, exception.getMessage());
             }
 
             @Override
-            public void handleCacheEvictError(RuntimeException exception, org.springframework.cache.Cache cache, Object key) {
+            public void handleCacheEvictError(RuntimeException exception,
+                                              org.springframework.cache.Cache cache,
+                                              Object key) {
                 log.warn("Cache EVICT error for key {}: {}", key, exception.getMessage());
             }
 
             @Override
-            public void handleCacheClearError(RuntimeException exception, org.springframework.cache.Cache cache) {
+            public void handleCacheClearError(RuntimeException exception,
+                                              org.springframework.cache.Cache cache) {
                 log.warn("Cache CLEAR error: {}", exception.getMessage());
             }
         };
-    }
-    @Bean
-    public org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate(
-            org.springframework.data.redis.connection.RedisConnectionFactory connectionFactory
-    ) {
-        org.springframework.data.redis.core.RedisTemplate<String, Object> template =
-                new org.springframework.data.redis.core.RedisTemplate<>();
-
-        template.setConnectionFactory(connectionFactory);
-
-        StringRedisSerializer stringSerializer = new StringRedisSerializer();
-
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.activateDefaultTyping(
-                mapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL
-        );
-
-        GenericJackson2JsonRedisSerializer jsonSerializer =
-                new GenericJackson2JsonRedisSerializer(mapper);
-
-        template.setKeySerializer(stringSerializer);
-        template.setHashKeySerializer(stringSerializer);
-        template.setValueSerializer(jsonSerializer);
-        template.setHashValueSerializer(jsonSerializer);
-
-        template.afterPropertiesSet();
-        return template;
     }
 }

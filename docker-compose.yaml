@@ -143,7 +143,7 @@ services:
     ports:
       - "8081:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx128m"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -159,7 +159,7 @@ services:
     ports:
       - "8082:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx128m"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -176,7 +176,7 @@ services:
     ports:
       - "8083:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx128m"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -193,7 +193,7 @@ services:
     ports:
       - "8084:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx128m"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -211,7 +211,7 @@ services:
     ports:
       - "8085:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx128m"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres

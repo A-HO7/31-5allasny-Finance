@@ -136,7 +136,12 @@ public class UserService {
     // Search with Filter (S1-F1)
     @Cacheable(cacheNames = "s1f1Cache", key = "'user-service::S1-F1::' + (#name == null ? '' : #name) + ':' + (#email == null ? '' : #email) + ':' + (#role == null ? '' : #role.name())")
     public List<User> searchUsers(String name, String email, Role role) {
-        return userRepository.searchUsers(name, email, role != null ? role.name() : null);
+        // Add these checks to ensure we pass empty strings or nulls consistently to the repo
+        String searchName = (name == null || name.isBlank()) ? null : name;
+        String searchEmail = (email == null || email.isBlank()) ? null : email;
+        String searchRole = (role == null) ? null : role.name();
+
+        return userRepository.searchUsers(searchName, searchEmail, searchRole);
     }
 
     // Update Preferences (S1-F2)

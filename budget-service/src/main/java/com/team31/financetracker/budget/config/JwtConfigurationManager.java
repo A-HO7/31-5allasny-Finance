@@ -24,8 +24,13 @@ public final class JwtConfigurationManager {
     private final long expirationMs;
 
     private JwtConfigurationManager(String secret, long expirationMs) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+        try {
+            byte[] keyBytes = secret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid JWT secret configuration", e);
+        }
+
         this.expirationMs = expirationMs;
     }
 

@@ -5,7 +5,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
+import org.springframework.context.annotation.Lazy;
 import javax.crypto.SecretKey;
 
 /**
@@ -13,6 +13,7 @@ import javax.crypto.SecretKey;
  * Singleton (DP-5). On construction it initialises the singleton if needed.
  */
 @Component
+@Lazy(false)
 public class JwtUtil {
 
     private final SecretKey secretKey;

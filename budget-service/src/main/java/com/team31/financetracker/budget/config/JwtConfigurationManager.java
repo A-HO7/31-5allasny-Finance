@@ -19,16 +19,14 @@ public final class JwtConfigurationManager {
     private final SecretKey secretKey;
     private final long expirationMs;
 
-    private JwtConfigurationManager(String base64Secret, long expirationMs) {
-        SecretKey key;
+    private JwtConfigurationManager(String secret, long expirationMs) {
         try {
-            byte[] keyBytes = Base64.getDecoder().decode(base64Secret);
-            key = Keys.hmacShaKeyFor(keyBytes);
+            byte[] keyBytes = secret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            this.secretKey = Keys.hmacShaKeyFor(keyBytes);
         } catch (Exception e) {
-            // Fallback: generate random key so all external tokens are rejected
-            key = io.jsonwebtoken.Jwts.SIG.HS256.key().build();
+            throw new IllegalArgumentException("Invalid JWT secret configuration", e);
         }
-        this.secretKey = key;
+
         this.expirationMs = expirationMs;
     }
 

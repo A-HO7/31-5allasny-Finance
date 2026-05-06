@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,23 +45,7 @@ public class BudgetAnalyticsService implements BudgetSubject {
         }
 
         BudgetAnalyticsProjection projection = budgetRepository.getBudgetAnalytics(userId);
-
-        long totalBudgets = projection.getTotalBudgets() != null ? projection.getTotalBudgets() : 0L;
-        double totalBudgetAmount = projection.getTotalBudgetAmount() != null ? projection.getTotalBudgetAmount() : 0.0;
-        double totalSpentAmount = projection.getTotalSpentAmount() != null ? projection.getTotalSpentAmount() : 0.0;
-        double averageUtilization = projection.getAverageUtilization() != null ? projection.getAverageUtilization() : 0.0;
-
-        BudgetAnalyticsDTO dto = BudgetAnalyticsDTO.builder()
-                .userId(userId)
-                .totalBudgets(totalBudgets)
-                .totalBudgetAmount(totalBudgetAmount)
-                .totalSpentAmount(totalSpentAmount)
-                .remainingAmount(totalBudgetAmount - totalSpentAmount)
-                .averageUtilization(averageUtilization)
-                .activeBudgets(projection.getActiveBudgets() != null ? projection.getActiveBudgets() : 0L)
-                .exceededBudgets(projection.getExceededBudgets() != null ? projection.getExceededBudgets() : 0L)
-                .completedBudgets(projection.getCompletedBudgets() != null ? projection.getCompletedBudgets() : 0L)
-                .build();
+        BudgetAnalyticsDTO dto = buildDto(userId, projection);
 
         try {
             redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofMinutes(10));
@@ -71,6 +56,77 @@ public class BudgetAnalyticsService implements BudgetSubject {
         logDashboardViewed(userId, false);
 
         return dto;
+    }
+
+    public BudgetAnalyticsDTO getBudgetAnalytics(Long userId, LocalDate startDate, LocalDate endDate) {
+        String cacheKey = "budget-service::S4-F10::" + userId + "::" + startDate + "::" + endDate;
+
+        try {
+            Object cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached instanceof BudgetAnalyticsDTO dto) {
+                logDashboardViewed(userId, true);
+                return dto;
+            }
+        } catch (Exception ignored) {
+            // Redis is a soft dependency.
+        }
+
+        BudgetAnalyticsProjection projection =
+                budgetRepository.getBudgetAnalyticsByDateRange(userId, startDate, endDate);
+
+        BudgetAnalyticsDTO dto = buildDto(userId, projection);
+
+        try {
+            redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofMinutes(10));
+        } catch (Exception ignored) {
+            // Redis is a soft dependency.
+        }
+
+        logDashboardViewed(userId, false);
+
+        return dto;
+    }
+
+    private BudgetAnalyticsDTO buildDto(Long userId, BudgetAnalyticsProjection projection) {
+        long totalBudgets = projection != null && projection.getTotalBudgets() != null
+                ? projection.getTotalBudgets()
+                : 0L;
+
+        double totalBudgetAmount = projection != null && projection.getTotalBudgetAmount() != null
+                ? projection.getTotalBudgetAmount()
+                : 0.0;
+
+        double totalSpentAmount = projection != null && projection.getTotalSpentAmount() != null
+                ? projection.getTotalSpentAmount()
+                : 0.0;
+
+        double averageUtilization = projection != null && projection.getAverageUtilization() != null
+                ? projection.getAverageUtilization()
+                : 0.0;
+
+        long activeBudgets = projection != null && projection.getActiveBudgets() != null
+                ? projection.getActiveBudgets()
+                : 0L;
+
+        long exceededBudgets = projection != null && projection.getExceededBudgets() != null
+                ? projection.getExceededBudgets()
+                : 0L;
+
+        long completedBudgets = projection != null && projection.getCompletedBudgets() != null
+                ? projection.getCompletedBudgets()
+                : 0L;
+
+        return BudgetAnalyticsDTO.builder()
+                .userId(userId)
+                .totalBudgets(totalBudgets)
+                .totalBudgetAmount(totalBudgetAmount)
+                .totalSpentAmount(totalSpentAmount)
+                .remainingAmount(totalBudgetAmount - totalSpentAmount)
+                .averageUtilization(averageUtilization)
+                .activeBudgets(activeBudgets)
+                .exceededBudgets(exceededBudgets)
+                .completedBudgets(completedBudgets)
+                .build();
     }
 
     private void logDashboardViewed(Long userId, boolean cacheHit) {

@@ -3,6 +3,7 @@ package com.team31.financetracker.transaction.service;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.Enums.TransactionType;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDashboardDTO;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
@@ -22,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
+import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -398,6 +400,41 @@ public class TransactionService {
 
         TransactionAnalyticsAdapter adapter = new TransactionAnalyticsAdapter();
         return adapter.adapt(raw);
+    }
+
+    public void logAnalyticsViewedEvent(LocalDate startDate, LocalDate endDate) {
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("action", "ANALYTICS_VIEWED");
+        params.put("timestamp", LocalDateTime.now());
+        params.put("entityId", null);
+        params.put("startDate", startDate != null ? startDate.toString() : null);
+        params.put("endDate", endDate != null ? endDate.toString() : null);
+        params.put("dashboard", "true");
+        notifyObservers("ANALYTICS_VIEWED", params);
+    }
+
+    @Cacheable(value = "transaction-service", key = "'S3-F10::' + #startDate + '-' + #endDate")
+    public TransactionAnalyticsDashboardDTO getDashboardAnalytics(LocalDate startDate, LocalDate endDate) {
+        LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
+        LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
+
+        if (start.isAfter(end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "startDate must not be after endDate");
+        }
+
+        LocalDateTime rangeStart = start.atStartOfDay();
+        LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
+
+        Map<String, Object> raw = transactionRepository
+                .getTransactionAnalytics(rangeStart, rangeEndExclusive);
+        List<Object[]> categories = transactionRepository
+                .countTransactionsByCategory(rangeStart, rangeEndExclusive);
+        List<Object[]> statuses = transactionRepository
+                .countTransactionsByStatus(rangeStart, rangeEndExclusive);
+
+        TransactionAnalyticsDashboardAdapter adapter = new TransactionAnalyticsDashboardAdapter();
+        return adapter.adapt(raw, categories, statuses);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

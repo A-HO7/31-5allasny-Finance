@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDashboardDTO;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
@@ -133,6 +134,15 @@ public class TransactionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         return transactionService.getAnalytics(startDate, endDate);
+    }
+
+    /** GET /api/transactions/analytics/dashboard?startDate=&endDate= */
+    @GetMapping("/analytics/dashboard")
+    public TransactionAnalyticsDashboardDTO getAnalyticsDashboard(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        transactionService.logAnalyticsViewedEvent(startDate, endDate);
+        return transactionService.getDashboardAnalytics(startDate, endDate);
     }
 
     // ── F7: Void ──────────────────────────────────────────────────────────────

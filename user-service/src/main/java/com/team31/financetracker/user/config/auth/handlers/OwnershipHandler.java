@@ -10,25 +10,32 @@ import java.util.regex.Pattern;
 
 public class OwnershipHandler extends AuthHandler {
 
+    // Locate the process method in OwnershipHandler.java
+
     @Override
     protected boolean process(AuthContext context) throws ServletException, IOException {
         String requestURI = context.getRequest().getRequestURI();
 
-        // This regex extracts the {id} from paths like /api/users/123/activity or /api/users/123/profile
-        Pattern pattern = Pattern.compile("^/api/users/(\\d+)/(activity|profile|preferences|role)$");
+        // FIXED REGEX: This now catches /api/users/123 AND /api/users/123/activity
+        // The previous regex was missing the base update/delete path
+        Pattern pattern = Pattern.compile("^/api/users/(\\d+)(/.*)?$");
         Matcher matcher = pattern.matcher(requestURI);
 
         if (matcher.find()) {
             String pathId = matcher.group(1);
-            User authenticatedUser = context.getAuthenticatedUser(); // Assuming you added this to AuthContext
+            User authenticatedUser = context.getAuthenticatedUser();
 
-            // Rule: Path ID must match User ID, or user must be ADMIN
+            if (authenticatedUser == null) {
+                return true; // Let UserLoaderHandler handle the 401 if user is missing
+            }
+
             boolean isOwner = authenticatedUser.getId().toString().equals(pathId);
             boolean isAdmin = authenticatedUser.getRole().name().equals("ADMIN");
 
             if (!isOwner && !isAdmin) {
                 context.getResponse().setStatus(HttpServletResponse.SC_FORBIDDEN);
-                context.getResponse().getWriter().write("Access denied: You do not own this resource");
+                context.getResponse().setContentType("application/json");
+                context.getResponse().getWriter().write("{\"error\": \"Access denied: You do not own this resource\"}");
                 return false;
             }
         }

@@ -63,7 +63,7 @@ public class BudgetService {
 
     // ──────────────────── CRUD ────────────────────
 
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public Budget createBudget(Budget budget) {
         // Ensure healthWeight default in metadata
         if (budget.getMetadata() == null) {
@@ -86,14 +86,14 @@ public class BudgetService {
         return budgetRepository.findAll();
     }
 
-    @Cacheable(value = "budgets", key = "'budget-service::budget::' + #id", unless = "#result == null")
+    @Cacheable(value = "budget-service", key = "'budget-service::CRUD::' + #id", unless = "#result == null")
     public Budget getBudgetById(Long id) {
         log.info(">>> getBudgetById({}) called - NOT from cache", id);
         return budgetRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
     }
 
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public Budget updateBudget(Long id, Budget updatedBudget) {
         Budget existingBudget = budgetRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
@@ -118,7 +118,7 @@ public class BudgetService {
         return saved;
     }
 
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public void deleteBudget(Long id) {
         Budget existingBudget = budgetRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
@@ -130,7 +130,7 @@ public class BudgetService {
     // ──────────────────── S4-F7: Purge ────────────────────
 
     @Transactional
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public int purgeOldBudgets(int olderThanDays) {
         LocalDateTime cutoffDate = LocalDateTime.now().minusDays(olderThanDays);
         int count = budgetRepository.purgeOldBudgets(cutoffDate);
@@ -145,8 +145,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F3: Performance Summary ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F3::' + #userId + '_' + #startDate + '_' + #endDate",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F3::' + #userId + '::' + #startDate + '::' + #endDate",
             unless = "#result == null")
     public BudgetPerformanceDTO getBudgetPerformance(Long userId, LocalDate startDate, LocalDate endDate) {
         LocalDateTime start = startDate.atStartOfDay();
@@ -166,8 +166,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F5: Overspent ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F5::' + #minOverspend + '_' + #warningNotSent",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F5::' + #minOverspend + '::' + #warningNotSent",
             unless = "#result == null")
     public List<OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
         try {
@@ -190,8 +190,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F1: Active Budget ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F1::' + #userId + '_' + #category",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F1::' + #userId + '::' + #category",
             unless = "#result == null")
     public Budget getActiveBudgetForUserByCategory(Long userId, Category category) {
         return budgetRepository
@@ -204,7 +204,7 @@ public class BudgetService {
 
     // ──────────────────── S4-F2: Update Metadata ────────────────────
 
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public Budget updateBudgetMetadata(Long budgetId, Map<String, Object> incomingMetadata) {
         Budget budget = budgetRepository.findById(budgetId)
                 .orElseThrow(() ->
@@ -220,6 +220,8 @@ public class BudgetService {
         }
 
         existingMetadata.putAll(incomingMetadata);
+
+        existingMetadata.putIfAbsent("healthWeight", 1.0);
 
         // Clamp healthWeight to [0.0, 2.0]
         if (existingMetadata.containsKey("healthWeight")) {
@@ -247,7 +249,7 @@ public class BudgetService {
     // ──────────────────── S4-F4: Batch Create ────────────────────
 
     @Transactional
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public List<Budget> createBudgetsBatch(Long userId, List<Budget> budgets) {
         for (Budget b : budgets) {
             b.setUserId(userId);
@@ -271,8 +273,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F8: Metadata Search ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F8::' + #key + '_' + #operator + '_' + #value",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F8::' + #key + '::' + #operator + '::' + #value",
             unless = "#result == null")
     public List<Budget> searchBudgetsByMetadata(String key, String operator, String value) {
         try {
@@ -285,8 +287,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F9: Budget History ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F9::' + #startDate + '_' + #endDate + '_' + #category",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F9::' + #startDate + '::' + #endDate + '::' + #category",
             unless = "#result == null")
     public List<Budget> getBudgetsHistory(LocalDate startDate, LocalDate endDate, String category) {
         try {
@@ -303,8 +305,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F6: Near Limit ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F6::' + #threshold + '_' + (#status != null ? #status.name() : 'ALL')",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F6::' + #threshold + '::' + (#status != null ? #status.name() : 'ALL')",
             unless = "#result == null")
     public List<BudgetAlertDTO> getBudgetsNearLimit(Double threshold, BudgetStatus status) {
         if (threshold == null || threshold < 0) {
@@ -341,7 +343,7 @@ public class BudgetService {
 
     // ──────────────────── Usage Recording (Cassandra) ────────────────────
 
-    @CacheEvict(value = {"budgets", "budgetFeatures"}, allEntries = true)
+    @CacheEvict(value = "budget-service", allEntries = true)
     public void recordUsage(Long id, Double spentAmount, String notes) {
         Budget budget = budgetRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
@@ -374,8 +376,8 @@ public class BudgetService {
 
     // ──────────────────── S4-F12: Budget Usage Timeline ────────────────────
 
-    @Cacheable(value = "budgetFeatures",
-            key = "'budget-service::S4-F12::' + #budgetId + '_' + #jwtUid + '_' + #jwtRole + '_' + #startTime + '_' + #endTime",
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::S4-F12::' + #budgetId + '::' + #jwtUid + '::' + #jwtRole + '::' + #startTime + '::' + #endTime",
             unless = "#result == null || #result.isEmpty()")
     public List<BudgetUsageDTO> getBudgetUsageTimeline(Long budgetId, Instant startTime, Instant endTime,
                                                         Long jwtUid, String jwtRole) {

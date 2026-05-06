@@ -11,6 +11,10 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>Initialised once via {@link #init(String, long)} and thereafter accessible
  * through {@link #getInstance()}.
+ *
+ * <p>The secret is consumed as raw UTF-8 bytes (matching user-service and
+ * reporting-service), so a single shared secret string verifies tokens
+ * across all services in the system.
  */
 public final class JwtConfigurationManager {
 
@@ -29,11 +33,11 @@ public final class JwtConfigurationManager {
      * Initialise the singleton with the given secret and expiration.
      * Thread-safe via double-checked locking.
      */
-    public static JwtConfigurationManager init(String base64Secret, long expirationMs) {
+    public static JwtConfigurationManager init(String secret, long expirationMs) {
         if (INSTANCE == null) {
             synchronized (JwtConfigurationManager.class) {
                 if (INSTANCE == null) {
-                    INSTANCE = new JwtConfigurationManager(base64Secret, expirationMs);
+                    INSTANCE = new JwtConfigurationManager(secret, expirationMs);
                 }
             }
         }

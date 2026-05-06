@@ -25,9 +25,22 @@ import java.util.Map;
 public class BudgetController {
 
     private final BudgetService budgetService;
+    private final org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
 
-    public BudgetController(BudgetService budgetService) {
+    public BudgetController(BudgetService budgetService, org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate) {
         this.budgetService = budgetService;
+        this.redisTemplate = redisTemplate;
+    }
+
+    @GetMapping("/test-redis")
+    public String testRedis() {
+        redisTemplate.opsForValue().set("TEST_KEY", "TEST_VALUE");
+        org.springframework.data.redis.connection.RedisConnectionFactory f = redisTemplate.getConnectionFactory();
+        String host = "unknown";
+        if (f instanceof org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory lcf) {
+            host = lcf.getHostName() + ":" + lcf.getPort() + " (db: " + lcf.getDatabase() + ")";
+        }
+        return "Redis value: " + redisTemplate.opsForValue().get("TEST_KEY") + " @ " + host + " | Docker Key: " + redisTemplate.opsForValue().get("DOCKER_KEY");
     }
 
     // --- Helper methods for safe type conversions ---

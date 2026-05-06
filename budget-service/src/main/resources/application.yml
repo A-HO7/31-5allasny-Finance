@@ -2,12 +2,8 @@ server:
   port: 8080
 
 spring:
-  main:
-    lazy-initialization: true
   application:
     name: budget-service
-  cache:
-    type: redis
   datasource:
     url: jdbc:postgresql://localhost:5432/financedb
     username: postgres
@@ -42,3 +38,8 @@ spring:
 jwt:
   secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms
+
+logging:
+  level:
+    org.springframework.cache: TRACE
+    org.springframework.data.redis: TRACE

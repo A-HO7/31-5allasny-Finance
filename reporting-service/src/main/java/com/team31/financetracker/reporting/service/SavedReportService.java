@@ -137,7 +137,8 @@ public class SavedReportService {
         return repository.findAll();
     }
 
-    @Cacheable(value = "reporting-service::S5-F1")
+    @Cacheable(value = "reporting-service::S5-F1",
+               key = "#reportType + ':' + #status + ':' + #startDate + ':' + #endDate")
     public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
                                            LocalDate startDate, LocalDate endDate) {
         boolean hasType   = reportType != null;
@@ -222,7 +223,10 @@ public class SavedReportService {
             typeBreakdown.put(row.getReportType(), row.getCount());
         }
 
-        long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
+        long generatedCount = typeBreakdown.entrySet().stream()
+                .filter(e -> "GENERATED".equals(e.getKey()))
+                .mapToLong(e -> e.getValue().longValue())
+                .sum();
 
         return UserReportSummaryDTO.builder()
                 .userId(userId)
@@ -378,7 +382,8 @@ public class SavedReportService {
                 .build();
     }
 
-    @Cacheable(value = "reporting-service::S5-F6")
+    @Cacheable(value = "reporting-service::S5-F6",
+               key = "#startDate + ':' + #endDate")
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
         // Step a: Validate — both must be provided or both must be absent
         if ((startDate == null) != (endDate == null)) {
@@ -401,7 +406,56 @@ public class SavedReportService {
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }
-    
+    @org.springframework.cache.annotation.Cacheable(value = "reporting-service::S5-F11",
+               key = "#startDate + ':' + #endDate")
+    public java.util.List<com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO> getReportGenerationAudit(java.time.LocalDate startDate, java.time.LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("startDate must not be after endDate");
+        }
+        
+        java.time.LocalDateTime start = (startDate != null) ? startDate.atStartOfDay() : java.time.LocalDateTime.MIN;
+        java.time.LocalDateTime end = (endDate != null) ? endDate.atTime(23, 59, 59, 999000000) : java.time.LocalDateTime.MAX;
+
+        java.util.List<com.team31.financetracker.reporting.mongo.ReportAuditEvent> events = auditEventRepository.findByTimestampBetween(start, end);
+        
+        java.util.Map<String, java.util.List<com.team31.financetracker.reporting.mongo.ReportAuditEvent>> grouped = events.stream()
+                .filter(e -> "GENERATED".equals(e.getAction()) || "FAILED".equals(e.getAction()) || "REGENERATED".equals(e.getAction()))
+                .filter(e -> e.getReportType() != null)
+                .collect(java.util.stream.Collectors.groupingBy(com.team31.financetracker.reporting.mongo.ReportAuditEvent::getReportType));
+
+        java.util.List<com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO> results = new java.util.ArrayList<>();
+        
+        for (java.util.Map.Entry<String, java.util.List<com.team31.financetracker.reporting.mongo.ReportAuditEvent>> entry : grouped.entrySet()) {
+            String reportType = entry.getKey();
+            java.util.List<com.team31.financetracker.reporting.mongo.ReportAuditEvent> typeEvents = entry.getValue();
+            
+            long successCount = typeEvents.stream().filter(e -> "GENERATED".equals(e.getAction()) || "REGENERATED".equals(e.getAction())).count();
+            long failureCount = typeEvents.stream().filter(e -> "FAILED".equals(e.getAction())).count();
+            double successRate = (successCount + failureCount) > 0 ? (double) successCount / (successCount + failureCount) : 0.0;
+            double totalPagesProduced = typeEvents.stream()
+                    .filter(e -> "GENERATED".equals(e.getAction()) || "REGENERATED".equals(e.getAction()))
+                    .mapToDouble(e -> e.getPagesGenerated() != null ? e.getPagesGenerated() : 0.0)
+                    .sum();
+            long regenerationCount = typeEvents.stream().filter(e -> "REGENERATED".equals(e.getAction())).count();
+            
+            results.add(com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO.builder()
+                    .reportType(reportType)
+                    .successCount(successCount)
+                    .failureCount(failureCount)
+                    .successRate(successRate)
+                    .totalPagesProduced(totalPagesProduced)
+                    .regenerationCount(regenerationCount)
+                    .build());
+        }
+        
+        results.sort(java.util.Comparator.comparing(com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO::getReportType));
+        return results;
+    }
+
+    public void logAnalyticsViewed() {
+        notifyReportEvent("ANALYTICS_VIEWED", null, null);
+    }
+
     private void notifyReportEvent(String action, SavedReport report, Map<String, Object> extraDetails) {
         Map<String, Object> payload = new LinkedHashMap<>();
         

@@ -1,67 +1,87 @@
 package com.team31.financetracker.reporting.dto;
 
-/**
- * DTO for S5-F11 (GET /api/reports/analytics/audit) audit breakdown per report type.
- *
- * Uses Builder pattern (DP-4).
- * Grader checks via reflection:
- * - static builder() method exists
- * - builder setters return the Builder (fluent chaining)
- * - build() returns ReportAuditSummaryDTO
- */
 public class ReportAuditSummaryDTO {
 
-    private String reportType;         // e.g. "MONTHLY_SUMMARY"
-    private long   successCount;       // GENERATED + REGENERATED events
-    private long   failureCount;       // FAILED events
-    private double successRate;        // successCount / (successCount + failureCount)
-    private double totalPagesProduced; // sum of pagesGenerated on success events
-    private long   regenerationCount;  // REGENERATED events only
+    private String reportType;
+    private long successCount;
+    private long failureCount;
+    private double successRate;
+    private double totalPagesProduced;
+    private long regenerationCount;
 
-    // Private — only the Builder creates instances
-    private ReportAuditSummaryDTO() {}
+    public ReportAuditSummaryDTO() {}
 
-    // ── Builder entry point ──────────────────────────────────────────────────
+    private ReportAuditSummaryDTO(Builder builder) {
+        this.reportType = builder.reportType;
+        this.successCount = builder.successCount;
+        this.failureCount = builder.failureCount;
+        this.successRate = builder.successRate;
+        this.totalPagesProduced = builder.totalPagesProduced;
+        this.regenerationCount = builder.regenerationCount;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
-    public static class Builder {
+    public String getReportType() { return reportType; }
+    public void setReportType(String reportType) { this.reportType = reportType; }
 
+    public long getSuccessCount() { return successCount; }
+    public void setSuccessCount(long successCount) { this.successCount = successCount; }
+
+    public long getFailureCount() { return failureCount; }
+    public void setFailureCount(long failureCount) { this.failureCount = failureCount; }
+
+    public double getSuccessRate() { return successRate; }
+    public void setSuccessRate(double successRate) { this.successRate = successRate; }
+
+    public double getTotalPagesProduced() { return totalPagesProduced; }
+    public void setTotalPagesProduced(double totalPagesProduced) { this.totalPagesProduced = totalPagesProduced; }
+
+    public long getRegenerationCount() { return regenerationCount; }
+    public void setRegenerationCount(long regenerationCount) { this.regenerationCount = regenerationCount; }
+
+    public static class Builder {
         private String reportType;
-        private long   successCount;
-        private long   failureCount;
+        private long successCount;
+        private long failureCount;
         private double successRate;
         private double totalPagesProduced;
-        private long   regenerationCount;
+        private long regenerationCount;
 
-        private Builder() {}
+        public Builder reportType(String reportType) {
+            this.reportType = reportType;
+            return this;
+        }
 
-        // Fluent setters — each returns 'this' so calls can be chained
-        public Builder reportType(String v)          { reportType = v;          return this; }
-        public Builder successCount(long v)          { successCount = v;        return this; }
-        public Builder failureCount(long v)          { failureCount = v;        return this; }
-        public Builder successRate(double v)         { successRate = v;         return this; }
-        public Builder totalPagesProduced(double v)  { totalPagesProduced = v;  return this; }
-        public Builder regenerationCount(long v)     { regenerationCount = v;   return this; }
+        public Builder successCount(long successCount) {
+            this.successCount = successCount;
+            return this;
+        }
+
+        public Builder failureCount(long failureCount) {
+            this.failureCount = failureCount;
+            return this;
+        }
+
+        public Builder successRate(double successRate) {
+            this.successRate = successRate;
+            return this;
+        }
+
+        public Builder totalPagesProduced(double totalPagesProduced) {
+            this.totalPagesProduced = totalPagesProduced;
+            return this;
+        }
+
+        public Builder regenerationCount(long regenerationCount) {
+            this.regenerationCount = regenerationCount;
+            return this;
+        }
 
         public ReportAuditSummaryDTO build() {
-            ReportAuditSummaryDTO dto   = new ReportAuditSummaryDTO();
-            dto.reportType              = this.reportType;
-            dto.successCount            = this.successCount;
-            dto.failureCount            = this.failureCount;
-            dto.successRate             = this.successRate;
-            dto.totalPagesProduced      = this.totalPagesProduced;
-            dto.regenerationCount       = this.regenerationCount;
-            return dto;
+            return new ReportAuditSummaryDTO(this);
         }
     }
-
-    // ── Getters ──────────────────────────────────────────────────────────────
-    public String getReportType()         { return reportType; }
-    public long   getSuccessCount()       { return successCount; }
-    public long   getFailureCount()       { return failureCount; }
-    public double getSuccessRate()        { return successRate; }
-    public double getTotalPagesProduced() { return totalPagesProduced; }
-    public long   getRegenerationCount()  { return regenerationCount; }
 }

@@ -11,6 +11,9 @@ services:
       POSTGRES_DB: financedb
     volumes:
       - pgdata:/var/lib/postgresql
+    depends_on:
+      neo4j:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d financedb"]
       interval: 10s
@@ -18,17 +21,17 @@ services:
       retries: 5
 
   # pgAdmin
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    ports:
-      - "5050:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    depends_on:
-      postgres:
-        condition: service_healthy
+  # pgadmin:
+  #  image: dpage/pgadmin4
+  #  container_name: pgadmin
+  #  ports:
+  #    - "5050:80"
+  #  environment:
+  #    PGADMIN_DEFAULT_EMAIL: admin@admin.com
+  #    PGADMIN_DEFAULT_PASSWORD: admin
+  #  depends_on:
+  #    postgres:
+  #      condition: service_healthy
 
   # MongoDB
   mongo:
@@ -36,12 +39,16 @@ services:
     container_name: finance-mongo
     ports:
       - "27017:27017"
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: rootpass
       MONGO_INITDB_DATABASE: financemongo
     volumes:
       - mongo-data:/data/db
+    depends_on:
+      neo4j:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -55,6 +62,9 @@ services:
     ports:
       - "6379:6379"
     command: ["redis-server", "--requirepass", "redispass", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    depends_on:
+      neo4j:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "redispass", "ping"]
       interval: 5s
@@ -70,15 +80,18 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      ES_JAVA_OPTS: "-Xms128m -Xmx128m"
     volumes:
       - es-data:/usr/share/elasticsearch/data
+    depends_on:
+      cassandra:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
   # Neo4j
   neo4j:
@@ -89,16 +102,20 @@ services:
       - "7687:7687"
     environment:
       NEO4J_AUTH: neo4j/neo4jpass
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 128m
+      NEO4J_server_memory_heap_initial__size: 64m
+      NEO4J_server_memory_pagecache_size: 32m
     volumes:
       - neo4j-data:/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "neo4j", "status"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 90s
 
   # Cassandra
   cassandra:
@@ -109,9 +126,7 @@ services:
     environment:
       CASSANDRA_CLUSTER_NAME: financecluster
       CASSANDRA_DC: datacenter1
-      MAX_HEAP_SIZE: 512M
-      HEAP_NEWSIZE: 128M
-      JVM_OPTS: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"
+      JVM_EXTRA_OPTS: "-Xms128m -Xmx128m"
     volumes:
       - cassandra-data:/var/lib/cassandra
     healthcheck:
@@ -119,7 +134,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 60s
+      start_period: 240s
 
   # Microservices
   user-service:
@@ -128,6 +143,7 @@ services:
     ports:
       - "8081:8080"
     environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -143,6 +159,7 @@ services:
     ports:
       - "8082:8080"
     environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -159,6 +176,7 @@ services:
     ports:
       - "8083:8080"
     environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -175,6 +193,7 @@ services:
     ports:
       - "8084:8080"
     environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -184,8 +203,7 @@ services:
       SPRING_CASSANDRA_PORT: 9042
     depends_on:
       postgres:
-        condition:
-          service_healthy
+        condition: service_healthy
 
   reporting-service:
     build: ./reporting-service
@@ -193,6 +211,7 @@ services:
     ports:
       - "8085:8080"
     environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
@@ -200,8 +219,7 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
     depends_on:
       postgres:
-        condition:
-          service_healthy
+        condition: service_healthy
 
 # Volumes
 volumes:

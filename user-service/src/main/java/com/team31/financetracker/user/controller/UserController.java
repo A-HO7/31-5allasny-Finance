@@ -3,6 +3,7 @@ package com.team31.financetracker.user.controller;
 import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
 import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.service.UserService;
@@ -123,6 +124,15 @@ public class UserController {
     public User updateUserRole(@PathVariable Long id, @RequestBody Map<String, String> body) {
         String newRole = body.get("role");
         return userService.updateUserRole(id, newRole);
+    }
+
+    // Get User Activity Feed (S1-F12)
+    @GetMapping("/{id}/activity")
+    public UserActivityFeedResponse getUserActivityFeed(
+            @PathVariable Long id,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return userService.getUserActivityFeed(id, page, size);
     }
 }
 

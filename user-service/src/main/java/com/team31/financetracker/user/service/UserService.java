@@ -2,10 +2,15 @@ package com.team31.financetracker.user.service;
 
 import com.team31.financetracker.user.dto.*;
 import com.team31.financetracker.user.model.User;
+import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.observer.EntityObserver;
+import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
+import com.team31.financetracker.user.adapter.ObjectArrayDtoAdapter;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
+import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -18,7 +23,6 @@ import com.team31.financetracker.user.model.FinancialGoal;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.team31.financetracker.user.service.JwtService;
 import com.team31.financetracker.user.dto.RegisterRequest;
 
 import java.time.LocalDate;
@@ -26,6 +30,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 public class UserService {
@@ -33,6 +41,10 @@ public class UserService {
     private final FinancialGoalRepository financialGoalRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuthEventRepository authEventRepository;
+    private final ObjectArrayDtoAdapter objectArrayDtoAdapter;
+    private final MongoDocumentAdapter mongoDocumentAdapter;
+    private final CacheInvalidationService cacheInvalidationService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
     // 2. Update your Constructor
@@ -40,11 +52,19 @@ public class UserService {
             FinancialGoalRepository financialGoalRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
+            AuthEventRepository authEventRepository,
+            ObjectArrayDtoAdapter objectArrayDtoAdapter,
+            MongoDocumentAdapter mongoDocumentAdapter,
+            CacheInvalidationService cacheInvalidationService,
             MongoEventLogger mongoEventLogger) { // Add this
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.authEventRepository = authEventRepository;
+        this.objectArrayDtoAdapter = objectArrayDtoAdapter;
+        this.mongoDocumentAdapter = mongoDocumentAdapter;
+        this.cacheInvalidationService = cacheInvalidationService;
         register(mongoEventLogger);
     }
 
@@ -59,10 +79,17 @@ public class UserService {
     // Create
     public User createUser(User user) {
         try {
-
             user.setPassword(passwordEncoder.encode(user.getPassword()));
+            User savedUser = userRepository.save(user);
+            cacheInvalidationService.evictUserFeatureCaches();
 
-            return userRepository.save(user);
+            // RETROFIT: Observer notification (Section 4.5 M1 write endpoint)
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", savedUser.getId());
+            payload.put("email", savedUser.getEmail());
+            notifyObservers("USER_CREATED", payload);
+
+            return savedUser;
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or phone already exists");
         }
@@ -74,6 +101,7 @@ public class UserService {
     }
 
     // Read by ID
+    @Cacheable(cacheNames = "userDetailCache", key = "'user-service::user::' + #id")
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
@@ -91,18 +119,29 @@ public class UserService {
         }
 
         existingUser.setRole(userDetails.getRole());
-        return userRepository.save(existingUser);
+        User saved = userRepository.save(existingUser);
+        cacheInvalidationService.evictUserDetail(id);
+        cacheInvalidationService.evictUserFeatureCaches();
+        return saved;
     }
 
     // Delete
     public void deleteUser(Long id) {
         User user = getUserById(id);
         userRepository.delete(user);
+        cacheInvalidationService.evictUserDetail(id);
+        cacheInvalidationService.evictUserFeatureCaches();
     }
 
     // Search with Filter (S1-F1)
+    @Cacheable(cacheNames = "s1f1Cache", key = "'user-service::S1-F1::' + (#name == null ? '' : #name) + ':' + (#email == null ? '' : #email) + ':' + (#role == null ? '' : #role.name())")
     public List<User> searchUsers(String name, String email, Role role) {
-        return userRepository.searchUsers(name, email, role != null ? role.name() : null);
+        // Add these checks to ensure we pass empty strings or nulls consistently to the repo
+        String searchName = (name == null || name.isBlank()) ? null : name;
+        String searchEmail = (email == null || email.isBlank()) ? null : email;
+        String searchRole = (role == null) ? null : role.name();
+
+        return userRepository.searchUsers(searchName, searchEmail, searchRole);
     }
 
     // Update Preferences (S1-F2)
@@ -122,11 +161,14 @@ public class UserService {
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_UPDATED");
         notifyObservers("USER_UPDATED", payload);
+        cacheInvalidationService.evictUserDetail(id);
+        cacheInvalidationService.evictUserFeatureCaches();
 
         return savedUser;
     }
 
     // Filter Users by Preference (S1-F5)
+    @Cacheable(cacheNames = "s1f5Cache", key = "'user-service::S1-F5::' + #key + ':' + #value")
     public List<User> filterByPreference(String key, String value) {
         if (key == null || key.isBlank() || value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
@@ -154,6 +196,8 @@ public class UserService {
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_DEACTIVATED");
         notifyObservers("USER_DEACTIVATED", payload);
+        cacheInvalidationService.evictUserDetail(id);
+        cacheInvalidationService.evictUserFeatureCaches();
 
         return savedUser;
     }
@@ -179,11 +223,15 @@ public class UserService {
         goal.setPrimary(true);
 
         // Save via JPA cascade from User
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserDetail(userId);
+        cacheInvalidationService.evictUserFeatureCaches();
+        return saved;
     }
 
     // Get User Profile with Goals (S1-F8)
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "s1f8Cache", key = "'user-service::S1-F8::' + #id")
     public UserProfileDTO getUserProfileWithGoals(Long id) {
         User user = getUserById(id);
 
@@ -197,40 +245,41 @@ public class UserService {
                         goal.getMetadata()))
                 .collect(Collectors.toList());
 
-        return new UserProfileDTO(
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getPhone(),
-                user.getPreferences(),
-                goalDTOs,
-                goalDTOs.size());
+        return UserProfileDTO.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .preferences(user.getPreferences())
+                .financialGoals(goalDTOs)
+                .totalGoals(goalDTOs.size())
+                .build();
     }
 
     // Get User Transaction Summary (S1-F3)
+    @Cacheable(cacheNames = "s1f3Cache", key = "'user-service::S1-F3::' + #userId")
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
         User user = getUserById(userId);
 
         List<Object[]> results = userRepository.getUserTransactionSummary(userId);
 
         if (results == null || results.isEmpty()) {
-            return new UserTransactionSummaryDTO(
-                    user.getId(), user.getName(), 0L, 0L, 0L, 0.0, 0.0);
+            return UserTransactionSummaryDTO.builder()
+                    .userId(user.getId())
+                    .name(user.getName())
+                    .totalTransactions(0L)
+                    .completedTransactions(0L)
+                    .voidedTransactions(0L)
+                    .totalIncome(0.0)
+                    .totalExpenses(0.0)
+                    .build();
         }
 
-        Object[] result = results.get(0);
-
-        return new UserTransactionSummaryDTO(
-                ((Number) result[0]).longValue(),
-                (String) result[1],
-                ((Number) result[2]).longValue(),
-                ((Number) result[3]).longValue(),
-                ((Number) result[4]).longValue(),
-                ((Number) result[5]).doubleValue(),
-                ((Number) result[6]).doubleValue());
+        return objectArrayDtoAdapter.adaptToUserTransactionSummary(results.get(0));
     }
 
     // Top Savers by Net Income (S1-F6)
+    @Cacheable(cacheNames = "s1f6Cache", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
     public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
         if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
@@ -246,15 +295,12 @@ public class UserService {
         List<Object[]> results = userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
 
         return results.stream()
-                .map(result -> new TopSaverDTO(
-                        ((Number) result[0]).longValue(),
-                        (String) result[1],
-                        ((Number) result[2]).doubleValue(),
-                        ((Number) result[3]).longValue()))
+                .map(objectArrayDtoAdapter::adaptToTopSaver)
                 .toList();
     }
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
+    @Cacheable(cacheNames = "s1f9Cache", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
     public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
         if (currency == null || currency.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
@@ -303,6 +349,8 @@ public class UserService {
         payload.put("email", savedUser.getEmail());
 
         notifyObservers("REGISTERED", payload);
+        cacheInvalidationService.evictUserDetail(savedUser.getId());
+        cacheInvalidationService.evictUserFeatureCaches();
 
         return jwtService.generateToken(savedUser.getId(), savedUser.getEmail(), savedUser.getRole().name());
     }
@@ -333,17 +381,54 @@ public class UserService {
     @Transactional
     public User updateUserRole(Long id, String roleName) {
         User user = getUserById(id);
-        // This will throw IllegalArgumentException if the string is not a valid enum
-        // value
-        user.setRole(Role.valueOf(roleName.toUpperCase()));
+        Role oldRole = user.getRole();
+        try {
+            user.setRole(Role.valueOf(roleName.toUpperCase()));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
+        }
         User savedUser = userRepository.save(user);
-        
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
+        payload.put("oldRole", oldRole.name());
         payload.put("newRole", savedUser.getRole().name());
         notifyObservers("ROLE_CHANGED", payload);
-        
+        cacheInvalidationService.evictRoleChangeCaches(savedUser.getId());
+        cacheInvalidationService.evictUserFeatureCaches();
+
         return savedUser;
+    }
+
+    @Cacheable(
+            cacheNames = "s1f12Cache",
+            key = "'user-service::S1-F12::' + #id + ':' + (#page == null ? 0 : #page) + ':' + (#size == null ? 10 : #size)"
+    )
+    public UserActivityFeedResponse getUserActivityFeed(Long id, Integer page, Integer size) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof User caller)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+        }
+
+        if (!caller.getId().equals(id) && caller.getRole() != Role.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+        }
+
+        getUserById(id);
+
+        int resolvedPage = page == null ? 0 : Math.max(page, 0);
+        int resolvedSize = size == null ? 10 : Math.min(Math.max(size, 1), 100);
+
+        Page<AuthEvent> eventsPage = authEventRepository.findByUserIdOrderByTimestampDesc(
+                id,
+                PageRequest.of(resolvedPage, resolvedSize)
+        );
+
+        List<ActivityEventDTO> content = eventsPage.getContent().stream()
+                .map(mongoDocumentAdapter::adapt)
+                .toList();
+
+        return new UserActivityFeedResponse(content, resolvedPage, resolvedSize, eventsPage.getTotalElements());
     }
 
 }

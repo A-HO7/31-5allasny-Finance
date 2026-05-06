@@ -29,14 +29,15 @@ public class TransactionAnalyticsDashboardAdapter {
         Map<String, Integer> categoryCounts = convertCounts(categories);
         Map<String, Integer> statusCounts = convertCounts(statuses);
 
-        return new TransactionAnalyticsDashboardDTO(
-                totalTransactions,
-                totalIncome,
-                totalExpenses,
-                netFlow,
-                completionRate,
-                categoryCounts,
-                statusCounts);
+        return TransactionAnalyticsDashboardDTO.builder()
+                .totalTransactions(totalTransactions)
+                .totalIncome(totalIncome)
+                .totalExpenses(totalExpenses)
+                .netFlow(netFlow)
+                .completionRate(completionRate)
+                .transactionsByCategory(categoryCounts)
+                .transactionsByStatus(statusCounts)
+                .build();
     }
 
     private Map<String, Integer> convertCounts(List<Object[]> rows) {

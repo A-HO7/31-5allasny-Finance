@@ -177,6 +177,35 @@ public class SavedReportController {
         return ResponseEntity.ok(service.getReportAuditTrail(reportId));
     }
 
+    @GetMapping("/analytics/audit")
+    public ResponseEntity<?> getReportGenerationAudit(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            HttpServletRequest request) {
+
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Missing or malformed Authorization header");
+        }
+        String token = authHeader.substring(7);
+        if (!jwtService.isTokenValid(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or expired JWT token");
+        }
+
+        String callerRole = jwtService.extractRole(token);
+        if (!"ADMIN".equals(callerRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied: ADMIN role required");
+        }
+
+        try {
+            List<com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO> dtos = service.getReportGenerationAudit(startDate, endDate);
+            service.logAnalyticsViewed();
+            return ResponseEntity.ok(dtos);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     /**
      * S5-F10: Get Financial Health Score.
      * Auth: Required (USER). Ownership: uid == userId OR role == ADMIN.

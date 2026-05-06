@@ -15,29 +15,30 @@ import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
 import com.team31.financetracker.transaction.observer.EntityObserver;
 import com.team31.financetracker.transaction.observer.MongoEventLogger;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
+import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
+import com.team31.financetracker.transaction.repository.UserNodeRepository;
+import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
+import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
+import com.team31.financetracker.transaction.util.Neo4jRecordAdapter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
-import com.team31.financetracker.transaction.repository.UserNodeRepository;
-import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
-import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
-    // Service for managing transactions and spending patterns.
 
     private final TransactionRepository transactionRepository;
     private final UserNodeRepository userNodeRepository;
@@ -46,13 +47,8 @@ public class TransactionService {
     private final ObjectMapper objectMapper;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
-    // Each service owns its own observer list — not shared across services.
     private final List<EntityObserver> observers = new ArrayList<>();
 
-    /**
-     * MongoEventLogger is injected by Spring and registered immediately so that
-     * every write endpoint fires events from the first request onward.
-     */
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
@@ -67,25 +63,15 @@ public class TransactionService {
         registerObserver(mongoEventLogger);
     }
 
-    /** Register an observer to receive state-change notifications. */
     public void registerObserver(EntityObserver observer) {
-        if (!observers.contains(observer)) {
+        if (!observers.contains(observer))
             observers.add(observer);
-        }
     }
 
-    /** Unregister an observer (used in unit tests to verify the observer path). */
     public void unregisterObserver(EntityObserver observer) {
         observers.remove(observer);
     }
 
-    /**
-     * Notify all registered observers of a state change.
-     * Called AFTER the PostgreSQL save so the observer can read the persisted
-     * state.
-     * Any exception thrown by an observer is caught inside MongoEventLogger — it
-     * never propagates here and never rolls back the PG transaction.
-     */
     private void notifyObservers(String eventType, Object payload) {
         for (EntityObserver observer : observers) {
             observer.onEvent(eventType, payload);
@@ -98,29 +84,30 @@ public class TransactionService {
 
     @Transactional
     public Transaction createTransaction(Transaction transaction) {
-        transaction.setId(null); // enforce auto-generation
-        ensureSplitBackReferences(transaction); // fix back-refs if splits were embedded
+        transaction.setId(null);
+        ensureSplitBackReferences(transaction);
         Transaction saved = transactionRepository.save(transaction);
-        notifyObservers("TRANSACTION_CREATED", saved); // DP-2 Observer
-        cacheInvalidationService.evictAllTransactionCaches(saved.getId());
+        notifyObservers("TRANSACTION_CREATED", saved);
+        // New entity — only evict aggregation caches, not detail cache
+        cacheInvalidationService.evictF1();
+        cacheInvalidationService.evictF5();
+        cacheInvalidationService.evictF6();
+        cacheInvalidationService.evictF10();
         return saved;
     }
 
     public List<Transaction> getAllTransactions() {
+        // List endpoint — NOT cached (Section 4.4.2)
         return transactionRepository.findAll();
     }
 
-    @Cacheable(value = "transaction-service", key = "'transaction::' + #id")
+    @Cacheable(value = "transaction-service::transaction", key = "#id")
     public Transaction getTransactionById(Long id) {
         return transactionRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Transaction not found"));
     }
 
-    /**
-     * Partial-update: only non-null fields from the request body overwrite the
-     * stored entity.
-     */
     @Transactional
     public Transaction updateTransaction(Long id, Transaction updatedTransaction) {
         Transaction existing = getTransactionById(id);
@@ -149,13 +136,11 @@ public class TransactionService {
             existing.setTransactionDate(updatedTransaction.getTransactionDate());
         if (updatedTransaction.getCompletedAt() != null)
             existing.setCompletedAt(updatedTransaction.getCompletedAt());
-        // metadata: only overwrite when the incoming map is explicitly non-null AND
-        // non-empty
         if (updatedTransaction.getMetadata() != null && !updatedTransaction.getMetadata().isEmpty())
             existing.setMetadata(updatedTransaction.getMetadata());
 
         Transaction saved = transactionRepository.saveAndFlush(existing);
-        notifyObservers("TRANSACTION_UPDATED", saved); // DP-2 Observer
+        notifyObservers("TRANSACTION_UPDATED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
         return saved;
     }
@@ -163,21 +148,19 @@ public class TransactionService {
     @Transactional
     public void deleteTransaction(Long id) {
         Transaction existing = getTransactionById(id);
-        // Fire event BEFORE delete so the payload still carries the entity's fields
-        notifyObservers("TRANSACTION_DELETED", existing); // DP-2 Observer
+        notifyObservers("TRANSACTION_DELETED", existing);
         transactionRepository.delete(existing);
         cacheInvalidationService.evictAllTransactionCaches(id);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F1 — Get Transactions by Status and Date Range
+    // F1 — Search by Status and Date Range (cached 5 min)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "transaction-service", key = "'S3-F1::' + #startDate + '-' + #endDate + '-' + #status")
+    @Cacheable(value = "transaction-service::S3-F1", key = "(#status != null ? #status.name() : 'ALL') + '_' + #startDate + '_' + #endDate")
     public List<Transaction> searchByDateRangeAndOptionalStatus(
             LocalDate startDate, LocalDate endDate, TransactionStatus status) {
 
-        // Default to full range when not provided
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
         LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
 
@@ -197,20 +180,18 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F2 — Approve Transaction (Transactional) [M1 write → Observer]
+    // F2 — Approve Transaction (write → invalidate)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
     public Transaction approveTransaction(Long transactionId, Long approverId) {
         Transaction transaction = getTransactionById(transactionId);
 
-        // Validate status
         if (transaction.getStatus() != TransactionStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Only PENDING transactions can be approved");
         }
 
-        // Verify approver exists and is ADMIN (cross-service: users table)
         String role;
         try {
             role = transactionRepository.findUserRoleById(approverId)
@@ -228,7 +209,6 @@ public class TransactionService {
                     "Approver must have the ADMIN role");
         }
 
-        // Update account balance (cross-service: accounts table)
         double amount = transaction.getAmount();
         Long accountId = transaction.getAccountId();
 
@@ -255,7 +235,6 @@ public class TransactionService {
                     int to = transactionRepository.addToAccountBalance(
                             transaction.getToAccountId(), amount);
                     if (to != 1) {
-                        // roll back the deduct
                         transactionRepository.addToAccountBalance(accountId, amount);
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                                 "Destination account not found");
@@ -272,29 +251,26 @@ public class TransactionService {
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
         Transaction saved = transactionRepository.save(transaction);
-        notifyObservers("APPROVED", saved); // DP-2 Observer — S3-F2 write
+        notifyObservers("APPROVED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
         return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F3 — Get Transfer Fee Estimate (DTO, read-only — no observer needed)
+    // F3 — Transfer Fee Estimate (cached 5 min)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "transaction-service", key = "'S3-F3::' + #request.hashCode()")
+    @Cacheable(value = "transaction-service::S3-F3", key = "#request.accountId() + '_' + #request.toAccountId() + '_' + #request.amount()")
     public TransferEstimateDTO estimateTransfer(TransferEstimateRequest request) {
-        // Validate amount
         if (request.amount() == null || request.amount() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "amount must be positive");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be positive");
         }
         if (request.accountId() == null || request.toAccountId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "accountId and toAccountId are required");
         }
 
-        // Validate both accounts exist (cross-service)
         try {
             long found = transactionRepository.countAccountsByIds(
                     request.accountId(), request.toAccountId());
@@ -309,7 +285,6 @@ public class TransactionService {
                     "Could not verify accounts");
         }
 
-        // Determine fee tier based on similar active transaction count
         double amount = request.amount();
         long similar = transactionRepository.countActiveSimilarAmountTransactions(
                 amount * 0.8, amount * 1.2);
@@ -327,7 +302,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F4 — Complete Transaction (Transactional) [M1 write → Observer]
+    // F4 — Complete Transaction (write → invalidate)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -343,7 +318,6 @@ public class TransactionService {
         transaction.setCompletedAt(LocalDateTime.now());
         transaction = transactionRepository.save(transaction);
 
-        // Update matching budget's spentAmount (cross-service, non-fatal)
         if (transaction.getType() == TransactionType.EXPENSE) {
             try {
                 transactionRepository.updateBudgetSpentAmount(
@@ -356,16 +330,16 @@ public class TransactionService {
             }
         }
 
-        notifyObservers("COMPLETED", transaction); // DP-2 Observer — S3-F4 write
+        notifyObservers("COMPLETED", transaction);
         cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
         return transaction;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F5 — Filter Transactions by Metadata Field (JSONB, read-only)
+    // F5 — Filter by Metadata (cached 5 min)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "transaction-service", key = "'S3-F5::' + #key + '-' + #value")
+    @Cacheable(value = "transaction-service::S3-F5", key = "#key + '_' + #value")
     public List<Transaction> searchByMetadataKeyValue(String key, String value) {
         if (key == null || key.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -379,10 +353,10 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F6 — Transaction Analytics by Time Period (read-only)
+    // F6 — Analytics (cached 10 min)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "transaction-service", key = "'S3-F6::' + #startDate + '-' + #endDate")
+    @Cacheable(value = "transaction-service::S3-F6", key = "#startDate + '_' + #endDate")
     public TransactionAnalyticsDTO getAnalytics(LocalDate startDate, LocalDate endDate) {
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
         LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
@@ -402,8 +376,10 @@ public class TransactionService {
         return adapter.adapt(raw);
     }
 
+    // ── S3-F10 analytics viewed event (written outside cache layer) ───────────
+
     public void logAnalyticsViewedEvent(LocalDate startDate, LocalDate endDate) {
-        Map<String, Object> params = new java.util.HashMap<>();
+        Map<String, Object> params = new HashMap<>();
         params.put("action", "ANALYTICS_VIEWED");
         params.put("timestamp", LocalDateTime.now());
         params.put("entityId", null);
@@ -413,8 +389,13 @@ public class TransactionService {
         notifyObservers("ANALYTICS_VIEWED", params);
     }
 
-    @Cacheable(value = "transaction-service", key = "'S3-F10::' + #startDate + '-' + #endDate")
-    public TransactionAnalyticsDashboardDTO getDashboardAnalytics(LocalDate startDate, LocalDate endDate) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S3-F10 — Transaction Analytics Dashboard (cached 10 min)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Cacheable(value = "transaction-service::S3-F10", key = "#startDate + '_' + #endDate")
+    public TransactionAnalyticsDashboardDTO getDashboardAnalytics(
+            LocalDate startDate, LocalDate endDate) {
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
         LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
 
@@ -438,7 +419,7 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F7 — Void Transaction (Transactional) [M1 write → Observer]
+    // F7 — Void Transaction (write → invalidate)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -451,7 +432,6 @@ public class TransactionService {
                     "Only PENDING or APPROVED transactions can be voided");
         }
 
-        // If APPROVED, the balance was already modified during approval — reverse it
         if (transaction.getStatus() == TransactionStatus.APPROVED) {
             double amount = transaction.getAmount();
             Long accountId = transaction.getAccountId();
@@ -475,12 +455,12 @@ public class TransactionService {
 
         transaction.setStatus(TransactionStatus.VOIDED);
         Transaction saved = transactionRepository.save(transaction);
-        notifyObservers("VOIDED", saved); // DP-2 Observer — S3-F7 write
+        notifyObservers("VOIDED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F8 — Add Splits to Transaction (Finance Tracker deviation write → Observer)
+    // F8 — Add Splits (write → invalidate)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional
@@ -488,14 +468,12 @@ public class TransactionService {
             List<TransactionSplit> splitRequests) {
         Transaction transaction = getTransactionById(transactionId);
 
-        // Validate transaction status
         if (transaction.getStatus() != TransactionStatus.PENDING
                 && transaction.getStatus() != TransactionStatus.APPROVED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Cannot add splits to a COMPLETED or VOIDED transaction");
         }
 
-        // Validate each incoming split
         for (TransactionSplit req : splitRequests) {
             if (req.getRecipientName() == null || req.getRecipientName().isBlank())
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -508,27 +486,22 @@ public class TransactionService {
                         "Each split amount must be positive");
         }
 
-        // Determine starting splitOrder (continue from existing max)
         List<TransactionSplit> existingSplits = transaction.getTransactionSplits();
         int nextOrder = existingSplits.stream()
                 .mapToInt(TransactionSplit::getSplitOrder)
                 .max()
                 .orElse(0) + 1;
 
-        // Validate total amounts do not exceed transaction amount
         double existingTotal = existingSplits.stream()
-                .mapToDouble(TransactionSplit::getAmount)
-                .sum();
+                .mapToDouble(TransactionSplit::getAmount).sum();
         double newTotal = splitRequests.stream()
-                .mapToDouble(TransactionSplit::getAmount)
-                .sum();
+                .mapToDouble(TransactionSplit::getAmount).sum();
 
         if (existingTotal + newTotal > transaction.getAmount()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Total split amounts exceed the transaction amount");
         }
 
-        // Create and attach TransactionSplit entities via the JPA relationship
         for (TransactionSplit req : splitRequests) {
             TransactionSplit split = new TransactionSplit();
             split.setSplitOrder(nextOrder++);
@@ -538,23 +511,21 @@ public class TransactionService {
             split.setStatus(TransactionSplitsStatus.PENDING);
             if (req.getMetadata() != null)
                 split.setMetadata(req.getMetadata());
-
-            transaction.addTransactionSplit(split); // sets back-reference
+            transaction.addTransactionSplit(split);
         }
 
-        // Save transaction — cascade persists the new splits
         Transaction saved = transactionRepository.save(transaction);
-        notifyObservers("SPLITS_ADDED", saved); // DP-2 Observer — S3-F8 Finance Tracker deviation
+        notifyObservers("SPLITS_ADDED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
         return saved;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // F9 — Get Transaction Details with Splits (DTO, read-only)
+    // F9 — Transaction Details with Splits (cached 10 min)
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "transaction-service", key = "'S3-F9::' + #transactionId")
+    @Cacheable(value = "transaction-service::S3-F9", key = "#transactionId")
     public TransactionDetailsDTO getTransactionDetails(Long transactionId) {
         Transaction transaction = getTransactionById(transactionId);
 
@@ -589,55 +560,52 @@ public class TransactionService {
 
     @Transactional
     public void recordSpendingPattern(Long transactionId) {
-        // a) Find the transaction
         Transaction transaction = getTransactionById(transactionId);
 
-        // b) Verify status is COMPLETED
         if (transaction.getStatus() != TransactionStatus.COMPLETED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Only COMPLETED transactions can record spending patterns");
         }
 
-        // c) Skip TRANSFER transactions
         if (transaction.getType() == TransactionType.TRANSFER) {
-            return; // 200 OK, no-op
+            return; // 200 OK, no-op per spec
         }
 
-        // d) Get userId via accounts join
-        Long userId = transactionRepository.findUserIdByTransactionId(transactionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                        "Could not find user for transaction"));
+        Long userId = transaction.getUserId();
 
-        // e) Get user details
-        Map<String, Object> userDetails = transactionRepository.findUserDetailsById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                        "Could not find user details"));
-
-        String name = (String) userDetails.get("name");
-        String currency = "USD"; // Default
-        Object preferencesObj = userDetails.get("preferences");
-
-        if (preferencesObj != null) {
-            try {
-                JsonNode node = null;
-                if (preferencesObj instanceof String) {
-                    node = objectMapper.readTree((String) preferencesObj);
-                } else {
-                    node = objectMapper.valueToTree(preferencesObj);
+        // Get user details (soft dependency — use defaults if unavailable)
+        String name = "User" + userId;
+        String currency = "USD";
+        try {
+            Map<String, Object> userDetails = transactionRepository
+                    .findUserDetailsById(userId).orElse(null);
+            if (userDetails != null) {
+                if (userDetails.get("name") != null)
+                    name = (String) userDetails.get("name");
+                Object preferencesObj = userDetails.get("preferences");
+                if (preferencesObj != null) {
+                    try {
+                        JsonNode node = (preferencesObj instanceof String)
+                                ? objectMapper.readTree((String) preferencesObj)
+                                : objectMapper.valueToTree(preferencesObj);
+                        if (node != null && node.has("currency"))
+                            currency = node.get("currency").asText();
+                    } catch (Exception e) {
+                        System.err.println("[WARN] Failed to parse user preferences: "
+                                + e.getMessage());
+                    }
                 }
-                if (node != null && node.has("currency")) {
-                    currency = node.get("currency").asText();
-                }
-            } catch (Exception e) {
-                System.err.println("[WARN] Failed to parse user preferences: " + e.getMessage());
             }
+        } catch (Exception e) {
+            System.err.println("[WARN] Could not load user details for userId="
+                    + userId + ": " + e.getMessage());
         }
 
-        // f) Determine categoryType
-        String categoryType = (transaction.getType() == TransactionType.INCOME) ? "INCOME_CATEGORY"
+        String categoryType = (transaction.getType() == TransactionType.INCOME)
+                ? "INCOME_CATEGORY"
                 : "EXPENSE_CATEGORY";
 
-        // g) Record in Neo4j with idempotency (Soft dependency)
+        // Record in Neo4j with idempotency (soft dependency)
         SpentOnRelationship relationship = null;
         try {
             relationship = userNodeRepository.recordSpendingPattern(
@@ -646,58 +614,58 @@ public class TransactionService {
                     categoryType,
                     transactionId,
                     transaction.getAmount(),
-                    transaction.getCompletedAt() != null ? transaction.getCompletedAt() : LocalDateTime.now());
+                    transaction.getCompletedAt() != null
+                            ? transaction.getCompletedAt()
+                            : LocalDateTime.now());
         } catch (Exception ex) {
-            // Section 6.3: Soft dependency — log and swallow
             System.err.println("[WARN] Neo4j recordSpendingPattern failed: " + ex.getMessage());
         }
 
-        // h) Log event only if graph was mutated (relationship != null)
+        // Log event only if graph was mutated (non-idempotent path)
         if (relationship != null) {
             Map<String, Object> eventDetails = Map.of(
                     "transactionId", transactionId,
                     "userId", userId,
                     "category", transaction.getCategory().name(),
                     "amount", transaction.getAmount());
-            notifyObservers("PATTERN_RECORDED", eventDetails); // DP-2 Observer — S3-F11 write
+            notifyObservers("PATTERN_RECORDED", eventDetails);
+            // Section 4.4.4 NoSQL-writer → cached-reader invalidation
+            cacheInvalidationService.evictF12();
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // S3-F12 — Get Category Recommendations for User (Neo4j read, cached)
+    // S3-F12 — Get Category Recommendations (cached 5 min)
+    // Uses Neo4jRecordAdapter (DP-7) for Neo4j → DTO conversion
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "transaction-service", key = "'S3-F12::' + #userId + '-' + #limit + '-' + #categoryType")
-    public List<CategoryRecommendationDTO> getCategoryRecommendations(Long userId, Integer limit, String categoryType) {
-        // Check user exists
+    @Cacheable(value = "transaction-service::S3-F12", key = "#userId + '_' + #limit + '_' + #categoryType")
+    public List<CategoryRecommendationDTO> getCategoryRecommendations(
+            Long userId, Integer limit, String categoryType) {
+
         if (!transactionRepository.existsUserById(userId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
 
         int actualLimit = (limit != null && limit > 0) ? limit : 5;
 
-        List<Map<String, Object>> raw = userNodeRepository.getCategoryRecommendations(userId, actualLimit);
+        List<Map<String, Object>> raw = userNodeRepository
+                .getCategoryRecommendations(userId, actualLimit);
 
-        List<CategoryRecommendationDTO> recommendations = raw.stream()
-                .map(row -> CategoryRecommendationDTO.builder()
-                        .category((String) row.get("category"))
-                        .categoryType((String) row.get("categoryType"))
-                        .score(((Number) row.get("score")).intValue())
-                        .averageAmount(((Number) row.get("averageAmount")).doubleValue())
-                        .build())
-                .filter(dto -> categoryType == null || categoryType.equals(dto.categoryType()))
+        // DP-7 Adapter — converts Neo4j raw records to CategoryRecommendationDTO
+        Neo4jRecordAdapter adapter = new Neo4jRecordAdapter();
+
+        return raw.stream()
+                .map(adapter::adapt)
+                .filter(dto -> categoryType == null
+                        || categoryType.equals(dto.categoryType()))
                 .collect(Collectors.toList());
-
-        return recommendations;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Private helpers
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Ensure any splits embedded in the request body have their back-reference set.
-     */
     private void ensureSplitBackReferences(Transaction transaction) {
         if (transaction.getTransactionSplits() == null)
             return;
@@ -705,6 +673,4 @@ public class TransactionService {
             split.setTransaction(transaction);
         }
     }
-
-    // Removed private helpers toInt and toDouble as they are now in the adapter
 }

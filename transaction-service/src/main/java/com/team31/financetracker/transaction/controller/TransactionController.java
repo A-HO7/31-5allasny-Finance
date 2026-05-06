@@ -232,12 +232,6 @@ public class TransactionController {
     @PostMapping("/{transactionId}/record-pattern")
     @ResponseStatus(HttpStatus.OK)
     public void recordSpendingPattern(@PathVariable Long transactionId) {
-        // Ownership check
-        Transaction tx = transactionService.getTransactionById(transactionId);
-        if (!tx.getUserId().equals(authContext.getUserId()) && !"ADMIN".equals(authContext.getRole())) {
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
-        }
         transactionService.recordSpendingPattern(transactionId);
     }
 
@@ -252,15 +246,6 @@ public class TransactionController {
             @RequestParam Long userId,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String categoryType) {
-
-        // Ownership check: caller uid == userId OR role == ADMIN
-        Long callerId = authContext.getUserId();
-        String role = authContext.getRole();
-        if (!userId.equals(callerId) && !"ADMIN".equals(role)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Access denied: can only view own recommendations or be ADMIN");
-        }
-
         return transactionService.getCategoryRecommendations(userId, limit, categoryType);
     }
 

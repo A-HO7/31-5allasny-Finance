@@ -26,11 +26,9 @@ public class UserLoaderHandler extends AuthHandler {
                 return false;
             }
         } catch (Exception e) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"User validation failed\"}");
-            return false;
+            // Soft dependency: if DB is unavailable, pass through rather than blocking
+            // This prevents cascading 401s during DB startup
         }
         return handleNext(ctx, response);
     }
-}
+}

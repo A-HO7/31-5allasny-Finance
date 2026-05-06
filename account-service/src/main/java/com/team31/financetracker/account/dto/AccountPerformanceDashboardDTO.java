@@ -1,6 +1,10 @@
 package com.team31.financetracker.account.dto;
 
-public class AccountPerformanceDashboardDTO {
+import java.io.Serializable;
+
+public class AccountPerformanceDashboardDTO implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private Long accountId;
     private String name;
     private String type;
@@ -94,6 +98,10 @@ public class AccountPerformanceDashboardDTO {
         return totalTransactions;
     }
 
+    public Long getTotalOrders() {
+        return totalTransactions;
+    }
+
     public Double getTotalIncome() {
         return totalIncome;
     }
@@ -104,6 +112,12 @@ public class AccountPerformanceDashboardDTO {
 
     public Double getNetChange() {
         return netChange;
+    }
+
+    public Double getTotalRevenue() {
+        double income = totalIncome != null ? totalIncome : 0.0;
+        double expenses = totalExpenses != null ? totalExpenses : 0.0;
+        return income + expenses;
     }
 
     public Long getActiveStatementsCount() {

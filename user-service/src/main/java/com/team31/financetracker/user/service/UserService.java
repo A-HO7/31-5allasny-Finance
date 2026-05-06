@@ -96,19 +96,42 @@ public class UserService {
     }
 
     // Read All
+    @Transactional(readOnly = true)
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
 
     // Read by ID
+    @Transactional(readOnly = true)
     @Cacheable(cacheNames = "userDetailCache", key = "'user-service::user::' + #id")
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
+    // Helper: get the currently authenticated user from SecurityContextHolder
+    private User getAuthenticatedUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) return null;
+        return userRepository.findByEmail(auth.getName()).orElse(null);
+    }
+
+    // Helper: enforce that caller is the owner OR an ADMIN
+    private void enforceOwnership(Long targetId) {
+        User caller = getAuthenticatedUser();
+        if (caller == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authenticated");
+        }
+        boolean isAdmin = caller.getRole().name().equals("ADMIN");
+        if (!isAdmin && !caller.getId().equals(targetId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
+
     // Update
+    @Transactional
     public User updateUser(Long id, User userDetails) {
+        enforceOwnership(id);
         User existingUser = getUserById(id);
         existingUser.setName(userDetails.getName());
         existingUser.setEmail(userDetails.getEmail());
@@ -126,7 +149,9 @@ public class UserService {
     }
 
     // Delete
+    @Transactional
     public void deleteUser(Long id) {
+        enforceOwnership(id);
         User user = getUserById(id);
         userRepository.delete(user);
         cacheInvalidationService.evictUserDetail(id);
@@ -134,9 +159,9 @@ public class UserService {
     }
 
     // Search with Filter (S1-F1)
+    @Transactional(readOnly = true)
     @Cacheable(cacheNames = "s1f1Cache", key = "'user-service::S1-F1::' + (#name == null ? '' : #name) + ':' + (#email == null ? '' : #email) + ':' + (#role == null ? '' : #role.name())")
     public List<User> searchUsers(String name, String email, Role role) {
-        // Add these checks to ensure we pass empty strings or nulls consistently to the repo
         String searchName = (name == null || name.isBlank()) ? null : name;
         String searchEmail = (email == null || email.isBlank()) ? null : email;
         String searchRole = (role == null) ? null : role.name();
@@ -168,6 +193,7 @@ public class UserService {
     }
 
     // Filter Users by Preference (S1-F5)
+    @Transactional(readOnly = true)
     @Cacheable(cacheNames = "s1f5Cache", key = "'user-service::S1-F5::' + #key + ':' + #value")
     public List<User> filterByPreference(String key, String value) {
         if (key == null || key.isBlank() || value == null || value.isBlank()) {

@@ -8,6 +8,7 @@ import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
 import com.team31.financetracker.account.repository.AccountRepository;
+import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
@@ -43,6 +44,7 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
+    private final AccountSearchRepository accountSearchRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
     private final CacheInvalidator cacheInvalidator;
     private final ElasticsearchOperations elasticsearchOperations;
@@ -54,6 +56,7 @@ public class AccountService {
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
+            AccountSearchRepository accountSearchRepository,
             CacheInvalidator cacheInvalidator,
             CacheInvalidator cacheInvalidator1,
             ElasticsearchOperations elasticsearchOperations,
@@ -64,6 +67,7 @@ public class AccountService {
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
+        this.accountSearchRepository = accountSearchRepository;
         this.cacheInvalidator = cacheInvalidator1;
         this.elasticsearchOperations = elasticsearchOperations;
         this.elasticsearchHitAdapter = elasticsearchHitAdapter;
@@ -92,7 +96,10 @@ public class AccountService {
 
     public Account create(Account account) {
         applyCreateDefaults(account);
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_CREATED, saved, Map.of("name", saved.getName()));
+        return saved;
     }
 
     private static void applyCreateDefaults(Account account) {
@@ -162,14 +169,18 @@ public class AccountService {
             existing.setAccountDetails(updated.getAccountDetails());
         }
         Account saved = accountRepository.save(existing);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, saved, Map.of("name", saved.getName()));
         cacheInvalidator.invalidateAccountData(id); // Clear stale cache
         return saved;
     }
 
     public void delete(Long id) {
-        accountRepository.findById(id)
+        Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         accountRepository.deleteById(id);
+        deleteAccountIndex(id);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_DELETED, account, Map.of("name", account.getName()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -179,6 +190,10 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         int rowsAffected =  accountRepository.updateStatusById(id, status.name());
+        accountRepository.findById(id).ifPresent(account -> {
+            indexAccount(account);
+            notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, account, Map.of("status", status.name()));
+        });
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
@@ -227,8 +242,9 @@ public class AccountService {
         double nextAvg = (priorAvg * prior + ratingInt) / nextTotal;
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
-        accountRepository.save(account);
-        notifyAccountEvent(AccountEventActions.RATED, account, Map.of(
+        Account saved = accountRepository.save(account);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.RATED, saved, Map.of(
                 "statementId", statementId,
                 "rating", ratingInt,
                 "newAverage", nextAvg,
@@ -261,11 +277,12 @@ public class AccountService {
         account.setStatus(newStatus);
 
         // 5. Force Push to DB
-        accountRepository.saveAndFlush(account);
+        Account saved = accountRepository.saveAndFlush(account);
+        indexAccount(saved);
         AccountEventActions action = newStatus == AccountStatus.FROZEN
                 ? AccountEventActions.FROZEN
                 : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
-        notifyAccountEvent(action, account, Map.of("status", account.getStatus().name()));
+        notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -302,6 +319,7 @@ public class AccountService {
 
         account.setAccountDetails(existing);
         Account saved = accountRepository.save(account);
+        indexAccount(saved);
         notifyAccountEvent(AccountEventActions.DETAILS_UPDATED, saved, Map.of("updatedKeys", existing.keySet()));
         cacheInvalidator.invalidateAccountData(id);
         return saved;
@@ -323,8 +341,7 @@ public class AccountService {
 
     @Transactional
     public Account verifyStatement(Long accountId, Long statementId, Long verifiedBy) {
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        getById(accountId);
 
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
@@ -419,17 +436,6 @@ public class AccountService {
         return accountSummaryProjectionAdapter.adapt(row);
     }
 
-    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("accountId", account.getId());
-        payload.put("action", action.name());
-        payload.put("name", account.getName());
-        if (details != null) {
-            payload.putAll(details);
-        }
-        notifyObservers(action.name(), payload);
-    }
-
     public AccountPerformanceDashboardDTO getDashboard(
             Long accountId,
             Long requestingUserId,
@@ -482,5 +488,64 @@ public class AccountService {
         redisTemplate.opsForValue().set(cacheKey, dto, 10, TimeUnit.MINUTES);
 
         return dto;
+    }
+
+    @Transactional
+    public void indexAccountById(Long id) {
+        Account account = getById(id);
+        indexAccount(account);
+    }
+
+    private void indexAccount(Account account) {
+        try {
+            accountSearchRepository.save(toSearchDocument(account));
+            notifyAccountEvent(AccountEventActions.INDEXED, account, Map.of("index", "accounts"));
+        } catch (Exception e) {
+            log.warn("Account indexing failed for account [{}]: {}", account.getId(), e.getMessage());
+        }
+    }
+
+    private void deleteAccountIndex(Long id) {
+        try {
+            accountSearchRepository.deleteById(id.toString());
+        } catch (Exception e) {
+            log.warn("Account index delete failed for account [{}]: {}", id, e.getMessage());
+        }
+    }
+
+    private AccountSearchDocument toSearchDocument(Account account) {
+        return AccountSearchDocument.builder()
+                .id(account.getId().toString())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .description(readDescription(account))
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .build();
+    }
+
+    private String readDescription(Account account) {
+        Map<String, Object> details = account.getAccountDetails();
+        if (details == null) {
+            return null;
+        }
+        Object description = details.get("description");
+        if (description == null) {
+            description = details.get("bankName");
+        }
+        return description != null ? description.toString() : null;
+    }
+
+    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", account.getId());
+        payload.put("action", action.name());
+        payload.put("name", account.getName());
+        if (details != null) {
+            payload.putAll(details);
+        }
+        notifyObservers(action.name(), payload);
     }
 }

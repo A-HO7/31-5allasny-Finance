@@ -103,13 +103,18 @@ public class UserService {
     // Read by ID
     @Cacheable(cacheNames = "userDetailCache", key = "'user-service::user::' + #id")
     public User getUserById(Long id) {
+        validateOwnershipOrAdmin(id); // <--- Add this
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
     // Update
     public User updateUser(Long id, User userDetails) {
-        User existingUser = getUserById(id);
+        validateOwnershipOrAdmin(id);
+
+        User existingUser = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
         existingUser.setName(userDetails.getName());
         existingUser.setEmail(userDetails.getEmail());
         existingUser.setPhone(userDetails.getPhone());
@@ -118,7 +123,14 @@ public class UserService {
             existingUser.setPassword(passwordEncoder.encode(userDetails.getPassword()));
         }
 
-        existingUser.setRole(userDetails.getRole());
+        // Role Change Protection: Only an ADMIN can change roles
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof User caller) {
+            if (caller.getRole() == Role.ADMIN) {
+                existingUser.setRole(userDetails.getRole());
+            }
+        }
+
         User saved = userRepository.save(existingUser);
         cacheInvalidationService.evictUserDetail(id);
         cacheInvalidationService.evictUserFeatureCaches();
@@ -127,14 +139,16 @@ public class UserService {
 
     // Delete
     public void deleteUser(Long id) {
-        User user = getUserById(id);
+        validateOwnershipOrAdmin(id); // <--- Add this
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         userRepository.delete(user);
         cacheInvalidationService.evictUserDetail(id);
         cacheInvalidationService.evictUserFeatureCaches();
     }
 
     // Search with Filter (S1-F1)
-    @Cacheable(cacheNames = "s1f1Cache", key = "'user-service::S1-F1::' + (#name == null ? '' : #name) + ':' + (#email == null ? '' : #email) + ':' + (#role == null ? '' : #role.name())")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F1::' + (#name == null ? '' : #name) + ':' + (#email == null ? '' : #email) + ':' + (#role == null ? '' : #role.name())")
     public List<User> searchUsers(String name, String email, Role role) {
         // Add these checks to ensure we pass empty strings or nulls consistently to the repo
         String searchName = (name == null || name.isBlank()) ? null : name;
@@ -146,21 +160,32 @@ public class UserService {
 
     // Update Preferences (S1-F2)
     public User updatePreferences(Long id, Map<String, Object> newPreferences) {
-        User user = getUserById(id);
+        // 1. Security Check
+        validateOwnershipOrAdmin(id);
+
+        // 2. Fetch User
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // 3. Merge Logic (M1 Requirement)
         Map<String, Object> existing = user.getPreferences();
         if (existing == null) {
             user.setPreferences(newPreferences);
         } else {
-            existing.putAll(newPreferences); // merges, overwrites same keys, adds new keys
+            existing.putAll(newPreferences); // merges, overwrites same keys
             user.setPreferences(existing);
         }
+
+        // 4. Save
         User savedUser = userRepository.save(user);
 
-        // RETROFIT: Observer notification (M2 Requirement Section 4.5)
+        // 5. Notify Observers (M2 Retrofit)
         Map<String, Object> payload = new HashMap<>(newPreferences);
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_UPDATED");
         notifyObservers("USER_UPDATED", payload);
+
+        // 6. Cache Invalidation
         cacheInvalidationService.evictUserDetail(id);
         cacheInvalidationService.evictUserFeatureCaches();
 
@@ -168,7 +193,7 @@ public class UserService {
     }
 
     // Filter Users by Preference (S1-F5)
-    @Cacheable(cacheNames = "s1f5Cache", key = "'user-service::S1-F5::' + #key + ':' + #value")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F5::' + #key + ':' + #value")
     public List<User> filterByPreference(String key, String value) {
         if (key == null || key.isBlank() || value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Key and value must not be blank");
@@ -231,7 +256,7 @@ public class UserService {
 
     // Get User Profile with Goals (S1-F8)
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = "s1f8Cache", key = "'user-service::S1-F8::' + #id")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F8::' + #id")
     public UserProfileDTO getUserProfileWithGoals(Long id) {
         User user = getUserById(id);
 
@@ -257,7 +282,7 @@ public class UserService {
     }
 
     // Get User Transaction Summary (S1-F3)
-    @Cacheable(cacheNames = "s1f3Cache", key = "'user-service::S1-F3::' + #userId")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F3::' + #userId")
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
         User user = getUserById(userId);
 
@@ -279,7 +304,7 @@ public class UserService {
     }
 
     // Top Savers by Net Income (S1-F6)
-    @Cacheable(cacheNames = "s1f6Cache", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
     public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
         if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
@@ -300,7 +325,7 @@ public class UserService {
     }
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
-    @Cacheable(cacheNames = "s1f9Cache", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
     public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
         if (currency == null || currency.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
@@ -400,10 +425,7 @@ public class UserService {
         return savedUser;
     }
 
-    @Cacheable(
-            cacheNames = "s1f12Cache",
-            key = "'user-service::S1-F12::' + #id + ':' + (#page == null ? 0 : #page) + ':' + (#size == null ? 10 : #size)"
-    )
+    @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F12::' + #id + ':' + (#page == null ? 0 : #page) + ':' + (#size == null ? 10 : #size)")
     public UserActivityFeedResponse getUserActivityFeed(Long id, Integer page, Integer size) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof User caller)) {
@@ -429,6 +451,28 @@ public class UserService {
                 .toList();
 
         return new UserActivityFeedResponse(content, resolvedPage, resolvedSize, eventsPage.getTotalElements());
+    }
+
+    private void validateOwnershipOrAdmin(Long targetUserId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        // If not authenticated at all
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        // Ensure the principal is our User model
+        if (!(auth.getPrincipal() instanceof User caller)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid authentication principal");
+        }
+
+        // IDOR Check: Must be owner OR Admin
+        boolean isOwner = caller.getId().equals(targetUserId);
+        boolean isAdmin = caller.getRole() == Role.ADMIN;
+
+        if (!isOwner && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: You do not own this resource");
+        }
     }
 
 }

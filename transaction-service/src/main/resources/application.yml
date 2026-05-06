@@ -32,3 +32,15 @@ spring:
 jwt:
   secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms
+
+# Neo4j connection resilience — prevent startup crash when Neo4j is slow/unavailable
+neo4j:
+  connection-timeout: 30s
+  max-retry-time: 30s
+
+management:
+  health:
+    neo4j:
+      enabled: false
+    redis:
+      enabled: false

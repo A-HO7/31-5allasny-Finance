@@ -1,7 +1,6 @@
 package com.team31.financetracker.account.service;
 
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
-import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
 import com.team31.financetracker.account.mongo.AccountEventActions;
@@ -13,12 +12,6 @@ import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHit;
-import org.springframework.data.elasticsearch.core.query.Criteria;
-import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
-import org.springframework.data.elasticsearch.core.query.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -27,12 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.model.AccountSearchDocument;
 
-import org.springframework.data.elasticsearch.core.SearchHits;
-
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +38,6 @@ public class AccountService {
     private final AccountSearchRepository accountSearchRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
     private final CacheInvalidator cacheInvalidator;
-    private final ElasticsearchOperations elasticsearchOperations;
-    private final ElasticsearchHitAdapter elasticsearchHitAdapter;
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -58,9 +47,6 @@ public class AccountService {
             AccountStatementRepository accountStatementRepository,
             AccountSearchRepository accountSearchRepository,
             CacheInvalidator cacheInvalidator,
-            CacheInvalidator cacheInvalidator1,
-            ElasticsearchOperations elasticsearchOperations,
-            ElasticsearchHitAdapter elasticsearchHitAdapter,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
             RedisTemplate<String, Object> redisTemplate
@@ -68,9 +54,7 @@ public class AccountService {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
         this.accountSearchRepository = accountSearchRepository;
-        this.cacheInvalidator = cacheInvalidator1;
-        this.elasticsearchOperations = elasticsearchOperations;
-        this.elasticsearchHitAdapter = elasticsearchHitAdapter;
+        this.cacheInvalidator = cacheInvalidator;
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
@@ -383,35 +367,72 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
-    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max)")
+    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
-                                           String currency, Double min, Double max) {
+                                           String currency, Double min, Double max,
+                                           Double minRating, Double maxRating) {
+        if (min != null && max != null && min > max) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        if (minRating != null && maxRating != null && minRating > maxRating) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid rating range");
+        }
 
-        // 1. Define Criteria
-        Criteria criteria = new Criteria("name").contains(query)
-                .or(new Criteria("description").contains(query));
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
 
-        // 2. Add Filters
-        if (type != null) criteria = criteria.and(new Criteria("type").is(type));
-        if (status != null) criteria = criteria.and(new Criteria("status").is(status));
-        if (currency != null) criteria = criteria.and(new Criteria("currency").is(currency));
-        if (min != null) criteria = criteria.and(new Criteria("balance").greaterThanEqual(min));
-        if (max != null) criteria = criteria.and(new Criteria("balance").lessThanEqual(max));
-
-        // 3. Create Query with MS2 mandated Sort Order
-        Query searchQuery = new CriteriaQuery(criteria)
-                .addSort(Sort.by(Sort.Direction.DESC, "_score")) // Primary: Relevance
-                .addSort(Sort.by(Sort.Direction.DESC, "rating")) // Tie-breaker 1
-                .addSort(Sort.by(Sort.Direction.ASC, "id"));     // Tie-breaker 2[cite: 1]
-
-        // 4. Execute Search[cite: 1]
-        SearchHits<AccountSearchDocument> hits = elasticsearchOperations.search(searchQuery, AccountSearchDocument.class);
-
-        // 5. Stream through SearchHit objects to get Content[cite: 1]
-        return hits.getSearchHits().stream() // .getSearchHits() returns the List[cite: 1]
-                .map(SearchHit::getContent)  // Extract AccountSearchDocument[cite: 1]
-                .map(elasticsearchHitAdapter::adapt) // Convert to AccountDTO via Adapter[cite: 1]
+        return accountRepository.findAll().stream()
+                .filter(account -> matchesText(account, normalizedQuery))
+                .filter(account -> type == null || account.getType().name().equalsIgnoreCase(type))
+                .filter(account -> status == null || account.getStatus().name().equalsIgnoreCase(status))
+                .filter(account -> currency == null || account.getCurrency().equalsIgnoreCase(currency))
+                .filter(account -> min == null || account.getBalance() >= min)
+                .filter(account -> max == null || account.getBalance() <= max)
+                .filter(account -> minRating == null || account.getRating() >= minRating)
+                .filter(account -> maxRating == null || account.getRating() <= maxRating)
+                .sorted(Comparator
+                        .comparingInt((Account account) -> relevanceScore(account, normalizedQuery)).reversed()
+                        .thenComparing(Account::getRating, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(Account::getId))
+                .map(this::toDto)
                 .toList();
+    }
+
+    private boolean matchesText(Account account, String query) {
+        if (query == null || query.isBlank()) {
+            return true;
+        }
+        return containsIgnoreCase(account.getName(), query)
+                || containsIgnoreCase(readDescription(account), query);
+    }
+
+    private int relevanceScore(Account account, String query) {
+        if (query == null || query.isBlank()) {
+            return 0;
+        }
+        if (containsIgnoreCase(account.getName(), query)) {
+            return 2;
+        }
+        if (containsIgnoreCase(readDescription(account), query)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private boolean containsIgnoreCase(String value, String query) {
+        return value != null && value.toLowerCase().contains(query);
+    }
+
+    private AccountDTO toDto(Account account) {
+        return AccountDTO.builder()
+                .id(account.getId())
+                .name(account.getName())
+                .type(account.getType())
+                .description(readDescription(account))
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus())
+                .rating(account.getRating())
+                .build();
     }
 
     @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
@@ -469,6 +490,9 @@ public class AccountService {
         }
 
         Object[] stats = accountRepository.getTransactionStats(accountId);
+        if (stats.length == 1 && stats[0] instanceof Object[] row) {
+            stats = row;
+        }
         Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
         Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;

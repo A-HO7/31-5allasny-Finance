@@ -1,4 +1,4 @@
-package com.team31.financetracker.transaction.util;
+package com.team31.financetracker.transaction.adapter;
 
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import java.util.Map;

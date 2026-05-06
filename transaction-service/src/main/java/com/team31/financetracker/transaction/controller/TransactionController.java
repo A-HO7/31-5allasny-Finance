@@ -240,12 +240,22 @@ public class TransactionController {
     /**
      * GET
      * /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type}
+     *
+     * Ownership rule: a non-ADMIN caller may only request recommendations for
+     * their own userId. ADMIN may request recommendations for any userId.
      */
     @GetMapping("/recommendations")
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             @RequestParam Long userId,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String categoryType) {
+        // Ownership check — ADMIN bypasses, others must match their own userId
+        String callerRole = authContext.getRole();
+        Long callerUserId = authContext.getUserId();
+        if (!"ADMIN".equals(callerRole) && !userId.equals(callerUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: you can only view your own recommendations");
+        }
         return transactionService.getCategoryRecommendations(userId, limit, categoryType);
     }
 

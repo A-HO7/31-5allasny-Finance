@@ -43,8 +43,7 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, Long> {
         /**
          * S3-F11: Record spending pattern with idempotency.
          * Merges User and Category nodes, then merges or updates the SPENT_ON
-         * relationship
-         * only if the transactionId has not been recorded yet.
+         * relationship only if the transactionId has not been recorded yet.
          * Returns the relationship if created/updated, null if already recorded.
          */
         @Query("""
@@ -55,12 +54,8 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, Long> {
                         ON CREATE SET c.categoryType = $categoryType
                         ON MATCH  SET c.categoryType = $categoryType
                         WITH u, c
-                        CALL {
-                            WITH u, c, $transactionId AS tid
-                            OPTIONAL MATCH (u)-[r:SPENT_ON]->(c)
-                            WHERE tid IN r.recordedTransactionIds
-                            RETURN r AS existing
-                        }
+                        OPTIONAL MATCH (u)-[existing:SPENT_ON]->(c)
+                        WHERE $transactionId IN coalesce(existing.recordedTransactionIds, [])
                         WITH u, c, existing
                         WHERE existing IS NULL
                         MERGE (u)-[r:SPENT_ON]->(c)

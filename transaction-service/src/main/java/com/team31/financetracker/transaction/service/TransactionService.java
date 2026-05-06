@@ -3,6 +3,7 @@ package com.team31.financetracker.transaction.service;
 import com.team31.financetracker.transaction.Enums.TransactionSplitsStatus;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
 import com.team31.financetracker.transaction.Enums.TransactionType;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDashboardDTO;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
@@ -10,6 +11,7 @@ import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
+import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
 import com.team31.financetracker.transaction.observer.EntityObserver;
 import com.team31.financetracker.transaction.observer.MongoEventLogger;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -21,6 +23,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
+import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,10 +37,13 @@ import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
+    // Service for managing transactions and spending patterns.
 
     private final TransactionRepository transactionRepository;
     private final UserNodeRepository userNodeRepository;
+    private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final ObjectMapper objectMapper;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
     // Each service owns its own observer list — not shared across services.
@@ -49,10 +57,13 @@ public class TransactionService {
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
             MongoEventLogger mongoEventLogger,
-            CacheInvalidationService cacheInvalidationService) {
+            CacheInvalidationService cacheInvalidationService,
+            ObjectMapper objectMapper) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
+        this.categoryNodeRepository = categoryNodeRepository;
         this.cacheInvalidationService = cacheInvalidationService;
+        this.objectMapper = objectMapper;
         registerObserver(mongoEventLogger);
     }
 
@@ -391,6 +402,41 @@ public class TransactionService {
         return adapter.adapt(raw);
     }
 
+    public void logAnalyticsViewedEvent(LocalDate startDate, LocalDate endDate) {
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("action", "ANALYTICS_VIEWED");
+        params.put("timestamp", LocalDateTime.now());
+        params.put("entityId", null);
+        params.put("startDate", startDate != null ? startDate.toString() : null);
+        params.put("endDate", endDate != null ? endDate.toString() : null);
+        params.put("dashboard", "true");
+        notifyObservers("ANALYTICS_VIEWED", params);
+    }
+
+    @Cacheable(value = "transaction-service", key = "'S3-F10::' + #startDate + '-' + #endDate")
+    public TransactionAnalyticsDashboardDTO getDashboardAnalytics(LocalDate startDate, LocalDate endDate) {
+        LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
+        LocalDate end = (endDate != null) ? endDate : LocalDate.of(2099, 12, 31);
+
+        if (start.isAfter(end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "startDate must not be after endDate");
+        }
+
+        LocalDateTime rangeStart = start.atStartOfDay();
+        LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
+
+        Map<String, Object> raw = transactionRepository
+                .getTransactionAnalytics(rangeStart, rangeEndExclusive);
+        List<Object[]> categories = transactionRepository
+                .countTransactionsByCategory(rangeStart, rangeEndExclusive);
+        List<Object[]> statuses = transactionRepository
+                .countTransactionsByStatus(rangeStart, rangeEndExclusive);
+
+        TransactionAnalyticsDashboardAdapter adapter = new TransactionAnalyticsDashboardAdapter();
+        return adapter.adapt(raw, categories, statuses);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // F7 — Void Transaction (Transactional) [M1 write → Observer]
     // ═══════════════════════════════════════════════════════════════════════════
@@ -538,6 +584,86 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // S3-F11 — Record User-Category Spending Pattern (Neo4j write → Observer)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Transactional
+    public void recordSpendingPattern(Long transactionId) {
+        // a) Find the transaction
+        Transaction transaction = getTransactionById(transactionId);
+
+        // b) Verify status is COMPLETED
+        if (transaction.getStatus() != TransactionStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only COMPLETED transactions can record spending patterns");
+        }
+
+        // c) Skip TRANSFER transactions
+        if (transaction.getType() == TransactionType.TRANSFER) {
+            return; // 200 OK, no-op
+        }
+
+        // d) Get userId via accounts join
+        Long userId = transactionRepository.findUserIdByTransactionId(transactionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Could not find user for transaction"));
+
+        // e) Get user details
+        Map<String, Object> userDetails = transactionRepository.findUserDetailsById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Could not find user details"));
+
+        String name = (String) userDetails.get("name");
+        String currency = "USD"; // Default
+        Object preferencesObj = userDetails.get("preferences");
+
+        if (preferencesObj != null) {
+            try {
+                JsonNode node = null;
+                if (preferencesObj instanceof String) {
+                    node = objectMapper.readTree((String) preferencesObj);
+                } else {
+                    node = objectMapper.valueToTree(preferencesObj);
+                }
+                if (node != null && node.has("currency")) {
+                    currency = node.get("currency").asText();
+                }
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to parse user preferences: " + e.getMessage());
+            }
+        }
+
+        // f) Determine categoryType
+        String categoryType = (transaction.getType() == TransactionType.INCOME) ? "INCOME_CATEGORY"
+                : "EXPENSE_CATEGORY";
+
+        // g) Record in Neo4j with idempotency (Soft dependency)
+        SpentOnRelationship relationship = null;
+        try {
+            relationship = userNodeRepository.recordSpendingPattern(
+                    userId, name, currency,
+                    transaction.getCategory().name(),
+                    categoryType,
+                    transactionId,
+                    transaction.getAmount(),
+                    transaction.getCompletedAt() != null ? transaction.getCompletedAt() : LocalDateTime.now());
+        } catch (Exception ex) {
+            // Section 6.3: Soft dependency — log and swallow
+            System.err.println("[WARN] Neo4j recordSpendingPattern failed: " + ex.getMessage());
+        }
+
+        // h) Log event only if graph was mutated (relationship != null)
+        if (relationship != null) {
+            Map<String, Object> eventDetails = Map.of(
+                    "transactionId", transactionId,
+                    "userId", userId,
+                    "category", transaction.getCategory().name(),
+                    "amount", transaction.getAmount());
+            notifyObservers("PATTERN_RECORDED", eventDetails); // DP-2 Observer — S3-F11 write
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // S3-F12 — Get Category Recommendations for User (Neo4j read, cached)
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -553,12 +679,12 @@ public class TransactionService {
         List<Map<String, Object>> raw = userNodeRepository.getCategoryRecommendations(userId, actualLimit);
 
         List<CategoryRecommendationDTO> recommendations = raw.stream()
-                .map(row -> new CategoryRecommendationDTO(
-                        (String) row.get("category"),
-                        (String) row.get("categoryType"),
-                        ((Number) row.get("score")).intValue(),
-                        ((Number) row.get("averageAmount")).doubleValue()
-                ))
+                .map(row -> CategoryRecommendationDTO.builder()
+                        .category((String) row.get("category"))
+                        .categoryType((String) row.get("categoryType"))
+                        .score(((Number) row.get("score")).intValue())
+                        .averageAmount(((Number) row.get("averageAmount")).doubleValue())
+                        .build())
                 .filter(dto -> categoryType == null || categoryType.equals(dto.categoryType()))
                 .collect(Collectors.toList());
 

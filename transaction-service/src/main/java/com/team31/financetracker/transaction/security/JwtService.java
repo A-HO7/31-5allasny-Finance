@@ -13,8 +13,7 @@ import java.util.Base64;
 public class JwtService {
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Base64.getDecoder()
-                .decode(JwtConfigurationManager.getInstance().getSecret());
+        byte[] keyBytes = JwtConfigurationManager.getInstance().getSecret().getBytes();
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

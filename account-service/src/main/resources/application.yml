@@ -21,12 +21,12 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:redispass}
-    mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
+  mongodb:
+    uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
 
   elasticsearch:
     uris: ${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}
 
 jwt:
-  secret: "n2p1MF4+anaXiUsAmAznZtdjV8rDZAoscZLaa686hnE="
+  secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms

@@ -11,9 +11,8 @@ public class RoleAuthorizationHandler extends AuthHandler {
 
     @Override
     protected boolean process(AuthContext context) throws ServletException, IOException {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        
-        if (authentication == null || !authentication.isAuthenticated()) {
+        // Rely on the context we built in the chain, not Spring's global holder
+        if (context.getAuthenticatedUser() == null) {
             context.getResponse().setStatus(HttpServletResponse.SC_FORBIDDEN);
             context.getResponse().getWriter().write("Not authenticated");
             return false;
@@ -22,10 +21,9 @@ public class RoleAuthorizationHandler extends AuthHandler {
         String requestURI = context.getRequest().getRequestURI();
         String method = context.getRequest().getMethod();
 
-        boolean hasAdminRole = authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        // Check if the role is ADMIN
+        boolean hasAdminRole = context.getAuthenticatedUser().getRole().name().equals("ADMIN");
 
-        // Role Authorization: PUT /api/users/{id}/role requires ADMIN
         if (requestURI.matches("^/api/users/\\d+/role$") && method.equals("PUT")) {
             if (!hasAdminRole) {
                 context.getResponse().setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -33,7 +31,6 @@ public class RoleAuthorizationHandler extends AuthHandler {
                 return false;
             }
         }
-
         return true;
     }
 }

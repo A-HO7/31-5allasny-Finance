@@ -5,7 +5,7 @@ import java.util.Map;
 
 /**
  * Marker interface for MongoDB event documents.
- * Part of the Factory Pattern (DP-6) — the {@code EventFactory}
+ * Part of the Factory Pattern (DP-6) — the EventFactory
  * returns instances of this type.
  */
 public interface MongoEvent {

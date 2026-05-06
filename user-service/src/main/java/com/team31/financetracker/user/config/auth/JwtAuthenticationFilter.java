@@ -39,21 +39,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 2. Initialize Context for the Chain
-        AuthContext context = new AuthContext(request, response, filterChain);
+        try {
+            AuthContext context = new AuthContext(request, response, filterChain);
 
-        // 3. Build the Chain of Responsibility
-        AuthHandler chain = new TokenExtractionHandler();
-        chain.setNext(new SignatureValidationHandler(jwtService))
-                .setNext(new UserLoaderHandler(userRepository))
-                .setNext(new RoleAuthorizationHandler());
+            AuthHandler chain = new TokenExtractionHandler();
+            chain.setNext(new SignatureValidationHandler(jwtService))
+                    .setNext(new UserLoaderHandler(userRepository))
+                    .setNext(new OwnershipHandler())       // Added Ownership Check
+                    .setNext(new RoleAuthorizationHandler()); // Role check last
 
-        // 4. Execute the Chain
-        boolean success = chain.handle(context);
-
-        // 5. If all handlers succeeded, continue the Spring Security filter chain
-        if (success) {
-            filterChain.doFilter(request, response);
+            boolean success = chain.handle(context);
+            if (success) {
+                filterChain.doFilter(request, response);
+            }
+        } catch (Exception e) {
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Auth error");
         }
     }
 }

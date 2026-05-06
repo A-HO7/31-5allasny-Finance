@@ -6,6 +6,7 @@ import com.team31.financetracker.transaction.mongodb.EventType;
 import com.team31.financetracker.transaction.mongodb.MongoEvent;
 import com.team31.financetracker.transaction.mongodb.TransactionEvent;
 import com.team31.financetracker.transaction.repository.TransactionEventRepository;
+import com.team31.financetracker.transaction.service.CacheInvalidationService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,9 +46,12 @@ public class MongoEventLogger implements EntityObserver {
     private static final EventType BOUND_EVENT_TYPE = EventType.TRANSACTION;
 
     private final TransactionEventRepository eventRepository;
+    private final CacheInvalidationService   cacheInvalidationService;
 
-    public MongoEventLogger(TransactionEventRepository eventRepository) {
-        this.eventRepository = eventRepository;
+    public MongoEventLogger(TransactionEventRepository eventRepository,
+                            CacheInvalidationService cacheInvalidationService) {
+        this.eventRepository          = eventRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     // ── EntityObserver ────────────────────────────────────────────────────────
@@ -68,6 +72,17 @@ public class MongoEventLogger implements EntityObserver {
             Map<String, Object> params = buildParams(eventType, payload);
             MongoEvent event = EventFactory.createEvent(BOUND_EVENT_TYPE, params);
             eventRepository.save((TransactionEvent) event);
+
+            // ── Cache Invalidation (Section 4.4.4 / 8.2) ─────────────────────
+            if ("PATTERN_RECORDED".equals(eventType)) {
+                cacheInvalidationService.evictF12();
+            } else {
+                // Any other transaction write (CC-2) invalidates dashboard + search results
+                Long txId = (Long) params.get("transactionId");
+                if (txId != null) {
+                    cacheInvalidationService.evictAllTransactionCaches(txId);
+                }
+            }
         } catch (Exception ex) {
             // Soft dependency — log and swallow; do not bubble up to PG transaction
             log.warn("MongoEventLogger failed to persist event [{}]: {}", eventType, ex.getMessage(), ex);

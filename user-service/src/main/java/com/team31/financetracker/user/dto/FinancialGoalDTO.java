@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.dto;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.util.Map;
 
@@ -10,4 +11,6 @@ public record FinancialGoalDTO(
         LocalDate deadline,
         Boolean isPrimary,
         Map<String, Object> metadata
-) {}
+)implements Serializable {
+    private static final long serialVersionUID = 1L;
+}

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team31.financetracker.transaction.Enums.TransactionStatus;
+import com.team31.financetracker.transaction.dto.TransactionAnalyticsDashboardDTO;
 import com.team31.financetracker.transaction.dto.TransactionAnalyticsDTO;
 import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
@@ -135,6 +136,15 @@ public class TransactionController {
         return transactionService.getAnalytics(startDate, endDate);
     }
 
+    /** GET /api/transactions/analytics/dashboard?startDate=&endDate= */
+    @GetMapping("/analytics/dashboard")
+    public TransactionAnalyticsDashboardDTO getAnalyticsDashboard(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        transactionService.logAnalyticsViewedEvent(startDate, endDate);
+        return transactionService.getDashboardAnalytics(startDate, endDate);
+    }
+
     // ── F7: Void ──────────────────────────────────────────────────────────────
 
     /** PUT /api/transactions/{id}/void */
@@ -216,9 +226,27 @@ public class TransactionController {
         return transactionService.getTransactionDetails(transactionId);
     }
 
+    // ── S3-F11: Record User-Category Spending Pattern ────────────────────────
+
+    /** POST /api/transactions/{transactionId}/record-pattern */
+    @PostMapping("/{transactionId}/record-pattern")
+    @ResponseStatus(HttpStatus.OK)
+    public void recordSpendingPattern(@PathVariable Long transactionId) {
+        // Ownership check
+        Transaction tx = transactionService.getTransactionById(transactionId);
+        if (!tx.getUserId().equals(authContext.getUserId()) && !"ADMIN".equals(authContext.getRole())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
+        transactionService.recordSpendingPattern(transactionId);
+    }
+
     // ── S3-F12: Get Category Recommendations for User ───────────────────────
 
-    /** GET /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type} */
+    /**
+     * GET
+     * /api/transactions/recommendations?userId={id}&limit={n}&categoryType={type}
+     */
     @GetMapping("/recommendations")
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             @RequestParam Long userId,

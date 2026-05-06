@@ -28,7 +28,7 @@ public class UserLoaderHandler extends AuthHandler {
                     user, null, Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
             );
             SecurityContextHolder.getContext().setAuthentication(authToken);
-            
+            context.setAuthenticatedUser(user);
             return true;
         }).orElseGet(() -> {
             try {

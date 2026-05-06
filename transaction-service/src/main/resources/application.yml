@@ -26,9 +26,9 @@ spring:
       username: neo4j
       password: neo4jpass
 
-    mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
+  mongodb:
+    uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
 
 jwt:
-  secret: "<Base64-encoded shared secret across all 5 services>"
+  secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms

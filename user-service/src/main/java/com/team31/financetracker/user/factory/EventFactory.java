@@ -18,35 +18,7 @@ public class EventFactory {
                 }
                 yield new AuthEvent(userId, action, params);
             }
-            case ACCOUNT -> {
-                Long accountId = null;
-                if (params.containsKey("accountId") && params.get("accountId") != null) {
-                    accountId = ((Number) params.get("accountId")).longValue();
-                }
-                yield new AccountEvent(accountId, action, params);
-            }
-            case TRANSACTION -> {
-                Long transactionId = null;
-                if (params.containsKey("transactionId") && params.get("transactionId") != null) {
-                    transactionId = ((Number) params.get("transactionId")).longValue();
-                }
-                yield new TransactionEvent(transactionId, action, params);
-            }
-            case BUDGET -> {
-                Long budgetId = null;
-                if (params.containsKey("budgetId") && params.get("budgetId") != null) {
-                    budgetId = ((Number) params.get("budgetId")).longValue();
-                }
-                yield new BudgetEvent(budgetId, action, params);
-            }
-            case REPORT_AUDIT -> {
-                String reportType = (String) params.get("reportType");
-                Integer pagesGenerated = null;
-                if (params.containsKey("pagesGenerated") && params.get("pagesGenerated") != null) {
-                    pagesGenerated = ((Number) params.get("pagesGenerated")).intValue();
-                }
-                yield new ReportAuditEvent(reportType, pagesGenerated, action, params);
-            }
+            default -> throw new UnsupportedOperationException("Event type " + type + " is not supported in the User Service");
         };
     }
 }

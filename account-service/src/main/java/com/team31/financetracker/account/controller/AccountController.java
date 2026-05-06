@@ -76,6 +76,23 @@ public class AccountController {
         return accountService.fullTextSearch(query, type, status, currency, minBalance, maxBalance);
     }
 
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<AccountPerformanceDashboardDTO> getDashboard(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+
+        // Extract uid and role from JWT via SecurityContext
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long requestingUserId = (Long) auth.getDetails();
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority().replace("ROLE_", ""))
+                .orElse("");
+
+        return ResponseEntity.ok(accountService.getDashboard(id, requestingUserId, role));
+    }
+
+
     @GetMapping("/email")
     @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getByUserEmail(@RequestParam String email) {

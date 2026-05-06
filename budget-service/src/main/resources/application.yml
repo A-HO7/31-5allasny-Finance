@@ -40,5 +40,5 @@ spring:
     schema-action: CREATE_IF_NOT_EXISTS
 
 jwt:
-  secret: "PEVxkwxSjgh4yIP8Jko0zQJsk/1SOWWBNMoo/FMnuII="
+  secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms

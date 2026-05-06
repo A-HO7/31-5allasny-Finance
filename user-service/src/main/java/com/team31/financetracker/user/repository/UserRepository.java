@@ -16,9 +16,9 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query(value = "SELECT * FROM users u WHERE " +
-            "(:name IS NULL OR LOWER(u.name) LIKE LOWER(CONCAT('%', :name, '%'))) AND " +
-            "(:email IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', :email, '%'))) AND " +
-            "(:role IS NULL OR u.role = CAST(:role AS role))", // Postgres needs the CAST for Enums
+            "(:name IS NULL OR LOWER(u.name) LIKE LOWER(CONCAT('%', CAST(:name AS text), '%'))) AND " +
+            "(:email IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', CAST(:email AS text), '%'))) AND " +
+            "(:role IS NULL OR CAST(u.role AS text) = CAST(:role AS text))",
             nativeQuery = true)
     List<User> searchUsers(
             @Param("name") String name,

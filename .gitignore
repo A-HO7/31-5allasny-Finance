@@ -37,3 +37,4 @@ build/
 
 .env
 *.class
+.grader-cache

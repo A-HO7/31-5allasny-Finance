@@ -1,25 +1,21 @@
 package com.team31.financetracker.account.controller;
+import com.team31.financetracker.account.dto.*;
 
-import com.team31.financetracker.account.dto.RateAccountRequest;
-import com.team31.financetracker.account.dto.FreezeAccountRequest;
-
-import com.team31.financetracker.account.dto.AccountStatementAlertDTO;
-import com.team31.financetracker.account.dto.RequestDTO;
-import com.team31.financetracker.account.dto.AccountSummaryDTO;
-import com.team31.financetracker.account.dto.TopAccountDTO;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.service.AccountStatementService;
-
+import org.springframework.security.core.Authentication;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -60,6 +56,36 @@ public class AccountController {
     public List<Account> getAllAccounts() {
         return accountService.getAll();
     }
+
+    @GetMapping("/search/full-text") // Resulting path: /api/accounts/search/full-text
+    @PreAuthorize("hasAnyRole('PERSONAL', 'BUSINESS', 'ADMIN')")
+    public List<AccountDTO> fullTextSearch(
+            @RequestParam String query,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String currency,
+            @RequestParam(required = false) Double minBalance,
+            @RequestParam(required = false) Double maxBalance) {
+
+        return accountService.fullTextSearch(query, type, status, currency, minBalance, maxBalance);
+    }
+
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<AccountPerformanceDashboardDTO> getDashboard(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+
+        // Extract uid and role from JWT via SecurityContext
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long requestingUserId = (Long) auth.getDetails();
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority().replace("ROLE_", ""))
+                .orElse("");
+
+        return ResponseEntity.ok(accountService.getDashboard(id, requestingUserId, role));
+    }
+
 
     @GetMapping("/email")
     @PreAuthorize("hasAnyRole('ADMIN')")
@@ -328,8 +354,4 @@ public class AccountController {
             @PathVariable Long accountId,
             @PathVariable Long stmtId) {
         accountStatementService.delete(stmtId);
-    }
-
-
-
-}
+    }}

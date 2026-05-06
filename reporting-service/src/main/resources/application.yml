@@ -26,5 +26,5 @@ spring:
     uri: ${SPRING_DATA_MONGODB_URI:mongodb://root:rootpass@localhost:27017/financemongo?authSource=admin}
 
 jwt:
-  secret: "ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev"
+  secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000 # 24 hours in ms

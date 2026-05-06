@@ -19,6 +19,8 @@ import com.team31.financetracker.reporting.model.ReportStatus;
 import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 import com.team31.financetracker.reporting.dto.ReportAnalyticsDTO;
 import com.team31.financetracker.reporting.dto.FinancialHealthScoreDTO;
+import com.team31.financetracker.reporting.strategy.RegenerationRequest;
+import com.team31.financetracker.reporting.strategy.RegenerationResult;
 import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
@@ -175,6 +177,35 @@ public class SavedReportController {
         return ResponseEntity.ok(service.getReportAuditTrail(reportId));
     }
 
+    @GetMapping("/analytics/audit")
+    public ResponseEntity<?> getReportGenerationAudit(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            HttpServletRequest request) {
+
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Missing or malformed Authorization header");
+        }
+        String token = authHeader.substring(7);
+        if (!jwtService.isTokenValid(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or expired JWT token");
+        }
+
+        String callerRole = jwtService.extractRole(token);
+        if (!"ADMIN".equals(callerRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied: ADMIN role required");
+        }
+
+        try {
+            List<com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO> dtos = service.getReportGenerationAudit(startDate, endDate);
+            service.logAnalyticsViewed();
+            return ResponseEntity.ok(dtos);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     /**
      * S5-F10: Get Financial Health Score.
      * Auth: Required (USER). Ownership: uid == userId OR role == ADMIN.
@@ -224,6 +255,51 @@ public class SavedReportController {
         } catch (RuntimeException e) {
             if (e.getMessage() != null && e.getMessage().contains("User not found")) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+            }
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * S5-F12 — POST /api/reports/{id}/regenerate-report
+     *
+     * Distinct from M1's PUT /api/reports/{id}/regenerate — both coexist.
+     *
+     * Request body: { "archivePrevious": true/false, "reason": "..." }
+     *
+     * Logic order (strict per spec):
+     * 1. JWT check          → 401 (handled by security filter automatically)
+     * 2. Find report        → 404
+     * 3. Validate reason    → 400
+     * 4. Select strategy    (no exception yet)
+     * 5. NoRegeneration     → 400 "report is archived"
+     * 6. Success            → 200 with updated report
+     */
+    @PostMapping("/{id}/regenerate-report")
+    public ResponseEntity<?> regenerateReportWithSnapshot(
+            @PathVariable Long id,
+            @RequestBody RegenerationRequest request) {
+
+        // Step 3 — Validate reason not blank
+        if (request.getReason() == null || request.getReason().isBlank()) {
+            return ResponseEntity.badRequest().body("reason must not be blank");
+        }
+
+        try {
+            RegenerationResult result = service.regenerateReportWithSnapshot(id, request);
+
+            // Step 5 — NoRegenerationStrategy selected → 400
+            if ("NoRegenerationStrategy".equals(result.getStrategyName())) {
+                return ResponseEntity.badRequest().body("report is archived");
+            }
+
+            // Step 6 — Success
+            return ResponseEntity.ok(result.getUpdatedReport());
+
+        } catch (RuntimeException e) {
+            // getSavedReportById throws RuntimeException when not found
+            if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                return ResponseEntity.notFound().build();
             }
             return ResponseEntity.badRequest().body(e.getMessage());
         }

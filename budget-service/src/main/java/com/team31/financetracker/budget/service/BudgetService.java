@@ -252,7 +252,11 @@ public class BudgetService {
         for (Budget b : budgets) {
             b.setUserId(userId);
             if (b.getStatus() == null) b.setStatus(BudgetStatus.ACTIVE);
-            if (b.getMetadata() == null) b.setMetadata(new HashMap<>());
+
+            if (b.getMetadata() == null) {
+                b.setMetadata(new HashMap<>());
+            }
+
             b.getMetadata().putIfAbsent("healthWeight", 1.0);
         }
         List<Budget> saved = budgetRepository.saveAll(budgets);

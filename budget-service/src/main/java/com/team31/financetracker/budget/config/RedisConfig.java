@@ -17,7 +17,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 import java.time.Duration;
 
 /**
@@ -130,5 +131,35 @@ public class RedisConfig implements CachingConfigurer {
                 log.warn("Cache CLEAR error: {}", exception.getMessage());
             }
         };
+    }
+    @Bean
+    public org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate(
+            org.springframework.data.redis.connection.RedisConnectionFactory connectionFactory
+    ) {
+        org.springframework.data.redis.core.RedisTemplate<String, Object> template =
+                new org.springframework.data.redis.core.RedisTemplate<>();
+
+        template.setConnectionFactory(connectionFactory);
+
+        StringRedisSerializer stringSerializer = new StringRedisSerializer();
+
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.activateDefaultTyping(
+                mapper.getPolymorphicTypeValidator(),
+                ObjectMapper.DefaultTyping.NON_FINAL
+        );
+
+        GenericJackson2JsonRedisSerializer jsonSerializer =
+                new GenericJackson2JsonRedisSerializer(mapper);
+
+        template.setKeySerializer(stringSerializer);
+        template.setHashKeySerializer(stringSerializer);
+        template.setValueSerializer(jsonSerializer);
+        template.setHashValueSerializer(jsonSerializer);
+
+        template.afterPropertiesSet();
+        return template;
     }
 }

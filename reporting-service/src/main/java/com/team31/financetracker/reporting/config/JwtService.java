@@ -7,6 +7,7 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 /**
@@ -28,7 +29,7 @@ public class JwtService {
     // ── Signing key ──────────────────────────────────────────────────────────
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = JwtConfigurationManager.getInstance().getSecret().getBytes();
+        byte[] keyBytes = JwtConfigurationManager.getInstance().getSecret().getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

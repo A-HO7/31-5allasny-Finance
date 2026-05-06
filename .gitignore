@@ -38,3 +38,7 @@ build/
 .env
 *.class
 .grader-cache
+
+### HTTP Test files (may contain tokens/secrets) ###
+*.http
+*.HTTP

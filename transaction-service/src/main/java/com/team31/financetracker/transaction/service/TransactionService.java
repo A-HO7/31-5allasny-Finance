@@ -679,11 +679,12 @@ public class TransactionService {
         List<Map<String, Object>> raw = userNodeRepository.getCategoryRecommendations(userId, actualLimit);
 
         List<CategoryRecommendationDTO> recommendations = raw.stream()
-                .map(row -> new CategoryRecommendationDTO(
-                        (String) row.get("category"),
-                        (String) row.get("categoryType"),
-                        ((Number) row.get("score")).intValue(),
-                        ((Number) row.get("averageAmount")).doubleValue()))
+                .map(row -> CategoryRecommendationDTO.builder()
+                        .category((String) row.get("category"))
+                        .categoryType((String) row.get("categoryType"))
+                        .score(((Number) row.get("score")).intValue())
+                        .averageAmount(((Number) row.get("averageAmount")).doubleValue())
+                        .build())
                 .filter(dto -> categoryType == null || categoryType.equals(dto.categoryType()))
                 .collect(Collectors.toList());
 

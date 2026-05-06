@@ -1,7 +1,10 @@
 package com.team31.financetracker.user.dto;
 
-public class CurrencyPreferenceUserDTO {
+import java.io.Serializable;
 
+public class CurrencyPreferenceUserDTO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
     private Long userId;
     private String name;
     private Long completedTransactionCount;

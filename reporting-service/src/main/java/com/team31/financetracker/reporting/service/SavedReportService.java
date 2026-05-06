@@ -137,7 +137,8 @@ public class SavedReportService {
         return repository.findAll();
     }
 
-    @Cacheable(value = "reporting-service::S5-F1")
+    @Cacheable(value = "reporting-service::S5-F1",
+               key = "#reportType + ':' + #status + ':' + #startDate + ':' + #endDate")
     public List<SavedReport> searchReports(ReportType reportType, ReportStatus status,
                                            LocalDate startDate, LocalDate endDate) {
         boolean hasType   = reportType != null;
@@ -222,7 +223,10 @@ public class SavedReportService {
             typeBreakdown.put(row.getReportType(), row.getCount());
         }
 
-        long generatedCount = typeBreakdown.values().stream().mapToLong(Integer::longValue).sum();
+        long generatedCount = typeBreakdown.entrySet().stream()
+                .filter(e -> "GENERATED".equals(e.getKey()))
+                .mapToLong(e -> e.getValue().longValue())
+                .sum();
 
         return UserReportSummaryDTO.builder()
                 .userId(userId)
@@ -378,7 +382,8 @@ public class SavedReportService {
                 .build();
     }
 
-    @Cacheable(value = "reporting-service::S5-F6")
+    @Cacheable(value = "reporting-service::S5-F6",
+               key = "#startDate + ':' + #endDate")
     public ReportAnalyticsDTO getReportAnalytics(LocalDate startDate, LocalDate endDate) {
         // Step a: Validate — both must be provided or both must be absent
         if ((startDate == null) != (endDate == null)) {
@@ -401,7 +406,8 @@ public class SavedReportService {
         notifyReportEvent("ANALYTICS_VIEWED", null, null);
         return dto;
     }
-    @org.springframework.cache.annotation.Cacheable(value = "reporting-service::S5-F11")
+    @org.springframework.cache.annotation.Cacheable(value = "reporting-service::S5-F11",
+               key = "#startDate + ':' + #endDate")
     public java.util.List<com.team31.financetracker.reporting.dto.ReportAuditSummaryDTO> getReportGenerationAudit(java.time.LocalDate startDate, java.time.LocalDate endDate) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new IllegalArgumentException("startDate must not be after endDate");

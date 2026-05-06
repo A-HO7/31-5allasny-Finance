@@ -64,6 +64,7 @@ public class UserLoaderHandler extends AuthHandler {
                             null,
                             userDetails.getAuthorities()
                     );
+            authentication.setDetails(userId);
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
             return true;

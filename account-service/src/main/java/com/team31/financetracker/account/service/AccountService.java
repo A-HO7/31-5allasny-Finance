@@ -1,23 +1,17 @@
 package com.team31.financetracker.account.service;
 
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
-import com.team31.financetracker.account.adapter.ElasticsearchHitAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
 import com.team31.financetracker.account.repository.AccountRepository;
+import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.SearchHit;
-import org.springframework.data.elasticsearch.core.query.Criteria;
-import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
-import org.springframework.data.elasticsearch.core.query.Query;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,12 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.model.AccountSearchDocument;
 
-import org.springframework.data.elasticsearch.core.SearchHits;
-
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,10 +35,9 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
+    private final AccountSearchRepository accountSearchRepository;
     private final List<EntityObserver> observers = new ArrayList<>();
     private final CacheInvalidator cacheInvalidator;
-    private final ElasticsearchOperations elasticsearchOperations;
-    private final ElasticsearchHitAdapter elasticsearchHitAdapter;
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -54,19 +45,16 @@ public class AccountService {
     public AccountService(
             AccountRepository accountRepository,
             AccountStatementRepository accountStatementRepository,
+            AccountSearchRepository accountSearchRepository,
             CacheInvalidator cacheInvalidator,
-            CacheInvalidator cacheInvalidator1,
-            ElasticsearchOperations elasticsearchOperations,
-            ElasticsearchHitAdapter elasticsearchHitAdapter,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
             RedisTemplate<String, Object> redisTemplate
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
-        this.cacheInvalidator = cacheInvalidator1;
-        this.elasticsearchOperations = elasticsearchOperations;
-        this.elasticsearchHitAdapter = elasticsearchHitAdapter;
+        this.accountSearchRepository = accountSearchRepository;
+        this.cacheInvalidator = cacheInvalidator;
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
@@ -92,7 +80,10 @@ public class AccountService {
 
     public Account create(Account account) {
         applyCreateDefaults(account);
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_CREATED, saved, Map.of("name", saved.getName()));
+        return saved;
     }
 
     private static void applyCreateDefaults(Account account) {
@@ -162,14 +153,18 @@ public class AccountService {
             existing.setAccountDetails(updated.getAccountDetails());
         }
         Account saved = accountRepository.save(existing);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, saved, Map.of("name", saved.getName()));
         cacheInvalidator.invalidateAccountData(id); // Clear stale cache
         return saved;
     }
 
     public void delete(Long id) {
-        accountRepository.findById(id)
+        Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         accountRepository.deleteById(id);
+        deleteAccountIndex(id);
+        notifyAccountEvent(AccountEventActions.ACCOUNT_DELETED, account, Map.of("name", account.getName()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -179,6 +174,10 @@ public class AccountService {
 
     public int updateStatusById(Long id, AccountStatus status) {
         int rowsAffected =  accountRepository.updateStatusById(id, status.name());
+        accountRepository.findById(id).ifPresent(account -> {
+            indexAccount(account);
+            notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, account, Map.of("status", status.name()));
+        });
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
@@ -227,8 +226,9 @@ public class AccountService {
         double nextAvg = (priorAvg * prior + ratingInt) / nextTotal;
         account.setRating(nextAvg);
         account.setTotalRatings(nextTotal);
-        accountRepository.save(account);
-        notifyAccountEvent(AccountEventActions.RATED, account, Map.of(
+        Account saved = accountRepository.save(account);
+        indexAccount(saved);
+        notifyAccountEvent(AccountEventActions.RATED, saved, Map.of(
                 "statementId", statementId,
                 "rating", ratingInt,
                 "newAverage", nextAvg,
@@ -261,11 +261,12 @@ public class AccountService {
         account.setStatus(newStatus);
 
         // 5. Force Push to DB
-        accountRepository.saveAndFlush(account);
+        Account saved = accountRepository.saveAndFlush(account);
+        indexAccount(saved);
         AccountEventActions action = newStatus == AccountStatus.FROZEN
                 ? AccountEventActions.FROZEN
                 : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
-        notifyAccountEvent(action, account, Map.of("status", account.getStatus().name()));
+        notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
         cacheInvalidator.invalidateAccountData(id);
     }
 
@@ -302,6 +303,7 @@ public class AccountService {
 
         account.setAccountDetails(existing);
         Account saved = accountRepository.save(account);
+        indexAccount(saved);
         notifyAccountEvent(AccountEventActions.DETAILS_UPDATED, saved, Map.of("updatedKeys", existing.keySet()));
         cacheInvalidator.invalidateAccountData(id);
         return saved;
@@ -323,8 +325,7 @@ public class AccountService {
 
     @Transactional
     public Account verifyStatement(Long accountId, Long statementId, Long verifiedBy) {
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        getById(accountId);
 
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
@@ -366,35 +367,72 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
-    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max)")
+    @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
-                                           String currency, Double min, Double max) {
+                                           String currency, Double min, Double max,
+                                           Double minRating, Double maxRating) {
+        if (min != null && max != null && min > max) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid balance range");
+        }
+        if (minRating != null && maxRating != null && minRating > maxRating) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid rating range");
+        }
 
-        // 1. Define Criteria
-        Criteria criteria = new Criteria("name").contains(query)
-                .or(new Criteria("description").contains(query));
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase();
 
-        // 2. Add Filters
-        if (type != null) criteria = criteria.and(new Criteria("type").is(type));
-        if (status != null) criteria = criteria.and(new Criteria("status").is(status));
-        if (currency != null) criteria = criteria.and(new Criteria("currency").is(currency));
-        if (min != null) criteria = criteria.and(new Criteria("balance").greaterThanEqual(min));
-        if (max != null) criteria = criteria.and(new Criteria("balance").lessThanEqual(max));
-
-        // 3. Create Query with MS2 mandated Sort Order
-        Query searchQuery = new CriteriaQuery(criteria)
-                .addSort(Sort.by(Sort.Direction.DESC, "_score")) // Primary: Relevance
-                .addSort(Sort.by(Sort.Direction.DESC, "rating")) // Tie-breaker 1
-                .addSort(Sort.by(Sort.Direction.ASC, "id"));     // Tie-breaker 2[cite: 1]
-
-        // 4. Execute Search[cite: 1]
-        SearchHits<AccountSearchDocument> hits = elasticsearchOperations.search(searchQuery, AccountSearchDocument.class);
-
-        // 5. Stream through SearchHit objects to get Content[cite: 1]
-        return hits.getSearchHits().stream() // .getSearchHits() returns the List[cite: 1]
-                .map(SearchHit::getContent)  // Extract AccountSearchDocument[cite: 1]
-                .map(elasticsearchHitAdapter::adapt) // Convert to AccountDTO via Adapter[cite: 1]
+        return accountRepository.findAll().stream()
+                .filter(account -> matchesText(account, normalizedQuery))
+                .filter(account -> type == null || account.getType().name().equalsIgnoreCase(type))
+                .filter(account -> status == null || account.getStatus().name().equalsIgnoreCase(status))
+                .filter(account -> currency == null || account.getCurrency().equalsIgnoreCase(currency))
+                .filter(account -> min == null || account.getBalance() >= min)
+                .filter(account -> max == null || account.getBalance() <= max)
+                .filter(account -> minRating == null || account.getRating() >= minRating)
+                .filter(account -> maxRating == null || account.getRating() <= maxRating)
+                .sorted(Comparator
+                        .comparingInt((Account account) -> relevanceScore(account, normalizedQuery)).reversed()
+                        .thenComparing(Account::getRating, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(Account::getId))
+                .map(this::toDto)
                 .toList();
+    }
+
+    private boolean matchesText(Account account, String query) {
+        if (query == null || query.isBlank()) {
+            return true;
+        }
+        return containsIgnoreCase(account.getName(), query)
+                || containsIgnoreCase(readDescription(account), query);
+    }
+
+    private int relevanceScore(Account account, String query) {
+        if (query == null || query.isBlank()) {
+            return 0;
+        }
+        if (containsIgnoreCase(account.getName(), query)) {
+            return 2;
+        }
+        if (containsIgnoreCase(readDescription(account), query)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private boolean containsIgnoreCase(String value, String query) {
+        return value != null && value.toLowerCase().contains(query);
+    }
+
+    private AccountDTO toDto(Account account) {
+        return AccountDTO.builder()
+                .id(account.getId())
+                .name(account.getName())
+                .type(account.getType())
+                .description(readDescription(account))
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus())
+                .rating(account.getRating())
+                .build();
     }
 
     @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
@@ -417,17 +455,6 @@ public class AccountService {
 
         Object[] row = (Object[]) resultRaw;
         return accountSummaryProjectionAdapter.adapt(row);
-    }
-
-    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("accountId", account.getId());
-        payload.put("action", action.name());
-        payload.put("name", account.getName());
-        if (details != null) {
-            payload.putAll(details);
-        }
-        notifyObservers(action.name(), payload);
     }
 
     public AccountPerformanceDashboardDTO getDashboard(
@@ -457,10 +484,15 @@ public class AccountService {
         notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
 
         if (cached != null) {
-            return (AccountPerformanceDashboardDTO) cached;
+            if (cached instanceof AccountPerformanceDashboardDTO) {
+                return (AccountPerformanceDashboardDTO) cached;
+            }
         }
 
         Object[] stats = accountRepository.getTransactionStats(accountId);
+        if (stats.length == 1 && stats[0] instanceof Object[] row) {
+            stats = row;
+        }
         Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
         Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
@@ -482,5 +514,64 @@ public class AccountService {
         redisTemplate.opsForValue().set(cacheKey, dto, 10, TimeUnit.MINUTES);
 
         return dto;
+    }
+
+    @Transactional
+    public void indexAccountById(Long id) {
+        Account account = getById(id);
+        indexAccount(account);
+    }
+
+    private void indexAccount(Account account) {
+        try {
+            accountSearchRepository.save(toSearchDocument(account));
+            notifyAccountEvent(AccountEventActions.INDEXED, account, Map.of("index", "accounts"));
+        } catch (Exception e) {
+            log.warn("Account indexing failed for account [{}]: {}", account.getId(), e.getMessage());
+        }
+    }
+
+    private void deleteAccountIndex(Long id) {
+        try {
+            accountSearchRepository.deleteById(id.toString());
+        } catch (Exception e) {
+            log.warn("Account index delete failed for account [{}]: {}", id, e.getMessage());
+        }
+    }
+
+    private AccountSearchDocument toSearchDocument(Account account) {
+        return AccountSearchDocument.builder()
+                .id(account.getId().toString())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .description(readDescription(account))
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .build();
+    }
+
+    private String readDescription(Account account) {
+        Map<String, Object> details = account.getAccountDetails();
+        if (details == null) {
+            return null;
+        }
+        Object description = details.get("description");
+        if (description == null) {
+            description = details.get("bankName");
+        }
+        return description != null ? description.toString() : null;
+    }
+
+    private void notifyAccountEvent(AccountEventActions action, Account account, Map<String, Object> details) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("accountId", account.getId());
+        payload.put("action", action.name());
+        payload.put("name", account.getName());
+        if (details != null) {
+            payload.putAll(details);
+        }
+        notifyObservers(action.name(), payload);
     }
 }

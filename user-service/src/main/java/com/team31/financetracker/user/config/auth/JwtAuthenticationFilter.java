@@ -38,6 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        boolean authenticated = false;
         try {
             AuthContext context = new AuthContext(request, response, filterChain);
 
@@ -48,27 +49,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     .setNext(new RoleAuthorizationHandler());
 
             if (chain.handle(context)) {
-                // CRITICAL ADDITION: You must set the authentication in the SecurityContext
-                // Use the User loaded by your UserLoaderHandler
                 if (context.getAuthenticatedUser() != null) {
                     org.springframework.security.authentication.UsernamePasswordAuthenticationToken authToken =
                             new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
                                     context.getAuthenticatedUser(),
                                     null,
-                                    context.getAuthenticatedUser().getAuthorities() // Ensure your User model implements UserDetails correctly
+                                    context.getAuthenticatedUser().getAuthorities()
                             );
 
                     authToken.setDetails(new org.springframework.security.web.authentication.WebAuthenticationDetailsSource().buildDetails(request));
                     org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
-
-                filterChain.doFilter(request, response);
+                authenticated = true;
             }
         } catch (Exception e) {
-            // Log the error to your console so you can see why it's 500ing
             e.printStackTrace();
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("{\"error\": \"Authentication failed\"}");
+            return;
+        }
+
+        if (authenticated) {
+            filterChain.doFilter(request, response);
         }
     }
 }

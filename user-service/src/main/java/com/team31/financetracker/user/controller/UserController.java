@@ -128,11 +128,23 @@ public class UserController {
 
     // Get User Activity Feed (S1-F12)
     @GetMapping("/{id}/activity")
-    public UserActivityFeedResponse getUserActivityFeed(
+    public org.springframework.http.ResponseEntity<?> getUserActivityFeed(
             @PathVariable Long id,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return userService.getUserActivityFeed(id, page, size);
+        
+        if (page != null && page < 0) {
+            return org.springframework.http.ResponseEntity.badRequest().body("Page index must not be less than zero");
+        }
+        if (size != null && size < 0) {
+            return org.springframework.http.ResponseEntity.badRequest().body("Page size must not be less than zero");
+        }
+        
+        try {
+            return org.springframework.http.ResponseEntity.ok(userService.getUserActivityFeed(id, page, size));
+        } catch (IllegalArgumentException e) {
+            return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }
 

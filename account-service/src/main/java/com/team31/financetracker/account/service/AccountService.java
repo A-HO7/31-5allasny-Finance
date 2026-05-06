@@ -457,6 +457,9 @@ public class AccountService {
         return accountSummaryProjectionAdapter.adapt(row);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationContext applicationContext;
+
     public AccountPerformanceDashboardDTO getDashboard(
             Long accountId,
             Long requestingUserId,
@@ -474,21 +477,17 @@ public class AccountService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
 
-        String cacheKey = "account-service::S2-F12::" + accountId;
-        Object cached = redisTemplate.opsForValue().get(cacheKey);
-
         Map<String, Object> payload = new HashMap<>();
         payload.put("accountId", accountId);
         payload.put("requestedBy", requestingUserId);
         payload.put("requestedByRole", requestingUserRole);
         notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
 
-        if (cached != null) {
-            if (cached instanceof AccountPerformanceDashboardDTO) {
-                return (AccountPerformanceDashboardDTO) cached;
-            }
-        }
+        return applicationContext.getBean(AccountService.class).getDashboardCached(accountId, account.getName(), account.getType().name(), account.getBalance());
+    }
 
+    @Cacheable(value = "account-service::S2-F12", key = "#accountId")
+    public AccountPerformanceDashboardDTO getDashboardCached(Long accountId, String name, String type, Double balance) {
         Object[] stats = accountRepository.getTransactionStats(accountId);
         if (stats.length == 1 && stats[0] instanceof Object[] row) {
             stats = row;
@@ -499,21 +498,17 @@ public class AccountService {
         Double totalIncome = stats[1] != null ? ((Number) stats[1]).doubleValue() : 0.0;
         Double totalExpenses = stats[2] != null ? ((Number) stats[2]).doubleValue() : 0.0;
 
-        AccountPerformanceDashboardDTO dto = AccountPerformanceDashboardDTO.builder()
+        return AccountPerformanceDashboardDTO.builder()
                 .accountId(accountId)
-                .name(account.getName())
-                .type(account.getType().name())
-                .balance(account.getBalance())
+                .name(name)
+                .type(type)
+                .balance(balance)
                 .totalTransactions(totalTransactions)
                 .totalIncome(totalIncome)
                 .totalExpenses(totalExpenses)
                 .netChange(totalIncome - totalExpenses)
                 .activeStatementsCount(activeStatements)
                 .build();
-
-        redisTemplate.opsForValue().set(cacheKey, dto, 10, TimeUnit.MINUTES);
-
-        return dto;
     }
 
     @Transactional

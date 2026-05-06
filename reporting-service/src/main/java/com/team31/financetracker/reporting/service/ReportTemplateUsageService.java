@@ -93,7 +93,9 @@ public class ReportTemplateUsageService {
 
         // Business Logic: Calculate pagesGenerated if not provided
         if (usage.getPagesGenerated() == null) {
-            long days = ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd());
+            long days = (report.getPeriodStart() != null && report.getPeriodEnd() != null)
+                    ? ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd())
+                    : 30L; // default to 30-day period when dates are not set
             double rate = (template.getTemplateType() == TemplateType.SUMMARY) ? 7.0 : 1.0;
             double calculated = days / rate;
             usage.setPagesGenerated(Math.min(calculated, template.getMaxPages()));

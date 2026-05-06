@@ -63,6 +63,36 @@ public class AccountController {
         return accountService.getAll();
     }
 
+    @GetMapping("/search/full-text") // Resulting path: /api/accounts/search/full-text
+    @PreAuthorize("hasAnyRole('PERSONAL', 'BUSINESS', 'ADMIN')")
+    public List<AccountDTO> fullTextSearch(
+            @RequestParam String query,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String currency,
+            @RequestParam(required = false) Double minBalance,
+            @RequestParam(required = false) Double maxBalance) {
+
+        return accountService.fullTextSearch(query, type, status, currency, minBalance, maxBalance);
+    }
+
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<AccountPerformanceDashboardDTO> getDashboard(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+
+        // Extract uid and role from JWT via SecurityContext
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long requestingUserId = (Long) auth.getDetails();
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority().replace("ROLE_", ""))
+                .orElse("");
+
+        return ResponseEntity.ok(accountService.getDashboard(id, requestingUserId, role));
+    }
+
+
     @GetMapping("/email")
     @PreAuthorize("hasAnyRole('ADMIN')")
     public List<Account> getByUserEmail(@RequestParam String email) {
@@ -354,22 +384,4 @@ public class AccountController {
             @PathVariable Long accountId,
             @PathVariable Long stmtId) {
         accountStatementService.delete(stmtId);
-    }
-
-    @GetMapping("/{id}/dashboard")
-    public ResponseEntity<AccountPerformanceDashboardDTO> getDashboard(
-            @PathVariable Long id,
-            HttpServletRequest request) {
-
-        // Extract uid and role from JWT via SecurityContext
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        Long requestingUserId = (Long) auth.getDetails();
-        String role = auth.getAuthorities().stream()
-                .findFirst()
-                .map(a -> a.getAuthority().replace("ROLE_", ""))
-                .orElse("");
-
-        return ResponseEntity.ok(accountService.getDashboard(id, requestingUserId, role));
-    }
-
-}
+    }}

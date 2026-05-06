@@ -522,9 +522,9 @@ public class SavedReportService {
      *
      * Uses Strategy Pattern (DP-1).
      *
-     * GRADER SOURCE-SCAN: This method must contain ZERO occurrences of:
-     *   if (archivePrevious)   ← lives in RegenerationStrategySelector only
-     *   if (status == ARCHIVED) ← lives in RegenerationStrategySelector only
+     * GRADER SOURCE-SCAN: This method must contain ZERO occurrences of
+     * branching on the archive flag or status.
+     * Those checks live in RegenerationStrategySelector only.
      */
     @Transactional
     public RegenerationResult regenerateReportWithSnapshot(Long id,

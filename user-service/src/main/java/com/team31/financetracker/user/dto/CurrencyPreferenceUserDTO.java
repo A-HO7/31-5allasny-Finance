@@ -15,15 +15,27 @@ public class CurrencyPreferenceUserDTO implements Serializable {
         this.completedTransactionCount = completedTransactionCount;
     }
 
-    public Long getUserId() {
-        return userId;
-    }
+    public Long getUserId() { return userId; }
+    public String getName() { return name; }
+    public Long getCompletedTransactionCount() { return completedTransactionCount; }
 
-    public String getName() {
-        return name;
-    }
+    // DP-4 Builder
+    public static Builder builder() { return new Builder(); }
 
-    public Long getCompletedTransactionCount() {
-        return completedTransactionCount;
+    public static class Builder {
+        private Long userId;
+        private String name;
+        private Long completedTransactionCount;
+
+        public Builder userId(Long userId) { this.userId = userId; return this; }
+        public Builder name(String name) { this.name = name; return this; }
+        public Builder completedTransactionCount(Long completedTransactionCount) {
+            this.completedTransactionCount = completedTransactionCount;
+            return this;
+        }
+
+        public CurrencyPreferenceUserDTO build() {
+            return new CurrencyPreferenceUserDTO(userId, name, completedTransactionCount);
+        }
     }
 }

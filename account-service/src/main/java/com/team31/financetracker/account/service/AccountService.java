@@ -457,7 +457,9 @@ public class AccountService {
         notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
 
         if (cached != null) {
-            return (AccountPerformanceDashboardDTO) cached;
+            if (cached instanceof AccountPerformanceDashboardDTO) {
+                return (AccountPerformanceDashboardDTO) cached;
+            }
         }
 
         Object[] stats = accountRepository.getTransactionStats(accountId);

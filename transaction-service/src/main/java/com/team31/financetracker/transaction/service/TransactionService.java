@@ -19,7 +19,7 @@ import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
-import com.team31.financetracker.transaction.util.Neo4jRecordAdapter;
+import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.cache.annotation.Cacheable;

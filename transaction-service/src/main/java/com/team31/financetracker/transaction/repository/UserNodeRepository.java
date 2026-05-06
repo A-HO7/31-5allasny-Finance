@@ -60,7 +60,7 @@ public interface UserNodeRepository extends Neo4jRepository<UserNode, Long> {
                         WHERE existing IS NULL
                         MERGE (u)-[r:SPENT_ON]->(c)
                         ON CREATE SET r.transactionCount = 1, r.totalAmount = $amount, r.lastTransactionDate = $date, r.recordedTransactionIds = [$transactionId]
-                        ON MATCH SET r.transactionCount = r.transactionCount + 1, r.totalAmount = r.totalAmount + $amount, r.lastTransactionDate = $date, r.recordedTransactionIds = r.recordedTransactionIds + $transactionId
+                        ON MATCH SET r.transactionCount = r.transactionCount + 1, r.totalAmount = r.totalAmount + $amount, r.lastTransactionDate = $date, r.recordedTransactionIds = r.recordedTransactionIds + [$transactionId]
                         RETURN r
                         """)
         SpentOnRelationship recordSpendingPattern(@Param("userId") Long userId,

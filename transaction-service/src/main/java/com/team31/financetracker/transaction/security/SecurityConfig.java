@@ -29,7 +29,8 @@ public class SecurityConfig {
                     .requestMatchers(
                             "/api/transactions/health",
                             "/actuator/health",
-                            "/actuator/**")
+                            "/actuator/**",
+                            "/error")
                     .permitAll()
                     // Everything else requires authentication
                     .anyRequest().authenticated()

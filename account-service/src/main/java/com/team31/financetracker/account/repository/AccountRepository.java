@@ -125,11 +125,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Query(value = """
     SELECT
         COALESCE(COUNT(t.id), 0) as totalTransactions,
-        COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalIncome,
-        COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalExpenses
+        COALESCE(SUM(CASE WHEN t.type = 'INCOME' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) as totalIncome,
+        COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) as totalExpenses
     FROM transactions t
     WHERE t.account_id = :accountId
-    AND t.status = 'COMPLETED'
     """, nativeQuery = true)
     Object[] getTransactionStats(@Param("accountId") Long accountId);
 

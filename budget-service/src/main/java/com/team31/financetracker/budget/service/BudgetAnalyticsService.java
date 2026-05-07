@@ -45,7 +45,10 @@ public class BudgetAnalyticsService implements BudgetSubject {
         }
 
         BudgetAnalyticsProjection projection = budgetRepository.getBudgetAnalytics(userId);
-        BudgetAnalyticsDTO dto = buildDto(userId, projection);
+        List<Object[]> statusCounts = budgetRepository.countBudgetsByStatus(userId);
+        List<Object[]> periodCounts = budgetRepository.countBudgetsByPeriod(userId);
+        
+        BudgetAnalyticsDTO dto = buildDto(userId, projection, statusCounts, periodCounts);
 
         try {
             redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofMinutes(10));
@@ -73,8 +76,11 @@ public class BudgetAnalyticsService implements BudgetSubject {
 
         BudgetAnalyticsProjection projection =
                 budgetRepository.getBudgetAnalyticsByDateRange(userId, startDate, endDate);
+                
+        List<Object[]> statusCounts = budgetRepository.countBudgetsByStatusByDateRange(userId, startDate, endDate);
+        List<Object[]> periodCounts = budgetRepository.countBudgetsByPeriodByDateRange(userId, startDate, endDate);
 
-        BudgetAnalyticsDTO dto = buildDto(userId, projection);
+        BudgetAnalyticsDTO dto = buildDto(userId, projection, statusCounts, periodCounts);
 
         try {
             redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofMinutes(10));
@@ -87,7 +93,7 @@ public class BudgetAnalyticsService implements BudgetSubject {
         return dto;
     }
 
-    private BudgetAnalyticsDTO buildDto(Long userId, BudgetAnalyticsProjection projection) {
+    private BudgetAnalyticsDTO buildDto(Long userId, BudgetAnalyticsProjection projection, List<Object[]> statusCounts, List<Object[]> periodCounts) {
         long totalBudgets = projection != null && projection.getTotalBudgets() != null
                 ? projection.getTotalBudgets()
                 : 0L;
@@ -115,6 +121,24 @@ public class BudgetAnalyticsService implements BudgetSubject {
         long completedBudgets = projection != null && projection.getCompletedBudgets() != null
                 ? projection.getCompletedBudgets()
                 : 0L;
+                
+        Map<String, Long> budgetsByStatus = new HashMap<>();
+        if (statusCounts != null) {
+            for (Object[] row : statusCounts) {
+                if (row[0] != null) {
+                    budgetsByStatus.put(row[0].toString(), ((Number) row[1]).longValue());
+                }
+            }
+        }
+        
+        Map<String, Long> budgetsByPeriod = new HashMap<>();
+        if (periodCounts != null) {
+            for (Object[] row : periodCounts) {
+                if (row[0] != null) {
+                    budgetsByPeriod.put(row[0].toString(), ((Number) row[1]).longValue());
+                }
+            }
+        }
 
         return BudgetAnalyticsDTO.builder()
                 .userId(userId)
@@ -124,8 +148,10 @@ public class BudgetAnalyticsService implements BudgetSubject {
                 .remainingAmount(totalBudgetAmount - totalSpentAmount)
                 .averageUtilization(averageUtilization)
                 .activeBudgets(activeBudgets)
-                .exceededBudgets(exceededBudgets)
+                .overspentBudgets(exceededBudgets)
                 .completedBudgets(completedBudgets)
+                .budgetsByStatus(budgetsByStatus)
+                .budgetsByPeriod(budgetsByPeriod)
                 .build();
     }
 

@@ -149,6 +149,10 @@ public class BudgetService {
             key = "'budget-service::S4-F3::' + #userId + '::' + #startDate + '::' + #endDate",
             unless = "#result == null")
     public BudgetPerformanceDTO getBudgetPerformance(Long userId, LocalDate startDate, LocalDate endDate) {
+        if (!budgetRepository.existsUserById(userId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
         LocalDateTime start = startDate.atStartOfDay();
         LocalDateTime end = endDate.atTime(23, 59, 59, 999999999);
 

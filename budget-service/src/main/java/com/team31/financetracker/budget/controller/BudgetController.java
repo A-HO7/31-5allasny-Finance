@@ -257,6 +257,9 @@ public class BudgetController {
             @PathVariable Long budgetId,
             @RequestBody Map<String, Object> metadata
     ) {
+        if (metadata == null || metadata.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metadata payload cannot be empty");
+        }
         return budgetService.updateBudgetMetadata(budgetId, metadata);
     }
 

@@ -174,6 +174,9 @@ public class BudgetService {
             key = "'budget-service::S4-F5::' + #minOverspend + '::' + #warningNotSent",
             unless = "#result == null")
     public List<OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
+        if (minOverspend != null && minOverspend < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minOverspend cannot be negative");
+        }
         try {
             List<OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
             return projections.stream().map(p -> new OverspentBudgetDTO.Builder()
@@ -187,6 +190,7 @@ public class BudgetService {
                     .build()
             ).toList();
         } catch (Exception e) {
+            if (e instanceof ResponseStatusException) throw e;
             log.warn("getOverspentBudgets failed: {}", e.getMessage());
             return new ArrayList<>();
         }

@@ -12,7 +12,7 @@ import java.util.Optional;
 import com.team31.financetracker.budget.dto.BudgetAnalyticsProjection;
 public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
-    @Query(value = "SELECT true", nativeQuery = true)
+    @Query(value = "SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END FROM users WHERE id = :userId", nativeQuery = true)
     boolean existsUserById(@Param("userId") Long userId);
 
     @Modifying
@@ -89,14 +89,14 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     @Query(value = """
     SELECT
         CAST(COUNT(*) AS bigint) AS totalBudgets,
-        COALESCE(SUM(budget_amount), 0.0) AS totalBudgetAmount,
-        COALESCE(SUM(spent_amount), 0.0) AS totalSpentAmount,
-        COALESCE(AVG(
+        CAST(COALESCE(SUM(budget_amount), 0.0) AS double precision) AS totalBudgetAmount,
+        CAST(COALESCE(SUM(spent_amount), 0.0) AS double precision) AS totalSpentAmount,
+        CAST(COALESCE(AVG(
             CASE
                 WHEN budget_amount = 0 THEN 0
                 ELSE (spent_amount / budget_amount) * 100
             END
-        ), 0.0) AS averageUtilization,
+        ), 0.0) AS double precision) AS averageUtilization,
         CAST(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS bigint) AS activeBudgets,
         CAST(SUM(CASE WHEN status = 'EXCEEDED' THEN 1 ELSE 0 END) AS bigint) AS exceededBudgets,
         CAST(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS bigint) AS completedBudgets
@@ -104,17 +104,18 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     WHERE user_id = :userId
     """, nativeQuery = true)
     BudgetAnalyticsProjection getBudgetAnalytics(@Param("userId") Long userId);
+
     @Query(value = """
     SELECT
         CAST(COUNT(*) AS bigint) AS totalBudgets,
-        COALESCE(SUM(budget_amount), 0.0) AS totalBudgetAmount,
-        COALESCE(SUM(spent_amount), 0.0) AS totalSpentAmount,
-        COALESCE(AVG(
+        CAST(COALESCE(SUM(budget_amount), 0.0) AS double precision) AS totalBudgetAmount,
+        CAST(COALESCE(SUM(spent_amount), 0.0) AS double precision) AS totalSpentAmount,
+        CAST(COALESCE(AVG(
             CASE
                 WHEN budget_amount = 0 THEN 0
                 ELSE (spent_amount / budget_amount) * 100
             END
-        ), 0.0) AS averageUtilization,
+        ), 0.0) AS double precision) AS averageUtilization,
         CAST(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS bigint) AS activeBudgets,
         CAST(SUM(CASE WHEN status = 'EXCEEDED' THEN 1 ELSE 0 END) AS bigint) AS exceededBudgets,
         CAST(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS bigint) AS completedBudgets
@@ -128,6 +129,18 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             @Param("startDate") java.time.LocalDate startDate,
             @Param("endDate") java.time.LocalDate endDate
     );
+
+    @Query(value = "SELECT status, COUNT(*) FROM budgets WHERE user_id = :userId AND start_date >= :startDate AND end_date <= :endDate GROUP BY status", nativeQuery = true)
+    List<Object[]> countBudgetsByStatusByDateRange(@Param("userId") Long userId, @Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query(value = "SELECT period, COUNT(*) FROM budgets WHERE user_id = :userId AND start_date >= :startDate AND end_date <= :endDate GROUP BY period", nativeQuery = true)
+    List<Object[]> countBudgetsByPeriodByDateRange(@Param("userId") Long userId, @Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query(value = "SELECT status, COUNT(*) FROM budgets WHERE user_id = :userId GROUP BY status", nativeQuery = true)
+    List<Object[]> countBudgetsByStatus(@Param("userId") Long userId);
+
+    @Query(value = "SELECT period, COUNT(*) FROM budgets WHERE user_id = :userId GROUP BY period", nativeQuery = true)
+    List<Object[]> countBudgetsByPeriod(@Param("userId") Long userId);
 }
 
 

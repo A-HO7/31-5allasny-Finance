@@ -11,8 +11,10 @@ public class BudgetAnalyticsDTO implements Serializable {
     private Double remainingAmount;
     private Double averageUtilization;
     private Long activeBudgets;
-    private Long exceededBudgets;
+    private Long overspentBudgets;
     private Long completedBudgets;
+    private java.util.Map<String, Long> budgetsByStatus;
+    private java.util.Map<String, Long> budgetsByPeriod;
 
     private BudgetAnalyticsDTO(Builder builder) {
         this.userId = builder.userId;
@@ -22,8 +24,10 @@ public class BudgetAnalyticsDTO implements Serializable {
         this.remainingAmount = builder.remainingAmount;
         this.averageUtilization = builder.averageUtilization;
         this.activeBudgets = builder.activeBudgets;
-        this.exceededBudgets = builder.exceededBudgets;
+        this.overspentBudgets = builder.overspentBudgets;
         this.completedBudgets = builder.completedBudgets;
+        this.budgetsByStatus = builder.budgetsByStatus != null ? builder.budgetsByStatus : new java.util.HashMap<>();
+        this.budgetsByPeriod = builder.budgetsByPeriod != null ? builder.budgetsByPeriod : new java.util.HashMap<>();
     }
 
     public static Builder builder() {
@@ -58,12 +62,20 @@ public class BudgetAnalyticsDTO implements Serializable {
         return activeBudgets;
     }
 
-    public Long getExceededBudgets() {
-        return exceededBudgets;
+    public Long getOverspentBudgets() {
+        return overspentBudgets;
     }
 
     public Long getCompletedBudgets() {
         return completedBudgets;
+    }
+
+    public java.util.Map<String, Long> getBudgetsByStatus() {
+        return budgetsByStatus;
+    }
+
+    public java.util.Map<String, Long> getBudgetsByPeriod() {
+        return budgetsByPeriod;
     }
 
     public static class Builder {
@@ -74,8 +86,10 @@ public class BudgetAnalyticsDTO implements Serializable {
         private Double remainingAmount;
         private Double averageUtilization;
         private Long activeBudgets;
-        private Long exceededBudgets;
+        private Long overspentBudgets;
         private Long completedBudgets;
+        private java.util.Map<String, Long> budgetsByStatus;
+        private java.util.Map<String, Long> budgetsByPeriod;
 
         public Builder userId(Long userId) {
             this.userId = userId;
@@ -112,13 +126,23 @@ public class BudgetAnalyticsDTO implements Serializable {
             return this;
         }
 
-        public Builder exceededBudgets(Long exceededBudgets) {
-            this.exceededBudgets = exceededBudgets;
+        public Builder overspentBudgets(Long overspentBudgets) {
+            this.overspentBudgets = overspentBudgets;
             return this;
         }
 
         public Builder completedBudgets(Long completedBudgets) {
             this.completedBudgets = completedBudgets;
+            return this;
+        }
+
+        public Builder budgetsByStatus(java.util.Map<String, Long> budgetsByStatus) {
+            this.budgetsByStatus = budgetsByStatus;
+            return this;
+        }
+
+        public Builder budgetsByPeriod(java.util.Map<String, Long> budgetsByPeriod) {
+            this.budgetsByPeriod = budgetsByPeriod;
             return this;
         }
 

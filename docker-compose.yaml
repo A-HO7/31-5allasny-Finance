@@ -158,7 +158,7 @@ services:
       - "8081:8080"
     environment:
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://user-postgres:5432/financedb-users
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis
@@ -174,7 +174,7 @@ services:
       - "8082:8080"
     environment:
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://account-postgres:5432/financedb-accounts
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis
@@ -191,7 +191,7 @@ services:
       - "8083:8080"
     environment:
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis
@@ -208,7 +208,7 @@ services:
       - "8084:8080"
     environment:
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://budget-postgres:5432/financedb-budgets
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis
@@ -226,7 +226,7 @@ services:
       - "8085:8080"
     environment:
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx256m -Dlogging.level.root=WARN"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/financedb
+      SPRING_DATASOURCE_URL: jdbc:postgresql://reporting-postgres:5432/financedb-reporting
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis

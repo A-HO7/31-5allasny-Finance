@@ -44,3 +44,10 @@ management:
       enabled: false
     redis:
       enabled: false
+
+feign:
+  user-service:
+    url: http://user-service:8080
+
+  account-service:
+    url: http://account-service:8080

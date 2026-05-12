@@ -30,3 +30,10 @@ spring:
 jwt:
   secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000
+
+feign:
+  transaction-service:
+    url: http://transaction-service:8080
+
+  budget-service:
+    url: http://budget-service:8080

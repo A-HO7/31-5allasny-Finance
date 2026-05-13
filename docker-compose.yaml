@@ -1,25 +1,108 @@
 services:
-  # PostgreSQL
-  postgres:
-    image: postgres
-    container_name: finance-db
+  # PostgreSQL - User Service
+  user-postgres:
+    image: postgres:17
+    container_name: user-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: financedb
+      POSTGRES_DB: financedb-users
     volumes:
-      - pgdata:/var/lib/postgresql
+      - user-pgdata:/var/lib/postgresql/data
     depends_on:
       neo4j:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb-users"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # PostgreSQL - Account Service
+  account-postgres:
+    image: postgres:17
+    container_name: account-postgres
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: financedb-accounts
+    volumes:
+      - account-pgdata:/var/lib/postgresql/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb-accounts"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Transaction Service
+  transaction-postgres:
+    image: postgres:17
+    container_name: transaction-postgres
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: financedb-transactions
+    volumes:
+      - transaction-pgdata:/var/lib/postgresql/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb-transactions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Budget Service
+  budget-postgres:
+    image: postgres:17
+    container_name: budget-postgres
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: financedb-budgets
+    volumes:
+      - budget-pgdata:/var/lib/postgresql/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb-budgets"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Reporting Service
+  reporting-postgres:
+    image: postgres:17
+    container_name: reporting-postgres
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: financedb-reporting
+    volumes:
+      - reporting-pgdata:/var/lib/postgresql/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d financedb-reporting"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   # pgAdmin
   # pgadmin:
   #  image: dpage/pgadmin4
@@ -164,7 +247,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
     depends_on:
-      postgres:
+      user-postgres:
         condition: service_healthy
 
   account-service:
@@ -181,7 +264,7 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
       SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200
     depends_on:
-      postgres:
+      account-postgres:
         condition: service_healthy
 
   transaction-service:
@@ -198,7 +281,7 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
       SPRING_DATA_NEO4J_URI: bolt://neo4j:7687
     depends_on:
-      postgres:
+      transaction-postgres:
         condition: service_healthy
 
   budget-service:
@@ -216,7 +299,7 @@ services:
       SPRING_CASSANDRA_CONTACT_POINTS: cassandra
       SPRING_CASSANDRA_PORT: 9042
     depends_on:
-      postgres:
+      budget-postgres:
         condition: service_healthy
 
   reporting-service:
@@ -232,12 +315,16 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
     depends_on:
-      postgres:
+      reporting-postgres:
         condition: service_healthy
 
 # Volumes
 volumes:
-  pgdata:
+  user-pgdata:
+  account-pgdata:
+  transaction-pgdata:
+  budget-pgdata:
+  reporting-pgdata:
   mongo-data:
   es-data:
   neo4j-data:

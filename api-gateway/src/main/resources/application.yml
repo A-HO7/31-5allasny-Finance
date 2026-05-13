@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: http://user-service:8080
+          predicates:
+            - Path=/api/users/**, /api/auth/**
+        - id: account-service
+          uri: http://account-service:8080
+          predicates:
+            - Path=/api/accounts/**
+        - id: transaction-service
+          uri: http://transaction-service:8080
+          predicates:
+            - Path=/api/transactions/**
+        - id: budget-service
+          uri: http://budget-service:8080
+          predicates:
+            - Path=/api/budgets/**
+        - id: reporting-service
+          uri: http://reporting-service:8080
+          predicates:
+            - Path=/api/reports/**

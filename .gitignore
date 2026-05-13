@@ -42,3 +42,4 @@ build/
 ### HTTP Test files (may contain tokens/secrets) ###
 *.http
 *.HTTP
+/m3.md

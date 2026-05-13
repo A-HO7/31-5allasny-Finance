@@ -18,6 +18,21 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 1000
+          # max-attempts is deprecated, max-retries should be used instead
+          max-retries: 3
+
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
@@ -30,3 +45,10 @@ spring:
 jwt:
   secret: ${JWT_SECRET:ThisIsAFallbackSecretKeyThatIsAtLeast32BytesLongForLocalDev}
   expiration: 86400000
+
+feign:
+  transaction-service:
+    url: http://transaction-service:8080
+
+  budget-service:
+    url: http://budget-service:8080

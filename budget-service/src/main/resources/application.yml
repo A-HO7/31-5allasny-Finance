@@ -20,12 +20,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: 6379
       password: redispass
-    cassandra:
-      contact-points: ${CASSANDRA_HOST:localhost}
-      port: 9042
-      local-datacenter: ${CASSANDRA_DC:datacenter1}
-      keyspace-name: financeks
-      schema-action: CREATE_IF_NOT_EXISTS
+#    cassandra:
+#      contact-points: ${CASSANDRA_HOST:localhost}
+#      port: 9042
+#      local-datacenter: ${CASSANDRA_DC:datacenter1}
+#      keyspace-name: financeks
+#      schema-action: CREATE_IF_NOT_EXISTS
   mongodb:
     uri: mongodb://root:rootpass@${MONGO_HOST:localhost}:27017/financemongo?authSource=admin&serverSelectionTimeoutMS=50&connectTimeoutMS=50&socketTimeoutMS=50
   cassandra:

@@ -6,7 +6,7 @@ spring:
     name: account-service
 
   datasource:
-    url: jdbc:postgresql://account-postgres:5432/financedb-accounts
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://account-postgres:5432/financedb-accounts}
     username: postgres
     password: postgres
   jpa:

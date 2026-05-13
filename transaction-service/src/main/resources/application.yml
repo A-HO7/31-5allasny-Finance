@@ -6,7 +6,7 @@ spring:
     name: transaction-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/financedb
+    url: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
     username: postgres
     password: postgres
   jpa:

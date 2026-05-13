@@ -6,7 +6,7 @@ spring:
     name: reporting-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/financedb
+    url: jdbc:postgresql://reporting-postgres:5432/financedb-reporting
     username: postgres
     password: postgres
   jpa:

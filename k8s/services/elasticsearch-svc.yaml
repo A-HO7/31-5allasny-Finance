@@ -7,6 +7,7 @@ metadata:
     app: elasticsearch
 spec:
   type: ClusterIP
+  clusterIP: None
   selector:
     app: elasticsearch
   ports:

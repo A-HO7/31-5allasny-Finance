@@ -17,7 +17,11 @@ public interface TransactionServiceClient {
     long getCompletedTransactionCount(@PathVariable("userId") Long userId);
 
     @GetMapping("/api/transactions/account/{accountId}/summary")
-    AccountTransactionSummaryDTO getAccountTransactionSummary(@PathVariable("accountId") Long accountId, @RequestParam(value = "startDate", required = false) String startDate, @RequestParam(value = "endDate", required = false) String endDate);
+    AccountTransactionSummaryDTO getAccountTransactionSummary(
+        @PathVariable Long accountId,
+        @RequestParam String startDate,
+        @RequestParam String endDate
+    );
 
     @GetMapping("/api/transactions/account/{accountId}/pending-count")
     int getPendingTransactionCount(@PathVariable("accountId") Long accountId);

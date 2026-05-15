@@ -12,11 +12,11 @@ public interface AccountServiceClient {
     AccountDTO getAccount(@PathVariable("id") Long id);
 
     @GetMapping("/api/accounts/{id}/owner")
-    OwnerDTO getAccountOwner(@PathVariable("id") Long id);
+    OwnerDTO getOwner(@PathVariable("id") Long id);
 
     @GetMapping("/api/accounts/exists")
-    AccountsExistDTO checkAccountsExist(@RequestParam("ids") List<Long> ids);
+    AccountsExistDTO accountsExist(@RequestParam("ids") List<Long> ids);
 
     @GetMapping("/api/accounts/user/{userId}/balance-summary")
-    AccountBalanceSummaryDTO getUserBalanceSummary(@PathVariable("userId") Long userId);
+    AccountBalanceSummaryDTO getBalanceSummary(@PathVariable("userId") Long userId);
 }

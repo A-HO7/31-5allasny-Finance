@@ -24,4 +24,7 @@ public interface BudgetServiceClient {
     BudgetSummaryDTO getUserBudgetSummary(@PathVariable("userId") Long userId,
                                           @RequestParam("startDate") String startDate,
                                           @RequestParam("endDate") String endDate);
+
+    @GetMapping("/api/budgets/{id}")
+    BudgetDTO getBudget(@PathVariable("id") Long id);
 }

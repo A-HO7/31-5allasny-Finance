@@ -22,6 +22,26 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     @Modifying
     @Transactional
+    @Query(value = "UPDATE accounts SET balance = balance + :amount WHERE id = :id", nativeQuery = true)
+    void updateBalance(@Param("id") Long id, @Param("amount") Double amount);
+
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE accounts SET total_transactions = total_transactions + 1 WHERE id = :id", nativeQuery = true)
+    void incrementTotalTransactions(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE accounts SET total_transactions = total_transactions - 1 WHERE id = :id", nativeQuery = true)
+    void decrementTotalTransactions(@Param("id") Long id);
+
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE accounts SET last_transaction_date = :timestamp WHERE id = :id", nativeQuery = true)
+    void updateLastTransactionDate(@Param("id") Long id, @Param("timestamp") LocalDateTime timestamp);
+
+    @Modifying
+    @Transactional
     @Query(value = """
     UPDATE accounts
     SET status = :status::text

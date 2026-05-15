@@ -13,4 +13,3 @@ data:
         static_configs:
           - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]
         metrics_path: /actuator/prometheus
-        

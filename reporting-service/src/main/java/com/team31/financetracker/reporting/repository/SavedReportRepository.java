@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SavedReportRepository extends JpaRepository<SavedReport, Long> {
@@ -70,4 +71,30 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
         nativeQuery = true)
        List<Object[]> getReportAnalytics(@Param("startDate") String startDate,
                                       @Param("endDate") String endDate);
+
+    // ─── Saga queries (S5-EVENTS Task 3 & 4) ────────────────────────────────
+
+    /**
+     * Finds a saga-created SavedReport by transactionId stored inside the
+     * reportConfig JSONB column. Used for idempotency checks and compensation.
+     * Returns Optional.empty() if no saga snapshot exists for this transaction.
+     */
+    @Query(value = "SELECT * FROM saved_reports " +
+                   "WHERE report_config->>'transactionId' = CAST(:transactionId AS TEXT) " +
+                   "LIMIT 1",
+           nativeQuery = true)
+    Optional<SavedReport> findSagaReportByTransactionId(@Param("transactionId") Long transactionId);
+
+    /**
+     * State-conditional UPDATE: transitions status from expectedStatus → newStatus
+     * atomically. Returns the number of rows updated (0 = idempotent no-op).
+     * Used by Task 3 to move PENDING → GENERATED or PENDING → FAILED.
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE SavedReport r SET r.status = :newStatus " +
+           "WHERE r.id = :reportId AND r.status = :expectedStatus")
+    int transitionStatus(@Param("reportId") Long reportId,
+                         @Param("expectedStatus") ReportStatus expectedStatus,
+                         @Param("newStatus") ReportStatus newStatus);
 }

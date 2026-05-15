@@ -6,7 +6,7 @@ metadata:
   labels:
     app: rabbitmq
 spec:
-  type: ClusterIP
+  clusterIP: None
   selector:
     app: rabbitmq
   ports:

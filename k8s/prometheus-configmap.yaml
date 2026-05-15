@@ -11,6 +11,6 @@ data:
       # S3-INFRA will add their scrape job here
       - job_name: reporting-service
         static_configs:
-          - targets: ["reporting-service.financetracker.svc.cluster.local:8080"]
+          - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]
         metrics_path: /actuator/prometheus
         

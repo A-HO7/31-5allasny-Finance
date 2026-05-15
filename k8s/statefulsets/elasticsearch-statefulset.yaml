@@ -26,9 +26,6 @@ spec:
             - name: http
               containerPort: 9200
               protocol: TCP
-            - name: transport
-              containerPort: 9300
-              protocol: TCP
           env:
             - name: ES_JAVA_OPTS
               value: "-Xms512m -Xmx512m"

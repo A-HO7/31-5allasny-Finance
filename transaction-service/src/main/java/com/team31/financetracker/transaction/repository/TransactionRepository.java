@@ -123,4 +123,68 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
        @Query(value = "SELECT COUNT(*) > 0 FROM users WHERE id = :userId", nativeQuery = true)
        boolean existsUserById(@Param("userId") Long userId);
+
+       // ── M3 Internal endpoints (called by other services via Feign) ───────────
+
+       /** GET /api/transactions/user/{userId}/summary */
+       @Query(value = "SELECT " +
+               "  COUNT(*)                                                                  AS totalTransactions, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END)                         AS completedTransactions, " +
+               "  COUNT(CASE WHEN status = 'VOIDED'    THEN 1 END)                         AS voidedTransactions, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalIncome, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalExpenses " +
+               "FROM transactions WHERE user_id = :userId",
+               nativeQuery = true)
+       Map<String, Object> getUserTransactionSummary(@Param("userId") Long userId);
+
+       /** GET /api/transactions/user/{userId}/net-income?startDate=&endDate= */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netSavings, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions " +
+               "WHERE user_id = :userId " +
+               "  AND transaction_date >= :start AND transaction_date < :endExclusive",
+               nativeQuery = true)
+       Map<String, Object> getUserNetIncome(@Param("userId") Long userId,
+                                            @Param("start") LocalDateTime start,
+                                            @Param("endExclusive") LocalDateTime endExclusive);
+
+       /** GET /api/transactions/user/{userId}/completed-count */
+       @Query(value = "SELECT COUNT(*) FROM transactions " +
+               "WHERE user_id = :userId AND status = 'COMPLETED'",
+               nativeQuery = true)
+       long countCompletedTransactionsByUserId(@Param("userId") Long userId);
+
+       /** GET /api/transactions/account/{accountId}/summary?startDate=&endDate= */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalDeposits, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalWithdrawals, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netChange, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions " +
+               "WHERE account_id = :accountId " +
+               "  AND transaction_date >= :start AND transaction_date < :endExclusive",
+               nativeQuery = true)
+       Map<String, Object> getAccountTransactionSummary(@Param("accountId") Long accountId,
+                                                        @Param("start") LocalDateTime start,
+                                                        @Param("endExclusive") LocalDateTime endExclusive);
+
+       /** GET /api/transactions/account/{accountId}/summary (all time) */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalDeposits, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalWithdrawals, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netChange, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions WHERE account_id = :accountId",
+               nativeQuery = true)
+       Map<String, Object> getAccountTransactionSummaryAllTime(@Param("accountId") Long accountId);
+
+       /** GET /api/transactions/account/{accountId}/pending-count */
+       @Query(value = "SELECT COUNT(*) FROM transactions " +
+               "WHERE account_id = :accountId AND status = 'PENDING'",
+               nativeQuery = true)
+       long countPendingTransactionsByAccountId(@Param("accountId") Long accountId);
 }

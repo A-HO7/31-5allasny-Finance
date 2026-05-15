@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: finance-tracker
+  labels:
+    app: rabbitmq
+data:
+  rabbitmq.conf: |
+    loopback_users.guest = false

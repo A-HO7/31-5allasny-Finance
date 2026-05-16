@@ -238,6 +238,10 @@ public class SavedReportService {
                 .build();
     }
 
+    public long getSnapshotCount(Long userId) {
+        return repository.countSagaSnapshots(userId);
+    }
+
     @Transactional
     public SavedReport generateReport(Long userId, GenerateReportRequestDTO request, boolean simulateFailure) {
         ensureUserExists(userId);

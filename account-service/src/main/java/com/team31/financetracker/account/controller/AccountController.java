@@ -254,33 +254,7 @@ public class AccountController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getDetails() == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User ID not found in authentication details");
-        }
-        Long requestingUserId = (Long) auth.getDetails();
-        String role = auth.getAuthorities().stream()
-                .findFirst()
-                .map(
-                        a ->
-                                Objects.requireNonNull(
-                                        a.getAuthority()
-                                )
-                                        .replace("ROLE_", ""))
-                .orElse("");
-
-        // Get account
-        com.team31.financetracker.contracts.dto.AccountDTO dto = accountService.getAccountById(id);
-
-        // Enforce ownership or admin
-        boolean isAdmin = "ADMIN".equals(role);
-        boolean isOwner = requestingUserId != null && requestingUserId.equals(dto.getUserId());
-
-        if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-
-        return dto;
+        return accountService.getAccountById(id);
     }
 
     @GetMapping("/{id}/owner")
@@ -398,4 +372,39 @@ public class AccountController {
         accountStatementService.delete(stmtId);
     }
 
+    // Add a tiny holder inside AccountController
+    private static final class Caller {
+        final Long userId;
+        final String role;
+        Caller(Long userId, String role) { this.userId = userId; this.role = role; }
+    }
+
+    /** Extract calling user's id + role, throw 401 if not authenticated. */
+    private Caller callerFromContext() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        // details may be Long, Integer, or String depending on filter — be permissive
+        Object details = auth.getDetails();
+        Long uid = null;
+        if (details instanceof Long l) {
+            uid = l;
+        } else if (details instanceof Integer i) {
+            uid = i.longValue();
+        } else if (details instanceof String s) {
+            try { uid = Long.parseLong(s); } catch (NumberFormatException ignored) { /* keep null */ }
+        }
+
+        // Role extraction: find any authority and strip ROLE_ prefix
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority())
+                .orElse(null);
+        if (role != null && role.startsWith("ROLE_")) {
+            role = role.substring("ROLE_".length());
+        }
+        return new Caller(uid, role);
+    }
 }

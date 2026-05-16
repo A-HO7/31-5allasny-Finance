@@ -19,6 +19,9 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
+// M3: Feign clients from the shared contracts module
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
 
 import java.util.HashMap;
 import java.util.stream.Collectors;
@@ -44,9 +47,11 @@ public class UserService {
     private final ObjectArrayDtoAdapter objectArrayDtoAdapter;
     private final MongoDocumentAdapter mongoDocumentAdapter;
     private final CacheInvalidationService cacheInvalidationService;
+    // M3: Feign clients replace the deleted cross-service SQL queries
+    private final TransactionServiceClient transactionServiceClient;
+    private final BudgetServiceClient budgetServiceClient;
     private final List<EntityObserver> observers = new ArrayList<>();
 
-    // 2. Update your Constructor
     public UserService(UserRepository userRepository,
             FinancialGoalRepository financialGoalRepository,
             PasswordEncoder passwordEncoder,
@@ -55,7 +60,9 @@ public class UserService {
             ObjectArrayDtoAdapter objectArrayDtoAdapter,
             MongoDocumentAdapter mongoDocumentAdapter,
             CacheInvalidationService cacheInvalidationService,
-            MongoEventLogger mongoEventLogger) { // Add this
+            MongoEventLogger mongoEventLogger,
+            TransactionServiceClient transactionServiceClient,
+            BudgetServiceClient budgetServiceClient) {
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
@@ -64,6 +71,8 @@ public class UserService {
         this.objectArrayDtoAdapter = objectArrayDtoAdapter;
         this.mongoDocumentAdapter = mongoDocumentAdapter;
         this.cacheInvalidationService = cacheInvalidationService;
+        this.transactionServiceClient = transactionServiceClient;
+        this.budgetServiceClient = budgetServiceClient;
         register(mongoEventLogger);
     }
 

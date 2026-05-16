@@ -9,11 +9,24 @@ import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
+import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.AccountDTO;
+import com.team31.financetracker.contracts.dto.BudgetDTO;
+import com.team31.financetracker.contracts.events.TransactionCompletedEvent;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.events.TransactionApprovedEvent;
+import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
 import com.team31.financetracker.transaction.observer.EntityObserver;
 import com.team31.financetracker.transaction.observer.MongoEventLogger;
+import com.team31.financetracker.transaction.outbox.OutboxEvent;
+import com.team31.financetracker.transaction.outbox.OutboxRepository;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
@@ -22,6 +35,7 @@ import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardA
 import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import feign.FeignException;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -44,6 +58,11 @@ public class TransactionService {
     private final UserNodeRepository userNodeRepository;
     private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final UserServiceClient userServiceClient;
+    private final AccountServiceClient accountServiceClient;
+    private final BudgetServiceClient budgetServiceClient;
+    private final OutboxRepository outboxRepository;
+    private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
@@ -52,12 +71,22 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
+            UserServiceClient userServiceClient,
+            AccountServiceClient accountServiceClient,
+            BudgetServiceClient budgetServiceClient,
+            OutboxRepository outboxRepository,
+            EventPublisher eventPublisher,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
             ObjectMapper objectMapper) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
+        this.userServiceClient = userServiceClient;
+        this.accountServiceClient = accountServiceClient;
+        this.budgetServiceClient = budgetServiceClient;
+        this.outboxRepository = outboxRepository;
+        this.eventPublisher = eventPublisher;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
         registerObserver(mongoEventLogger);
@@ -194,12 +223,11 @@ public class TransactionService {
 
         String role;
         try {
-            role = transactionRepository.findUserRoleById(approverId)
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.NOT_FOUND, "User not found"));
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
+            UserDTO approver = userServiceClient.getUser(approverId);
+            role = approver.getRole();
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        } catch (feign.FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Could not verify approver role");
         }
@@ -209,48 +237,22 @@ public class TransactionService {
                     "Approver must have the ADMIN role");
         }
 
-        double amount = transaction.getAmount();
-        Long accountId = transaction.getAccountId();
-
-        try {
-            switch (transaction.getType()) {
-                case INCOME -> {
-                    int updated = transactionRepository.addToAccountBalance(accountId, amount);
-                    if (updated != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-                }
-                case EXPENSE -> {
-                    int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    if (updated != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-                }
-                case TRANSFER -> {
-                    if (transaction.getToAccountId() == null)
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                                "TRANSFER requires a toAccountId");
-                    int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    if (from != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "Source account not found");
-                    int to = transactionRepository.addToAccountBalance(
-                            transaction.getToAccountId(), amount);
-                    if (to != 1) {
-                        transactionRepository.addToAccountBalance(accountId, amount);
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "Destination account not found");
-                    }
-                }
-            }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not update account balance");
-        }
-
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
         Transaction saved = transactionRepository.save(transaction);
+        try {
+            eventPublisher.publish("transaction.events", "transaction.approved",
+                    new TransactionApprovedEvent(
+                            saved.getId(),
+                            saved.getAccountId(),
+                            saved.getToAccountId(),
+                            saved.getType().name(),
+                            saved.getAmount(),
+                            approverId));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not publish approval event");
+        }
         notifyObservers("APPROVED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
         return saved;
@@ -272,15 +274,13 @@ public class TransactionService {
         }
 
         try {
-            long found = transactionRepository.countAccountsByIds(
-                    request.accountId(), request.toAccountId());
-            if (found != 2) {
+            AccountsExistDTO accountsExist = accountServiceClient.accountsExist(
+                    List.of(request.accountId(), request.toAccountId()));
+            if (!accountsExist.allExist()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "One or both accounts not found");
             }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
+        } catch (FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Could not verify accounts");
         }
@@ -314,23 +314,75 @@ public class TransactionService {
                     "Only APPROVED transactions can be completed");
         }
 
-        transaction.setStatus(TransactionStatus.COMPLETED);
+        Long userId = transaction.getUserId();
+
+        try {
+            UserDTO user = userServiceClient.getUser(userId);
+            if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "User must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User must be ACTIVE");
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify user");
+        }
+
+        try {
+            AccountDTO account = accountServiceClient.getAccount(transaction.getAccountId());
+            if (!"ACTIVE".equalsIgnoreCase(account.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Account must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Account must be ACTIVE");
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify account");
+        }
+
+        String category = transaction.getCategory() != null ? transaction.getCategory().name() : null;
+        try {
+            BudgetDTO budget = budgetServiceClient.getActiveBudgetForUser(userId, category);
+            if (budget != null && budget.getStatus() != null
+                    && !"ACTIVE".equalsIgnoreCase(budget.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Budget must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            // No active budget is acceptable; continue with completion.
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Could not verify budget");
+        }
+
+        transaction.setStatus(TransactionStatus.COMPLETING);
         transaction.setCompletedAt(LocalDateTime.now());
         transaction = transactionRepository.save(transaction);
 
-        if (transaction.getType() == TransactionType.EXPENSE) {
-            try {
-                transactionRepository.updateBudgetSpentAmount(
-                        transaction.getAmount(),
-                        transaction.getCategory().name(),
-                        transaction.getTransactionDate().toLocalDate());
-            } catch (Exception e) {
-                System.err.println("[WARN] Could not update budget for transaction "
-                        + id + ": " + e.getMessage());
-            }
+        try {
+            String payload = objectMapper.writeValueAsString(
+                    new TransactionCompletedEvent(
+                            transaction.getId(),
+                            transaction.getUserId(),
+                            transaction.getAccountId(),
+                            transaction.getCategory() != null ? transaction.getCategory().name() : null,
+                            transaction.getType().name(),
+                            transaction.getAmount(),
+                            transaction.getCompletedAt()));
+            outboxRepository.save(new OutboxEvent(
+                    "transaction.events",
+                    "transaction.completed",
+                    payload));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not queue completion event");
         }
 
-        notifyObservers("COMPLETED", transaction);
+        notifyObservers("COMPLETING", transaction);
         cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
         return transaction;
     }
@@ -432,29 +484,25 @@ public class TransactionService {
                     "Only PENDING or APPROVED transactions can be voided");
         }
 
-        if (transaction.getStatus() == TransactionStatus.APPROVED) {
-            double amount = transaction.getAmount();
-            Long accountId = transaction.getAccountId();
-            try {
-                switch (transaction.getType()) {
-                    case INCOME -> transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    case EXPENSE -> transactionRepository.addToAccountBalance(accountId, amount);
-                    case TRANSFER -> {
-                        transactionRepository.addToAccountBalance(accountId, amount);
-                        if (transaction.getToAccountId() != null) {
-                            transactionRepository.subtractFromAccountBalance(
-                                    transaction.getToAccountId(), amount);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                        "Could not reverse account balance");
-            }
-        }
-
+        String previousStatus = transaction.getStatus().name();
         transaction.setStatus(TransactionStatus.VOIDED);
         Transaction saved = transactionRepository.save(transaction);
+        try {
+            eventPublisher.publish("transaction.events", "transaction.voided",
+                    new TransactionVoidedEvent(
+                            saved.getId(),
+                            saved.getUserId(),
+                            saved.getAccountId(),
+                            saved.getToAccountId(),
+                            saved.getCategory() != null ? saved.getCategory().name() : null,
+                            saved.getType().name(),
+                            saved.getAmount(),
+                            previousStatus,
+                            "user_requested"));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not publish void event");
+        }
         notifyObservers("VOIDED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
     }
@@ -568,31 +616,28 @@ public class TransactionService {
         }
 
         Long userId = transaction.getUserId();
+        try {
+            OwnerDTO owner = accountServiceClient.getOwner(transaction.getAccountId());
+            if (owner != null && owner.userId() != null) {
+                userId = owner.userId();
+            }
+        } catch (FeignException e) {
+            System.err.println("[WARN] Could not load account owner for accountId="
+                    + transaction.getAccountId() + ": " + e.getMessage());
+        }
 
         // Get user details (soft dependency — use defaults if unavailable)
         String name = "User" + userId;
         String currency = "USD";
         try {
-            Map<String, Object> userDetails = transactionRepository
-                    .findUserDetailsById(userId).orElse(null);
-            if (userDetails != null) {
-                if (userDetails.get("name") != null)
-                    name = (String) userDetails.get("name");
-                Object preferencesObj = userDetails.get("preferences");
-                if (preferencesObj != null) {
-                    try {
-                        JsonNode node = (preferencesObj instanceof String)
-                                ? objectMapper.readTree((String) preferencesObj)
-                                : objectMapper.valueToTree(preferencesObj);
-                        if (node != null && node.has("currency"))
-                            currency = node.get("currency").asText();
-                    } catch (Exception e) {
-                        System.err.println("[WARN] Failed to parse user preferences: "
-                                + e.getMessage());
-                    }
+            UserDTO user = userServiceClient.getUser(userId);
+            if (user != null && user.getPreferences() != null) {
+                Object currencyPreference = user.getPreferences().get("currency");
+                if (currencyPreference != null) {
+                    currency = currencyPreference.toString();
                 }
             }
-        } catch (Exception e) {
+        } catch (FeignException e) {
             System.err.println("[WARN] Could not load user details for userId="
                     + userId + ": " + e.getMessage());
         }
@@ -644,8 +689,13 @@ public class TransactionService {
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             Long userId, Integer limit, String categoryType) {
 
-        if (!transactionRepository.existsUserById(userId)) {
+        try {
+            userServiceClient.getUser(userId);
+        } catch (feign.FeignException.NotFound e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        } catch (feign.FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify user");
         }
 
         int actualLimit = (limit != null && limit > 0) ? limit : 5;

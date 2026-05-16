@@ -253,15 +253,7 @@ public class AccountController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
-        Caller caller = callerFromContext();
-        com.team31.financetracker.contracts.dto.AccountDTO account = accountService.getAccountById(id);
-
-        boolean isAdmin = "ADMIN".equals(caller.role);
-        boolean isOwner = caller.userId != null && caller.userId.equals(account.getUserId());
-        if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-        return account;
+        return accountService.getAccountById(id);
     }
 
     @PostMapping

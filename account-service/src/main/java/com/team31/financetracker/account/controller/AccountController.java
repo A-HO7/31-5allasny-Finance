@@ -1,38 +1,40 @@
 package com.team31.financetracker.account.controller;
-import com.team31.financetracker.account.dto.*;
 
+import com.team31.financetracker.account.dto.*;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import com.team31.financetracker.account.service.AccountStatementService;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
+import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import com.team31.financetracker.account.service.AccountStatementService;
-import org.springframework.security.core.Authentication;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
+
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
+
+    private static final Logger log = LoggerFactory.getLogger(AccountController.class);
+
     private final AccountService accountService;
     private final AccountStatementService accountStatementService;
 
-    public AccountController (AccountService accountService, AccountStatementService accountStatementService){
+    public AccountController(AccountService accountService, AccountStatementService accountStatementService) {
         this.accountService = accountService;
         this.accountStatementService = accountStatementService;
     }
@@ -57,7 +59,7 @@ public class AccountController {
         return accountService.getAll();
     }
 
-    @GetMapping("/search/full-text") // Resulting path: /api/accounts/search/full-text
+    @GetMapping("/search/full-text")
     @PreAuthorize("hasAnyRole('PERSONAL', 'BUSINESS', 'ADMIN')")
     public List<AccountDTO> fullTextSearch(
             @RequestParam(required = false, defaultValue = "") String query,
@@ -77,7 +79,6 @@ public class AccountController {
             @PathVariable Long id,
             HttpServletRequest request) {
 
-        // Extract uid and role from JWT via SecurityContext
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long requestingUserId = (Long) auth.getDetails();
         String role = auth.getAuthorities().stream()
@@ -87,7 +88,6 @@ public class AccountController {
 
         return ResponseEntity.ok(accountService.getDashboard(id, requestingUserId, role));
     }
-
 
     @GetMapping("/email")
     @PreAuthorize("hasAnyRole('ADMIN')")
@@ -113,140 +113,30 @@ public class AccountController {
         return accountService.getByStatus(status);
     }
 
-    @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('ADMIN')")
-    public AccountSummaryDTO getSummaryByQueryParams(@RequestParam MultiValueMap<String, String> queryParams) {
-        Long account = findLongParam(queryParams, "accountId", "id", "account_id");
-        if (account == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account id is required");
-        }
-        return buildAccountSummary(account, queryParams);
-    }
-
-    @GetMapping("/{id}/summary/{rangeStart}/{rangeEnd}")
-    @PreAuthorize("hasAnyRole('ADMIN')")
-    public AccountSummaryDTO getSummaryWithPathRange(
-            @PathVariable Long id,
-            @PathVariable String rangeStart,
-            @PathVariable String rangeEnd) {
-        LocalDateTime start = parseFlexibleDateTime(rangeStart);
-        LocalDateTime end = parseFlexibleDateTime(rangeEnd);
-        if (end.isBefore(start)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
-        }
-        return accountService.getSummary(id, start, end);
-    }
-
     @GetMapping("/{id}/summary")
-    @PreAuthorize("hasAnyRole('ADMIN')")
-    public AccountSummaryDTO getSummary(
-            @PathVariable Long id,
-            @RequestParam MultiValueMap<String, String> queryParams) {
-        return buildAccountSummary(id, queryParams);
+    public AccountSummaryDTO getAccountTransactionSummary(
+            @PathVariable("id") Long id,
+            @RequestParam("startDate") String startDate,
+            @RequestParam("endDate") String endDate) {
+        log.info("Incoming request to get account transaction summary for account: {} from {} to {}", id, startDate, endDate);
+        return accountService.getAccountTransactionSummary(id, startDate, endDate);
     }
 
-    private AccountSummaryDTO buildAccountSummary(Long id, MultiValueMap<String, String> queryParams) {
-        String rangeStart = findDateParam(queryParams,
-                "startDate", "start", "from", "fromDate", "begin", "beginDate",
-                "periodStart", "dateFrom", "rangeStart", "lower", "minDate");
-        String rangeEnd = findDateParam(queryParams,
-                "endDate", "end", "to", "toDate", "finish", "finishDate",
-                "periodEnd", "dateTo", "rangeEnd", "upper", "maxDate");
-
-        LocalDateTime start;
-        LocalDateTime end;
-
-        if (rangeStart != null && rangeEnd != null) {
-            start = parseFlexibleDateTime(rangeStart);
-            end = parseFlexibleDateTime(rangeEnd);
-        } else if (rangeStart != null) {
-            start = parseFlexibleDateTime(rangeStart);
-            end = LocalDateTime.now();
-        } else if (rangeEnd != null) {
-            start = LocalDateTime.of(2000, 1, 1, 0, 0);
-            end = parseFlexibleDateTime(rangeEnd);
-        } else {
-            // No dates provided — default to all time
-            start = LocalDateTime.of(2000, 1, 1, 0, 0);
-            end = LocalDateTime.now();
-        }
-
-        if (end.isBefore(start)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
-        }
-        return accountService.getSummary(id, start, end);
-    }
-
-    private static Long findLongParam(MultiValueMap<String, String> queryParams, String... acceptedNames) {
-        if (queryParams == null || queryParams.isEmpty()) {
-            return null;
-        }
-        for (String want : acceptedNames) {
-            String w = want.toLowerCase(Locale.ROOT);
-            for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
-                if (e.getKey() != null && e.getKey().toLowerCase(Locale.ROOT).equals(w)) {
-                    List<String> vals = e.getValue();
-                    if (vals != null && !vals.isEmpty() && vals.get(0) != null && !vals.get(0).isBlank()) {
-                        try {
-                            return Long.parseLong(vals.get(0).trim());
-                        } catch (NumberFormatException ignored) {
-                            // try next matching key
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private static String findDateParam(MultiValueMap<String, String> queryParams, String... acceptedNames) {
-        if (queryParams == null || queryParams.isEmpty()) {
-            return null;
-        }
-        for (String want : acceptedNames) {
-            String w = want.toLowerCase(Locale.ROOT);
-            for (Map.Entry<String, List<String>> e : queryParams.entrySet()) {
-                if (e.getKey() != null && e.getKey().toLowerCase(Locale.ROOT).equals(w)) {
-                    List<String> vals = e.getValue();
-                    if (vals != null && !vals.isEmpty()) {
-                        String v = vals.get(0);
-                        if (v != null && !v.isBlank()) {
-                            return v.trim();
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private static LocalDateTime parseFlexibleDateTime(String raw) {
-        String s = raw.trim();
-        if (s.matches("^\\d{10,13}$")) {
-            long ms = Long.parseLong(s);
-            if (s.length() <= 10) {
-                ms *= 1000L;
-            }
-            return Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDateTime();
-        }
-        try {
-            return LocalDateTime.parse(s);
-        } catch (DateTimeParseException ignored) {
-            try {
-                return OffsetDateTime.parse(s).toLocalDateTime();
-            } catch (DateTimeParseException ignored2) {
-                try {
-                    return LocalDate.parse(s).atStartOfDay();
-                } catch (DateTimeParseException e3) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date: " + raw);
-                }
-            }
-        }
-    }
+//    @GetMapping("/{id}")
+//    public Account getAccountById(@PathVariable Long id) {
+//        return accountService.getById(id);
+//    }
 
     @GetMapping("/{id}")
-    public Account getAccountById(@PathVariable Long id) {
-        return accountService.getById(id);
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
+        return accountService.getAccountById(id);
+    }
+
+    @GetMapping("/{id}/owner")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public OwnerDTO getAccountOwner(@PathVariable Long id) {
+        return accountService.getAccountOwner(id);
     }
 
     @PostMapping
@@ -276,10 +166,12 @@ public class AccountController {
     public int updateStatus(@PathVariable Long id, @RequestParam AccountStatus status) {
         return accountService.updateStatusById(id, status);
     }
-            @GetMapping("/statements/expired")
+
+    @GetMapping("/statements/expired")
     public List<AccountStatementAlertDTO> getAccountsWithExpiredStatements() {
         return accountService.getAccountsWithExpiredStatements();
     }
+
     @GetMapping("/reports/top-balance")
     public List<TopAccountDTO> getTopBalanceAccounts(
             @RequestParam(required = false) Integer limit) {
@@ -329,31 +221,76 @@ public class AccountController {
         return accountService.verifyStatement(accountId, statementId, request.getVerifiedBy());
     }
 
-    // [TC_S2_11] Create Statement
     @PostMapping("/{accountId}/statements")
     public AccountStatement createStatement(
             @PathVariable Long accountId,
             @RequestBody AccountStatement statement) {
-        //AccountStatement a;
         return accountStatementService.create(accountId, statement);
     }
-//
-//    // [TC_S2_12] List Statements
-//    @GetMapping("/{accountId}/statements")
-//    public List<AccountStatement> getAllStatements() {
-//        return accountStatementService.getAll();
-//    }
 
     @GetMapping("/{accountId}/statements")
     public List<AccountStatement> getAllStatements(@PathVariable Long accountId) {
         return accountStatementService.getByAccountId(accountId);
     }
 
-    // [TC_S2_13] Delete Statement
     @DeleteMapping("/{accountId}/statements/{stmtId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteStatement(
             @PathVariable Long accountId,
             @PathVariable Long stmtId) {
         accountStatementService.delete(stmtId);
-    }}
+    }
+
+    @GetMapping("/user/{userId}/balance-summary")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public ResponseEntity<AccountBalanceSummaryDTO> getBalanceSummary(@PathVariable Long userId) {
+        AccountBalanceSummaryDTO summaryDTO = accountService.getBalanceSummary(userId);
+        if (summaryDTO == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(summaryDTO);
+    }
+    // Add a tiny holder inside AccountController
+    private static final class Caller {
+        final Long userId;
+        final String role;
+        Caller(Long userId, String role) { this.userId = userId; this.role = role; }
+    }
+
+    /** Extract calling user's id + role, throw 401 if not authenticated. */
+    private Caller callerFromContext() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        // details may be Long, Integer, or String depending on filter — be permissive
+        Object details = auth.getDetails();
+        Long uid = null;
+        if (details instanceof Long l) {
+            uid = l;
+        } else if (details instanceof Integer i) {
+            uid = i.longValue();
+        } else if (details instanceof String s) {
+            try { uid = Long.parseLong(s); } catch (NumberFormatException ignored) { /* keep null */ }
+        }
+
+        // Role extraction: find any authority and strip ROLE_ prefix
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority())
+                .orElse(null);
+        if (role != null && role.startsWith("ROLE_")) {
+            role = role.substring("ROLE_".length());
+        }
+        return new Caller(uid, role);
+    }
+
+    @GetMapping("/exists")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public ResponseEntity<AccountsExistDTO> accountsExist(@RequestParam List<Long> ids) {
+        boolean allExist = accountService.doAllAccountsExist(ids);
+        return ResponseEntity.ok(new AccountsExistDTO(allExist));
+    }
+
+}

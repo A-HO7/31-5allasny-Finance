@@ -36,10 +36,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                      @Param("start") LocalDateTime start,
                      @Param("endExclusive") LocalDateTime endExclusive);
 
-       // ── F2: approve — look up approver role in users table (cross-service) ────
-       @Query(value = "SELECT role FROM users WHERE id = :userId", nativeQuery = true)
-       Optional<String> findUserRoleById(@Param("userId") Long userId);
-
        // ── F2/F7: update account balance (cross-service, accounts table) ─────────
        @Transactional
        @Modifying
@@ -52,11 +48,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        @Query(value = "UPDATE accounts SET balance = balance - :amount WHERE id = :accountId", nativeQuery = true)
        int subtractFromAccountBalance(@Param("accountId") Long accountId,
                      @Param("amount") Double amount);
-
-       // ── F3: validate both accounts exist (cross-service) ─────────────────────
-       @Query(value = "SELECT COUNT(*) FROM accounts WHERE id = :accountId OR id = :toAccountId", nativeQuery = true)
-       long countAccountsByIds(@Param("accountId") Long accountId,
-                     @Param("toAccountId") Long toAccountId);
 
        // ── F3: count active transactions in amount range for fee tier ────────────
        @Query(value = "SELECT COUNT(*) FROM transactions " +
@@ -114,13 +105,4 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        @Query(value = "SELECT a.user_id FROM transactions t JOIN accounts a ON t.account_id = a.id WHERE t.id = :transactionId", nativeQuery = true)
        Optional<Long> findUserIdByTransactionId(@Param("transactionId") Long transactionId);
 
-       // ── S3-F11/S3-F12: get user details for Neo4j node creation ────────────────
-
-       @Query(value = "SELECT name, preferences FROM users WHERE id = :userId", nativeQuery = true)
-       Optional<Map<String, Object>> findUserDetailsById(@Param("userId") Long userId);
-
-       // ── S3-F12: check if user exists ────────────────────────────────────────────
-
-       @Query(value = "SELECT COUNT(*) > 0 FROM users WHERE id = :userId", nativeQuery = true)
-       boolean existsUserById(@Param("userId") Long userId);
 }

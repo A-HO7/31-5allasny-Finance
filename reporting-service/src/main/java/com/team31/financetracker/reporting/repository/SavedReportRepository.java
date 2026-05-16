@@ -40,7 +40,7 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
     boolean existsUserById(@Param("userId") Long userId);
 
     @Query("SELECT cast(r.reportType as string) as reportType, CAST(COUNT(r) as int) as count FROM SavedReport r " +
-           "WHERE r.userId = :userId " +
+           "WHERE r.userId = :userId AND r.status = com.team31.financetracker.reporting.model.ReportStatus.GENERATED " +
            "GROUP BY r.reportType")
     List<com.team31.financetracker.reporting.dto.ReportTypeBreakdownProjection> countGeneratedReportsByType(@Param("userId") Long userId);
 

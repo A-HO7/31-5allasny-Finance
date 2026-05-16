@@ -10,12 +10,15 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.model.AccountSearchDocument;
@@ -28,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class AccountService {
@@ -330,7 +334,8 @@ public class AccountService {
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
 
-        if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+        if (statement.getAccount()
+                == null || !statement.getAccount().getId().equals(accountId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
         }
 
@@ -569,4 +574,53 @@ public class AccountService {
         }
         notifyObservers(action.name(), payload);
     }
+
+    public AccountBalanceSummaryDTO getBalanceSummary(Long userId) {
+        List<Account> activeAccounts = accountRepository.findByUserIdAndStatus(userId, AccountStatus.ACTIVE);
+
+        double totalActiveBalance = activeAccounts.stream()
+                .mapToDouble(Account::getBalance)
+                .sum();
+
+        Map<String, Double> currencyBreakdown = activeAccounts.stream()
+                .collect(Collectors.groupingBy(
+                        Account::getCurrency,
+                        Collectors.summingDouble(Account::getBalance)
+                ));
+
+        return new AccountBalanceSummaryDTO(
+                activeAccounts.size(),
+                totalActiveBalance,
+                currencyBreakdown
+        );
+    }
+    @Cacheable(value = "account-service::getAccount", key = "#id")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccountById(Long id) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        return com.team31.financetracker.contracts.dto.AccountDTO.builder()
+                .id(account.getId())
+                .userId(account.getUserId())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .accountDetails(account.getAccountDetails())
+                .build();
+    }
+
+    public boolean doAllAccountsExist(List<Long> ids) {
+        long foundCount = accountRepository.countByIdIn(ids);
+        boolean allExist = foundCount == ids.size();
+        return allExist;
+    }
+    public OwnerDTO getAccountOwner(Long accountId) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        return new OwnerDTO(account.getUserId());
+    }
+
 }

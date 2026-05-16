@@ -10,6 +10,9 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
@@ -47,6 +50,7 @@ public class TransactionService {
     private final UserNodeRepository userNodeRepository;
     private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final UserServiceClient userServiceClient;
     private final AccountServiceClient accountServiceClient;
     private final ObjectMapper objectMapper;
 
@@ -56,6 +60,7 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
+            UserServiceClient userServiceClient,
             AccountServiceClient accountServiceClient,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
@@ -63,6 +68,7 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
+        this.userServiceClient = userServiceClient;
         this.accountServiceClient = accountServiceClient;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
@@ -572,31 +578,28 @@ public class TransactionService {
         }
 
         Long userId = transaction.getUserId();
+        try {
+            OwnerDTO owner = accountServiceClient.getOwner(transaction.getAccountId());
+            if (owner != null && owner.userId() != null) {
+                userId = owner.userId();
+            }
+        } catch (FeignException e) {
+            System.err.println("[WARN] Could not load account owner for accountId="
+                    + transaction.getAccountId() + ": " + e.getMessage());
+        }
 
         // Get user details (soft dependency — use defaults if unavailable)
         String name = "User" + userId;
         String currency = "USD";
         try {
-            Map<String, Object> userDetails = transactionRepository
-                    .findUserDetailsById(userId).orElse(null);
-            if (userDetails != null) {
-                if (userDetails.get("name") != null)
-                    name = (String) userDetails.get("name");
-                Object preferencesObj = userDetails.get("preferences");
-                if (preferencesObj != null) {
-                    try {
-                        JsonNode node = (preferencesObj instanceof String)
-                                ? objectMapper.readTree((String) preferencesObj)
-                                : objectMapper.valueToTree(preferencesObj);
-                        if (node != null && node.has("currency"))
-                            currency = node.get("currency").asText();
-                    } catch (Exception e) {
-                        System.err.println("[WARN] Failed to parse user preferences: "
-                                + e.getMessage());
-                    }
+            UserDTO user = userServiceClient.getUser(userId);
+            if (user != null && user.getPreferences() != null) {
+                Object currencyPreference = user.getPreferences().get("currency");
+                if (currencyPreference != null) {
+                    currency = currencyPreference.toString();
                 }
             }
-        } catch (Exception e) {
+        } catch (FeignException e) {
             System.err.println("[WARN] Could not load user details for userId="
                     + userId + ": " + e.getMessage());
         }
@@ -648,8 +651,13 @@ public class TransactionService {
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             Long userId, Integer limit, String categoryType) {
 
-        if (!transactionRepository.existsUserById(userId)) {
+        try {
+            userServiceClient.getUser(userId);
+        } catch (feign.FeignException.NotFound e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        } catch (feign.FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify user");
         }
 
         int actualLimit = (limit != null && limit > 0) ? limit : 5;

@@ -204,26 +204,35 @@ public class BudgetController {
         }
     }
 
+    @GetMapping("/user/{userId}/active-count")
+    public int getActiveBudgetCount(@PathVariable Long userId) {
+        return budgetService.countActiveBudgetsByUser(userId);
+    }
+
     @DeleteMapping("/purge")
     public Integer purgeOldBudgets(@RequestParam int olderThanDays) {
         return budgetService.purgeOldBudgets(olderThanDays);
     }
 
     @GetMapping("/user/{userId}/summary")
-    public Object getBudgetPerformance(
+    public com.team31.financetracker.budget.dto.BudgetSummaryDTO getBudgetSummary(
             @PathVariable Long userId,
-            @RequestParam String startDate,
-            @RequestParam String endDate
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
     ) {
-        LocalDate sDate;
-        LocalDate eDate;
+        LocalDate sDate = null;
+        LocalDate eDate = null;
         try {
-            sDate = LocalDate.parse(startDate.trim().length() > 10 ? startDate.trim().substring(0, 10) : startDate.trim());
-            eDate = LocalDate.parse(endDate.trim().length() > 10 ? endDate.trim().substring(0, 10) : endDate.trim());
+            if (startDate != null && !startDate.isBlank()) {
+                sDate = LocalDate.parse(startDate.trim().length() > 10 ? startDate.trim().substring(0, 10) : startDate.trim());
+            }
+            if (endDate != null && !endDate.isBlank()) {
+                eDate = LocalDate.parse(endDate.trim().length() > 10 ? endDate.trim().substring(0, 10) : endDate.trim());
+            }
         } catch (Exception ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date format");
         }
-        return budgetService.getBudgetPerformance(userId, sDate, eDate);
+        return budgetService.getBudgetSummary(userId, sDate, eDate);
     }
 
     @GetMapping("/metadata/search")

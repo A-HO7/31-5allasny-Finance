@@ -25,6 +25,7 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -244,9 +245,41 @@ public class AccountController {
         }
     }
 
+//    @GetMapping("/{id}")
+//    public Account getAccountById(@PathVariable Long id) {
+//        return accountService.getById(id);
+//    }
+
     @GetMapping("/{id}")
-    public Account getAccountById(@PathVariable Long id) {
-        return accountService.getById(id);
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getDetails() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User ID not found in authentication details");
+        }
+        Long requestingUserId = (Long) auth.getDetails();
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(
+                        a ->
+                                Objects.requireNonNull(
+                                        a.getAuthority()
+                                )
+                                        .replace("ROLE_", ""))
+                .orElse("");
+
+        // Get account
+        com.team31.financetracker.contracts.dto.AccountDTO dto = accountService.getAccountById(id);
+
+        // Enforce ownership or admin
+        boolean isAdmin = "ADMIN".equals(role);
+        boolean isOwner = requestingUserId != null && requestingUserId.equals(dto.getUserId());
+
+        if (!isAdmin && !isOwner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
+        return dto;
     }
 
     @PostMapping

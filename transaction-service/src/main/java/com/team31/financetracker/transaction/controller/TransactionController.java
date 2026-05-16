@@ -10,7 +10,6 @@ import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
-import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.security.AuthContext;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
@@ -37,18 +36,15 @@ public class TransactionController {
 
     private final TransactionService transactionService;
     private final TransactionSplitService transactionSplitService;
-    private final TransactionRepository transactionRepository;
     private final ObjectMapper objectMapper;
     private final AuthContext authContext;
 
     public TransactionController(TransactionService transactionService,
             TransactionSplitService transactionSplitService,
-            TransactionRepository transactionRepository,
             ObjectMapper objectMapper,
             AuthContext authContext) {
         this.transactionService = transactionService;
         this.transactionSplitService = transactionSplitService;
-        this.transactionRepository = transactionRepository;
         this.objectMapper = objectMapper;
         this.authContext = authContext;
     }
@@ -271,7 +267,7 @@ public class TransactionController {
     /** GET /api/transactions/user/{userId}/summary */
     @GetMapping("/user/{userId}/summary")
     public Map<String, Object> getUserTransactionSummary(@PathVariable Long userId) {
-        Map<String, Object> raw = transactionRepository.getUserTransactionSummary(userId);
+        Map<String, Object> raw = transactionService.getUserTransactionSummary(userId);
         Map<String, Object> result = new HashMap<>(raw);
         return result;
     }
@@ -286,13 +282,13 @@ public class TransactionController {
         LocalDate end   = (endDate   != null) ? endDate   : LocalDate.of(2099, 12, 31);
         LocalDateTime rangeStart        = start.atStartOfDay();
         LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
-        return new HashMap<>(transactionRepository.getUserNetIncome(userId, rangeStart, rangeEndExclusive));
+        return new HashMap<>(transactionService.getUserNetIncome(userId, rangeStart, rangeEndExclusive));
     }
 
     /** GET /api/transactions/user/{userId}/completed-count */
     @GetMapping("/user/{userId}/completed-count")
     public long getUserCompletedCount(@PathVariable Long userId) {
-        return transactionRepository.countCompletedTransactionsByUserId(userId);
+        return transactionService.countCompletedTransactionsByUserId(userId);
     }
 
     /** GET /api/transactions/account/{accountId}/summary?startDate=&endDate= */
@@ -302,19 +298,19 @@ public class TransactionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         if (startDate == null && endDate == null) {
-            return new HashMap<>(transactionRepository.getAccountTransactionSummaryAllTime(accountId));
+            return new HashMap<>(transactionService.getAccountTransactionSummaryAllTime(accountId));
         }
         LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
         LocalDate end   = (endDate   != null) ? endDate   : LocalDate.of(2099, 12, 31);
         LocalDateTime rangeStart        = start.atStartOfDay();
         LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
-        return new HashMap<>(transactionRepository.getAccountTransactionSummary(accountId, rangeStart, rangeEndExclusive));
+        return new HashMap<>(transactionService.getAccountTransactionSummary(accountId, rangeStart, rangeEndExclusive));
     }
 
     /** GET /api/transactions/account/{accountId}/pending-count */
     @GetMapping("/account/{accountId}/pending-count")
     public long getAccountPendingCount(@PathVariable Long accountId) {
-        return transactionRepository.countPendingTransactionsByAccountId(accountId);
+        return transactionService.countPendingTransactionsByAccountId(accountId);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

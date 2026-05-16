@@ -714,6 +714,34 @@ public class TransactionService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // M3 Internal Endpoints
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public Map<String, Object> getUserTransactionSummary(Long userId) {
+        return transactionRepository.getUserTransactionSummary(userId);
+    }
+
+    public Map<String, Object> getUserNetIncome(Long userId, LocalDateTime start, LocalDateTime endExclusive) {
+        return transactionRepository.getUserNetIncome(userId, start, endExclusive);
+    }
+
+    public long countCompletedTransactionsByUserId(Long userId) {
+        return transactionRepository.countCompletedTransactionsByUserId(userId);
+    }
+
+    public Map<String, Object> getAccountTransactionSummaryAllTime(Long accountId) {
+        return transactionRepository.getAccountTransactionSummaryAllTime(accountId);
+    }
+
+    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start, LocalDateTime endExclusive) {
+        return transactionRepository.getAccountTransactionSummary(accountId, start, endExclusive);
+    }
+
+    public long countPendingTransactionsByAccountId(Long accountId) {
+        return transactionRepository.countPendingTransactionsByAccountId(accountId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // Private helpers
     // ═══════════════════════════════════════════════════════════════════════════
 

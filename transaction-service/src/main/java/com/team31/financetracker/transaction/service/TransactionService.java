@@ -9,6 +9,8 @@ import com.team31.financetracker.transaction.dto.TransactionDetailsDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
+import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
@@ -22,6 +24,7 @@ import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardA
 import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import feign.FeignException;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -44,6 +47,7 @@ public class TransactionService {
     private final UserNodeRepository userNodeRepository;
     private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final AccountServiceClient accountServiceClient;
     private final ObjectMapper objectMapper;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
@@ -52,12 +56,14 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
+            AccountServiceClient accountServiceClient,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
             ObjectMapper objectMapper) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
+        this.accountServiceClient = accountServiceClient;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
         registerObserver(mongoEventLogger);
@@ -272,15 +278,13 @@ public class TransactionService {
         }
 
         try {
-            long found = transactionRepository.countAccountsByIds(
-                    request.accountId(), request.toAccountId());
-            if (found != 2) {
+            AccountsExistDTO accountsExist = accountServiceClient.accountsExist(
+                    List.of(request.accountId(), request.toAccountId()));
+            if (!accountsExist.allExist()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "One or both accounts not found");
             }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
+        } catch (FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Could not verify accounts");
         }

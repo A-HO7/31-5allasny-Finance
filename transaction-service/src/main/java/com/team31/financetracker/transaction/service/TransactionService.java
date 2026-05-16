@@ -10,8 +10,10 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
-import com.team31.financetracker.contracts.dto.OwnerDTO;
 import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.events.TransactionApprovedEvent;
+import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
@@ -52,6 +54,7 @@ public class TransactionService {
     private final CacheInvalidationService cacheInvalidationService;
     private final UserServiceClient userServiceClient;
     private final AccountServiceClient accountServiceClient;
+    private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
@@ -62,6 +65,7 @@ public class TransactionService {
             CategoryNodeRepository categoryNodeRepository,
             UserServiceClient userServiceClient,
             AccountServiceClient accountServiceClient,
+            EventPublisher eventPublisher,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
             ObjectMapper objectMapper) {
@@ -70,6 +74,7 @@ public class TransactionService {
         this.categoryNodeRepository = categoryNodeRepository;
         this.userServiceClient = userServiceClient;
         this.accountServiceClient = accountServiceClient;
+        this.eventPublisher = eventPublisher;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
         registerObserver(mongoEventLogger);
@@ -206,12 +211,11 @@ public class TransactionService {
 
         String role;
         try {
-            role = transactionRepository.findUserRoleById(approverId)
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.NOT_FOUND, "User not found"));
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
+            UserDTO approver = userServiceClient.getUser(approverId);
+            role = approver.getRole();
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        } catch (feign.FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Could not verify approver role");
         }
@@ -221,48 +225,22 @@ public class TransactionService {
                     "Approver must have the ADMIN role");
         }
 
-        double amount = transaction.getAmount();
-        Long accountId = transaction.getAccountId();
-
-        try {
-            switch (transaction.getType()) {
-                case INCOME -> {
-                    int updated = transactionRepository.addToAccountBalance(accountId, amount);
-                    if (updated != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-                }
-                case EXPENSE -> {
-                    int updated = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    if (updated != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
-                }
-                case TRANSFER -> {
-                    if (transaction.getToAccountId() == null)
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                                "TRANSFER requires a toAccountId");
-                    int from = transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    if (from != 1)
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "Source account not found");
-                    int to = transactionRepository.addToAccountBalance(
-                            transaction.getToAccountId(), amount);
-                    if (to != 1) {
-                        transactionRepository.addToAccountBalance(accountId, amount);
-                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "Destination account not found");
-                    }
-                }
-            }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not update account balance");
-        }
-
         transaction.setApproverId(approverId);
         transaction.setStatus(TransactionStatus.APPROVED);
         Transaction saved = transactionRepository.save(transaction);
+        try {
+            eventPublisher.publish("transaction.events", "transaction.approved",
+                    new TransactionApprovedEvent(
+                            saved.getId(),
+                            saved.getAccountId(),
+                            saved.getToAccountId(),
+                            saved.getType().name(),
+                            saved.getAmount(),
+                            approverId));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not publish approval event");
+        }
         notifyObservers("APPROVED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
         return saved;
@@ -442,29 +420,25 @@ public class TransactionService {
                     "Only PENDING or APPROVED transactions can be voided");
         }
 
-        if (transaction.getStatus() == TransactionStatus.APPROVED) {
-            double amount = transaction.getAmount();
-            Long accountId = transaction.getAccountId();
-            try {
-                switch (transaction.getType()) {
-                    case INCOME -> transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    case EXPENSE -> transactionRepository.addToAccountBalance(accountId, amount);
-                    case TRANSFER -> {
-                        transactionRepository.addToAccountBalance(accountId, amount);
-                        if (transaction.getToAccountId() != null) {
-                            transactionRepository.subtractFromAccountBalance(
-                                    transaction.getToAccountId(), amount);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                        "Could not reverse account balance");
-            }
-        }
-
+        String previousStatus = transaction.getStatus().name();
         transaction.setStatus(TransactionStatus.VOIDED);
         Transaction saved = transactionRepository.save(transaction);
+        try {
+            eventPublisher.publish("transaction.events", "transaction.voided",
+                    new TransactionVoidedEvent(
+                            saved.getId(),
+                            saved.getUserId(),
+                            saved.getAccountId(),
+                            saved.getToAccountId(),
+                            saved.getCategory() != null ? saved.getCategory().name() : null,
+                            saved.getType().name(),
+                            saved.getAmount(),
+                            previousStatus,
+                            "user_requested"));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not publish void event");
+        }
         notifyObservers("VOIDED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
     }

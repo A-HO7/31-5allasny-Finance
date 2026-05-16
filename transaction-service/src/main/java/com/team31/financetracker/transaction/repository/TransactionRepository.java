@@ -36,10 +36,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                      @Param("start") LocalDateTime start,
                      @Param("endExclusive") LocalDateTime endExclusive);
 
-       // ── F2: approve — look up approver role in users table (cross-service) ────
-       @Query(value = "SELECT role FROM users WHERE id = :userId", nativeQuery = true)
-       Optional<String> findUserRoleById(@Param("userId") Long userId);
-
        // ── F2/F7: update account balance (cross-service, accounts table) ─────────
        @Transactional
        @Modifying

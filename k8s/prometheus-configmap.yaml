@@ -7,8 +7,28 @@ data:
   prometheus.yml: |
     global:
       scrape_interval: 15s
+
     scrape_configs:
-      # S5-INFRA scrape job
+      - job_name: user-service
+        static_configs:
+          - targets: ["user-service.finance-tracker.svc.cluster.local:8080"]
+        metrics_path: /actuator/prometheus
+
+      - job_name: account-service
+        static_configs:
+          - targets: ["account-service.finance-tracker.svc.cluster.local:8080"]
+        metrics_path: /actuator/prometheus
+
+      - job_name: transaction-service
+        static_configs:
+          - targets: ["transaction-service.finance-tracker.svc.cluster.local:8080"]
+        metrics_path: /actuator/prometheus
+
+      - job_name: budget-service
+        static_configs:
+          - targets: ["budget-service.finance-tracker.svc.cluster.local:8080"]
+        metrics_path: /actuator/prometheus
+
       - job_name: reporting-service
         static_configs:
           - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]

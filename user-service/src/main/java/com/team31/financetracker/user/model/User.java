@@ -53,6 +53,15 @@ public class User implements UserDetails, java.io.Serializable {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
+    private Long totalTransactions = 0L;
+
+    @Column(nullable = false)
+    private Double totalIncome = 0.0;
+
+    @Column(nullable = false)
+    private Double totalExpenses = 0.0;
+
     // Bidirectional relationship.
     // @JsonIgnore is critical to prevent 500 Errors during Profile/Search serialization
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -169,6 +178,30 @@ public class User implements UserDetails, java.io.Serializable {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Long getTotalTransactions() {
+        return totalTransactions;
+    }
+
+    public void setTotalTransactions(Long totalTransactions) {
+        this.totalTransactions = totalTransactions;
+    }
+
+    public Double getTotalIncome() {
+        return totalIncome;
+    }
+
+    public void setTotalIncome(Double totalIncome) {
+        this.totalIncome = totalIncome;
+    }
+
+    public Double getTotalExpenses() {
+        return totalExpenses;
+    }
+
+    public void setTotalExpenses(Double totalExpenses) {
+        this.totalExpenses = totalExpenses;
     }
 
     public List<FinancialGoal> getFinancialGoals() {

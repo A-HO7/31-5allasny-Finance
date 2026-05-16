@@ -90,20 +90,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
 
     @Query(value = """
-    SELECT COUNT(*) 
-    FROM users 
-    WHERE id = :userId AND role = 'ADMIN'
-    """, nativeQuery = true)
-    int isAdminUser(@Param("userId") Long userId);
-
-    @Query(value = """
-    SELECT role 
-    FROM users 
-    WHERE id = :userId
-    """, nativeQuery = true)
-    String getUserRoleNative(@Param("userId") Long userId);
-
-    @Query(value = """
     SELECT a.id, a.name,
            COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as totalDeposits,
            COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as totalWithdrawals,
@@ -139,6 +125,5 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     AND s.expiry_date > CURRENT_DATE
     """, nativeQuery = true)
     Long getActiveStatementsCount(@Param("accountId") Long accountId);
-
 
 }

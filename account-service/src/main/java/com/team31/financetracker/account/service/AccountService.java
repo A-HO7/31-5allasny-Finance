@@ -10,12 +10,14 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.model.AccountSearchDocument;
@@ -28,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class AccountService {
@@ -568,5 +571,36 @@ public class AccountService {
             payload.putAll(details);
         }
         notifyObservers(action.name(), payload);
+    }
+
+    public AccountBalanceSummaryDTO getBalanceSummary(Long userId) {
+        List<Account> activeAccounts = accountRepository.findByUserIdAndStatus(userId, AccountStatus.ACTIVE);
+        if (activeAccounts == null || activeAccounts.isEmpty()) {
+            return new AccountBalanceSummaryDTO(
+                    0L,
+                    0.0,
+                    new HashMap<>()
+            );
+        }
+
+        Map<String, Double> currencyBreakdown = activeAccounts.stream()
+                .collect(Collectors.groupingBy(
+                        Account::getCurrency,
+                        Collectors.summingDouble(Account::getBalance)
+                ));
+
+        double totalActiveBalance = activeAccounts.stream()
+                .mapToDouble(Account::getBalance)
+                .sum();
+
+        if (totalActiveBalance == 0.0) {
+            currencyBreakdown.replaceAll((currency, balance) -> 0.0);
+        }
+
+        return new AccountBalanceSummaryDTO(
+                (long) activeAccounts.size(),
+                totalActiveBalance,
+                currencyBreakdown
+        );
     }
 }

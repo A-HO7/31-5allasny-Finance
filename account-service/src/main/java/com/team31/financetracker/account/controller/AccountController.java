@@ -6,6 +6,7 @@ import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -356,4 +357,14 @@ public class AccountController {
             @PathVariable Long accountId,
             @PathVariable Long stmtId) {
         accountStatementService.delete(stmtId);
-    }}
+    }
+
+    @GetMapping("/user/{userId}/balance-summary")
+    public ResponseEntity<AccountBalanceSummaryDTO> getBalanceSummary(@PathVariable Long userId) {
+        AccountBalanceSummaryDTO summaryDTO = accountService.getBalanceSummary(userId);
+        if (summaryDTO == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(summaryDTO);
+    }
+}

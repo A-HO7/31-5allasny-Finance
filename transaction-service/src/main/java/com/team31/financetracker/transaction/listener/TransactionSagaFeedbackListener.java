@@ -6,6 +6,8 @@ import com.team31.financetracker.contracts.events.ReportInitiatedEvent;
 import com.team31.financetracker.contracts.events.ReportRevertedEvent;
 import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -36,11 +38,13 @@ public class TransactionSagaFeedbackListener {
 
     @RabbitListener(queues = "transaction.saga-feedback")
     @Transactional
-    public void onSagaEvent(Object payload, @Header("amqp_receivedRoutingKey") String routingKey) {
+    public void onSagaEvent(Message message,
+            @Header(AmqpHeaders.RECEIVED_ROUTING_KEY) String routingKey) {
         try {
+            byte[] body = message.getBody();
             switch (routingKey) {
                 case "report.initiated": {
-                    ReportInitiatedEvent event = objectMapper.convertValue(payload, ReportInitiatedEvent.class);
+                    ReportInitiatedEvent event = parsePayload(body, ReportInitiatedEvent.class);
                     log.info("Received report.initiated txnId={}", event.transactionId());
                     int rows = transactionRepository.markReportPendingIfCompleting(event.transactionId());
                     if (rows == 0)
@@ -48,7 +52,7 @@ public class TransactionSagaFeedbackListener {
                     break;
                 }
                 case "report.completed": {
-                    ReportCompletedEvent event = objectMapper.convertValue(payload, ReportCompletedEvent.class);
+                    ReportCompletedEvent event = parsePayload(body, ReportCompletedEvent.class);
                     log.info("Received report.completed txnId={}", event.transactionId());
                     int rows = transactionRepository.markReportedIfReportPending(event.transactionId());
                     if (rows == 0)
@@ -56,7 +60,7 @@ public class TransactionSagaFeedbackListener {
                     break;
                 }
                 case "report.failed": {
-                    ReportFailedEvent event = objectMapper.convertValue(payload, ReportFailedEvent.class);
+                    ReportFailedEvent event = parsePayload(body, ReportFailedEvent.class);
                     log.info("Received report.failed txnId={} reason={}", event.transactionId(), event.reason());
 
                     Transaction tx = transactionRepository.findById(event.transactionId()).orElse(null);
@@ -84,7 +88,7 @@ public class TransactionSagaFeedbackListener {
                     break;
                 }
                 case "report.reverted": {
-                    ReportRevertedEvent event = objectMapper.convertValue(payload, ReportRevertedEvent.class);
+                    ReportRevertedEvent event = parsePayload(body, ReportRevertedEvent.class);
                     log.info("Received report.reverted txnId={}", event.transactionId());
                     int rows = transactionRepository.markRevertedIfReportFailed(event.transactionId());
                     if (rows == 0)
@@ -97,6 +101,23 @@ public class TransactionSagaFeedbackListener {
         } catch (Exception ex) {
             log.error("Failed to handle saga-feedback message rk={}", routingKey, ex);
             throw ex; // let listener framework route to DLQ
+        }
+    }
+
+    private <T> T parsePayload(byte[] body, Class<T> type) {
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        String text = new String(body, java.nio.charset.StandardCharsets.UTF_8).trim();
+        try {
+            return objectMapper.readValue(text, type);
+        } catch (Exception ex) {
+            try {
+                String cleaned = text.replace("\\\"", "\"").replace("\\\\", "\\");
+                return objectMapper.readValue(cleaned, type);
+            } catch (Exception inner) {
+                throw new IllegalArgumentException("Failed to parse saga payload for " + type.getSimpleName(), inner);
+            }
         }
     }
 }

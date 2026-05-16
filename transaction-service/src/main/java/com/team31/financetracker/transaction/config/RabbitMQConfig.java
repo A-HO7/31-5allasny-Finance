@@ -34,6 +34,11 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public TopicExchange transactionEventsExchange() {
+        return new TopicExchange("transaction.events");
+    }
+
+    @Bean
     public TopicExchange transactionDlx() {
         return new TopicExchange("transaction.dlx");
     }

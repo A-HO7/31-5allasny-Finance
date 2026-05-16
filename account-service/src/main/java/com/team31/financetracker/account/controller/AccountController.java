@@ -7,6 +7,7 @@ import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -254,15 +255,13 @@ public class AccountController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
-        Caller caller = callerFromContext();
-        com.team31.financetracker.contracts.dto.AccountDTO account = accountService.getAccountById(id);
+        return accountService.getAccountById(id);
+    }
 
-        boolean isAdmin = "ADMIN".equals(caller.role);
-        boolean isOwner = caller.userId != null && caller.userId.equals(account.getUserId());
-        if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-        return account;
+    @GetMapping("/{id}/owner")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public OwnerDTO getAccountOwner(@PathVariable Long id) {
+        return accountService.getAccountOwner(id);
     }
 
     @PostMapping

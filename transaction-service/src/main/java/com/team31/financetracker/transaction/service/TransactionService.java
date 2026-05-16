@@ -10,6 +10,7 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.model.TransactionSplit;
@@ -47,6 +48,7 @@ public class TransactionService {
     private final UserNodeRepository userNodeRepository;
     private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
+    private final UserServiceClient userServiceClient;
     private final AccountServiceClient accountServiceClient;
     private final ObjectMapper objectMapper;
 
@@ -56,6 +58,7 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
             CategoryNodeRepository categoryNodeRepository,
+            UserServiceClient userServiceClient,
             AccountServiceClient accountServiceClient,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
@@ -63,6 +66,7 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
+        this.userServiceClient = userServiceClient;
         this.accountServiceClient = accountServiceClient;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
@@ -648,8 +652,13 @@ public class TransactionService {
     public List<CategoryRecommendationDTO> getCategoryRecommendations(
             Long userId, Integer limit, String categoryType) {
 
-        if (!transactionRepository.existsUserById(userId)) {
+        try {
+            userServiceClient.getUser(userId);
+        } catch (feign.FeignException.NotFound e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        } catch (feign.FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify user");
         }
 
         int actualLimit = (limit != null && limit > 0) ? limit : 5;

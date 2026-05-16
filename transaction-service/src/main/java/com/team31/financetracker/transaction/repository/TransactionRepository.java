@@ -113,9 +113,4 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
        @Query(value = "SELECT name, preferences FROM users WHERE id = :userId", nativeQuery = true)
        Optional<Map<String, Object>> findUserDetailsById(@Param("userId") Long userId);
-
-       // ── S3-F12: check if user exists ────────────────────────────────────────────
-
-       @Query(value = "SELECT COUNT(*) > 0 FROM users WHERE id = :userId", nativeQuery = true)
-       boolean existsUserById(@Param("userId") Long userId);
 }

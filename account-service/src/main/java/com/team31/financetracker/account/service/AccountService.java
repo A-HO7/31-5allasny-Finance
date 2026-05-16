@@ -3,6 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
+import com.team31.financetracker.account.exception.ServiceUnavailableException;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
@@ -10,9 +11,17 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
+import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.team31.financetracker.contracts.dto.AccountTransactionSummaryDTO;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
 import com.team31.financetracker.contracts.dto.OwnerDTO;
-import jakarta.transaction.Transactional;
+import org.slf4j.MDC;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +54,7 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final TransactionServiceClient transactionServiceClient;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -53,7 +63,10 @@ public class AccountService {
             CacheInvalidator cacheInvalidator,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
-            RedisTemplate<String, Object> redisTemplate
+            RedisTemplate<String, Object> redisTemplate,
+            RabbitTemplate rabbitTemplate
+            UserServiceClient userServiceClient,
+            TransactionServiceClient transactionServiceClient
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -62,6 +75,9 @@ public class AccountService {
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
+        this.rabbitTemplate = rabbitTemplate;
+        this.userServiceClient = userServiceClient;
+        this.transactionServiceClient = transactionServiceClient;
     }
 
     public void register(EntityObserver observer){
@@ -159,7 +175,7 @@ public class AccountService {
         Account saved = accountRepository.save(existing);
         indexAccount(saved);
         notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, saved, Map.of("name", saved.getName()));
-        cacheInvalidator.invalidateAccountData(id); // Clear stale cache
+        cacheInvalidator.invalidateAccountData(id);
         return saved;
     }
 
@@ -185,19 +201,18 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
+
     @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
-        // Return all if no balance provided (TC_S2_69)
         if (minBalance == null || maxBalance == null) {
             return (status != null) ? accountRepository.findByStatus(status) : accountRepository.findAll();
         }
 
         if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); // 400 requirement
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range");
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
-
     }
 
     @Transactional
@@ -243,35 +258,56 @@ public class AccountService {
 
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
-        // 1. Fetch
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        try {
+            MDC.put("accountId", String.valueOf(id));
 
-        // 2. Validate
-        if (newStatus == null) {
-            newStatus = AccountStatus.FROZEN;
-        }
+            Account account = accountRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+            
+            String oldStatus = account.getStatus() != null ? account.getStatus().name() : null;
 
-        // 3. Logic for Frozen
-        if (newStatus == AccountStatus.FROZEN) {
-            // Use the count query
-            long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
-            if (pendingCount > 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+            if (newStatus == null) {
+                newStatus = AccountStatus.FROZEN;
             }
+
+            if (newStatus == AccountStatus.FROZEN) {
+                int pendingCount = transactionServiceClient.getPendingTransactionCount(id);
+                if (pendingCount > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+                }
+            }
+
+            account.setStatus(newStatus);
+
+            Account saved = accountRepository.saveAndFlush(account);
+
+            String correlationId = MDC.get("correlationId");
+            AccountStatusChangedEvent event = new AccountStatusChangedEvent(
+                    saved.getId(), 
+                    saved.getUserId(), 
+                    oldStatus, 
+                    saved.getStatus().name()
+            );
+
+            rabbitTemplate.convertAndSend("account.events", "account.status-changed", event, message -> {
+                if (correlationId != null) {
+                    message.getMessageProperties().setHeader("X-Correlation-ID", correlationId);
+                }
+                return message;
+            });
+
+            log.info("Published account.status-changed for account= {}", id);
+
+            indexAccount(saved);
+            AccountEventActions action = newStatus == AccountStatus.FROZEN
+                    ? AccountEventActions.FROZEN
+                    : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+            notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
+            cacheInvalidator.invalidateAccountData(id);
+
+        } finally {
+            MDC.remove("accountId");
         }
-
-        // 4. Update
-        account.setStatus(newStatus);
-
-        // 5. Force Push to DB
-        Account saved = accountRepository.saveAndFlush(account);
-        indexAccount(saved);
-        AccountEventActions action = newStatus == AccountStatus.FROZEN
-                ? AccountEventActions.FROZEN
-                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
-        notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
-        cacheInvalidator.invalidateAccountData(id);
     }
 
     @Cacheable(value = "account-service::S2-F9", key = "'expired-statements'")
@@ -296,13 +332,13 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = getById(id); // Use getById to ensure 404 (TC_S2_23)
+        Account account = getById(id);
 
         Map<String, Object> existing = account.getAccountDetails();
         if (existing == null) existing = new HashMap<>();
 
         if (accountDetails != null) {
-            existing.putAll(accountDetails); // Merge
+            existing.putAll(accountDetails);
         }
 
         account.setAccountDetails(existing);
@@ -329,49 +365,62 @@ public class AccountService {
 
     @Transactional
     public Account verifyStatement(Long accountId, Long statementId, Long verifiedBy) {
-        getById(accountId);
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
+            
+            getById(accountId);
 
-        AccountStatement statement = accountStatementRepository.findById(statementId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
+            AccountStatement statement = accountStatementRepository.findById(statementId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
 
-        if (statement.getAccount()
-                == null || !statement.getAccount().getId().equals(accountId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
+            if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
+            }
+
+            if (!statement.getExpiryDate().isAfter(LocalDate.now())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
+            }
+
+            if (verifiedBy == null || verifiedBy <= 0) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
+            }
+
+            try {
+                UserDTO verifier = userServiceClient.getUser(verifiedBy);
+                if (!"ADMIN".equals(verifier.getRole())) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "verifier must be ADMIN");
+                }
+            } catch (FeignException.NotFound e) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "verifier not found");
+            } catch (FeignException e) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Error validating user role via user-service");
+            }
+
+            Map<String, Object> metadata = new HashMap<>();
+            if (statement.getMetadata() != null) {
+                metadata.putAll(statement.getMetadata());
+            }
+            metadata.put("verifiedAt", LocalDateTime.now().toString());
+            metadata.put("verifiedBy", verifiedBy);
+
+            statement.setVerified(true);
+            statement.setMetadata(metadata);
+            accountStatementRepository.saveAndFlush(statement);
+
+
+            Account result = accountRepository.findByIdWithStatements(accountId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+            result.getAccountStatements().size();
+            cacheInvalidator.invalidateAccountData(accountId);
+            return result;
+        } finally {
+            MDC.remove("accountId");
+            MDC.remove("transactionId");
         }
-
-        if (!statement.getExpiryDate().isAfter(LocalDate.now())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
-        }
-
-        if (verifiedBy == null || verifiedBy <= 0) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
-        }
-        String role = accountRepository.getUserRoleNative(verifiedBy);
-        if (!"ADMIN".equals(role)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to verify this statement");
-        }
-
-        Map<String, Object> metadata = new HashMap<>();
-        if (statement.getMetadata() != null) {
-            metadata.putAll(statement.getMetadata());
-        }
-        metadata.put("verifiedAt", LocalDateTime.now().toString());
-        metadata.put("verifiedBy", verifiedBy);
-
-        statement.setVerified(true);
-        statement.setMetadata(metadata);
-        accountStatementRepository.saveAndFlush(statement);
-
-
-        // Re-fetch with statements eagerly loaded
-        Account result = accountRepository.findByIdWithStatements(accountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
-
-        // Force initialize inside transaction so Jackson can serialize it
-        result.getAccountStatements().size();
-        cacheInvalidator.invalidateAccountData(accountId);
-        return result;
     }
+
+    
     @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
                                            String currency, Double min, Double max,
@@ -440,26 +489,45 @@ public class AccountService {
                 .build();
     }
 
-    @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
-    public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    public AccountSummaryDTO getAccountTransactionSummary(Long accountId, String startDate, String endDate) {
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
 
-        Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+            Account account = accountRepository.findById(accountId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        if (resultRaw == null) {
-            return AccountSummaryDTO.builder()
-                    .accountId(id)
-                    .name(account.getName())
-                    .totalDeposits(0.0)
-                    .totalWithdrawals(0.0)
-                    .netChange(0.0)
-                    .totalTransactions(0L)
-                    .build();
+            log.info("Calling transaction-service for account: {} from {} to {}", accountId, startDate, endDate);
+
+            try {
+                AccountTransactionSummaryDTO dto = transactionServiceClient.getAccountTransactionSummary(accountId, startDate, endDate);
+                
+                log.info("Successfully retrieved transaction summary from transaction-service for account: {}", accountId);
+
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(dto.getTotalDeposits() != null ? dto.getTotalDeposits() : 0.0)
+                        .totalWithdrawals(dto.getTotalWithdrawals() != null ? dto.getTotalWithdrawals() : 0.0)
+                        .netChange(dto.getNetChange() != null ? dto.getNetChange() : 0.0)
+                        .totalTransactions(dto.getTransactionCount() != null ? dto.getTransactionCount() : 0L)
+                        .build();
+            } catch (FeignException.NotFound e) {
+                log.warn("transaction-service returned 404 for account {}, providing zeroed summary.", accountId);
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(0.0)
+                        .totalWithdrawals(0.0)
+                        .netChange(0.0)
+                        .totalTransactions(0L)
+                        .build();
+            } catch (FeignException e) {
+                log.warn("transaction-service unavailable for account {}: {}", accountId, e.getMessage());
+                throw new ServiceUnavailableException("Transaction service temporarily unavailable");
+            }
+        } finally {
+            MDC.remove("accountId");
         }
-
-        Object[] row = (Object[]) resultRaw;
-        return accountSummaryProjectionAdapter.adapt(row);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -470,48 +538,63 @@ public class AccountService {
             Long requestingUserId,
             String requestingUserRole
     ) {
-        Account account = getById(accountId);
+        long startTime = System.currentTimeMillis();
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
 
-        boolean isAdmin = "ADMIN".equals(requestingUserRole);
-        boolean isOwner =
-                requestingUserId != null
-                &&
-                requestingUserId.equals(account.getUserId());
+            Account account = getById(accountId);
 
-        if (!isOwner && !isAdmin) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            boolean isAdmin = "ADMIN".equals(requestingUserRole);
+            boolean isOwner = requestingUserId != null && requestingUserId.equals(account.getUserId());
+
+            if (!isOwner && !isAdmin) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("accountId", accountId);
+            payload.put("requestedBy", requestingUserId);
+            payload.put("requestedByRole", requestingUserRole);
+            notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
+
+            return applicationContext.getBean(AccountService.class).getDashboardCached(accountId, account.getName(), account.getType().name(), account.getBalance());
+
+        } finally {
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (elapsed >= 1000) {
+                log.warn("Slow dashboard took {}ms", elapsed);
+            }
+            MDC.remove("accountId");
         }
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("accountId", accountId);
-        payload.put("requestedBy", requestingUserId);
-        payload.put("requestedByRole", requestingUserRole);
-        notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
-
-        return applicationContext.getBean(AccountService.class).getDashboardCached(accountId, account.getName(), account.getType().name(), account.getBalance());
     }
 
     @Cacheable(value = "account-service::S2-F12", key = "#accountId")
     public AccountPerformanceDashboardDTO getDashboardCached(Long accountId, String name, String type, Double balance) {
-        Object[] stats = accountRepository.getTransactionStats(accountId);
-        if (stats.length == 1 && stats[0] instanceof Object[] row) {
-            stats = row;
+        AccountTransactionSummaryDTO summary;
+        try {
+            summary = transactionServiceClient.getAccountTransactionSummary(accountId, null, null);
+        } catch (feign.FeignException.NotFound e) {
+            summary = AccountTransactionSummaryDTO.builder()
+                .totalDeposits(0.0)
+                .totalWithdrawals(0.0)
+                .netChange(0.0)
+                .transactionCount(0L)
+                .build();
+        } catch (feign.FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Transaction service temporarily unavailable");
         }
-        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
-        Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
-        Double totalIncome = stats[1] != null ? ((Number) stats[1]).doubleValue() : 0.0;
-        Double totalExpenses = stats[2] != null ? ((Number) stats[2]).doubleValue() : 0.0;
+        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
         return AccountPerformanceDashboardDTO.builder()
                 .accountId(accountId)
                 .name(name)
                 .type(type)
                 .balance(balance)
-                .totalTransactions(totalTransactions)
-                .totalIncome(totalIncome)
-                .totalExpenses(totalExpenses)
-                .netChange(totalIncome - totalExpenses)
+                .totalTransactions(summary.getTransactionCount() != null ? summary.getTransactionCount() : 0L)
+                .totalIncome(summary.getTotalDeposits() != null ? summary.getTotalDeposits() : 0.0)
+                .totalExpenses(summary.getTotalWithdrawals() != null ? summary.getTotalWithdrawals() : 0.0)
+                .netChange(summary.getNetChange() != null ? summary.getNetChange() : 0.0)
                 .activeStatementsCount(activeStatements)
                 .build();
     }

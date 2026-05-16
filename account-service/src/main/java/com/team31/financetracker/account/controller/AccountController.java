@@ -25,6 +25,7 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -244,9 +245,15 @@ public class AccountController {
         }
     }
 
+//    @GetMapping("/{id}")
+//    public Account getAccountById(@PathVariable Long id) {
+//        return accountService.getById(id);
+//    }
+
     @GetMapping("/{id}")
-    public Account getAccountById(@PathVariable Long id) {
-        return accountService.getById(id);
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
+        return accountService.getAccountById(id);
     }
 
     @PostMapping
@@ -356,4 +363,41 @@ public class AccountController {
             @PathVariable Long accountId,
             @PathVariable Long stmtId) {
         accountStatementService.delete(stmtId);
-    }}
+    }
+
+    // Add a tiny holder inside AccountController
+    private static final class Caller {
+        final Long userId;
+        final String role;
+        Caller(Long userId, String role) { this.userId = userId; this.role = role; }
+    }
+
+    /** Extract calling user's id + role, throw 401 if not authenticated. */
+    private Caller callerFromContext() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        // details may be Long, Integer, or String depending on filter — be permissive
+        Object details = auth.getDetails();
+        Long uid = null;
+        if (details instanceof Long l) {
+            uid = l;
+        } else if (details instanceof Integer i) {
+            uid = i.longValue();
+        } else if (details instanceof String s) {
+            try { uid = Long.parseLong(s); } catch (NumberFormatException ignored) { /* keep null */ }
+        }
+
+        // Role extraction: find any authority and strip ROLE_ prefix
+        String role = auth.getAuthorities().stream()
+                .findFirst()
+                .map(a -> a.getAuthority())
+                .orElse(null);
+        if (role != null && role.startsWith("ROLE_")) {
+            role = role.substring("ROLE_".length());
+        }
+        return new Caller(uid, role);
+    }
+}

@@ -569,4 +569,23 @@ public class AccountService {
         }
         notifyObservers(action.name(), payload);
     }
+
+    @Cacheable(value = "account-service::getAccount", key = "#id")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccountById(Long id) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        return com.team31.financetracker.contracts.dto.AccountDTO.builder()
+                .id(account.getId())
+                .userId(account.getUserId())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .accountDetails(account.getAccountDetails())
+                .build();
+    }
+
 }

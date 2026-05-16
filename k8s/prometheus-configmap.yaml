@@ -8,7 +8,7 @@ data:
     global:
       scrape_interval: 15s
     scrape_configs:
-      # S3-INFRA will add their scrape job here
+      # S5-INFRA scrape job
       - job_name: reporting-service
         static_configs:
           - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]

@@ -51,6 +51,10 @@ class UserServiceApplicationTests {
     @Mock
     private MongoEventLogger mongoEventLogger;
     @Mock
+    private com.team31.financetracker.contracts.feign.TransactionServiceClient transactionServiceClient;
+    @Mock
+    private com.team31.financetracker.contracts.feign.BudgetServiceClient budgetServiceClient;
+    @Mock
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     @InjectMocks
@@ -81,7 +85,9 @@ class UserServiceApplicationTests {
                 new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
-                mongoEventLogger
+                mongoEventLogger,
+                transactionServiceClient,
+                budgetServiceClient
         );
 
         UserActivityFeedResponse response = service.getUserActivityFeed(10L, null, null);
@@ -108,7 +114,9 @@ class UserServiceApplicationTests {
                 new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
-                mongoEventLogger
+                mongoEventLogger,
+                transactionServiceClient,
+                budgetServiceClient
         );
 
         ResponseStatusException ex = assertThrows(

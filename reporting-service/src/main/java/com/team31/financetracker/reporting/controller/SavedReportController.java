@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.reporting.exception.ServiceUnavailableException;
+
 
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
@@ -109,7 +111,7 @@ public class SavedReportController {
     public ResponseEntity<?> getUserReportSummary(@PathVariable Long id) {
         try {
             return ResponseEntity.ok(service.getUserReportSummary(id));
-        } catch (ResponseStatusException e) {
+        } catch (ResponseStatusException | ServiceUnavailableException e) {
             throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
@@ -125,7 +127,7 @@ public class SavedReportController {
             return new ResponseEntity<>(newReport, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (ResponseStatusException e) {
+        } catch (ResponseStatusException | ServiceUnavailableException e) {
             throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
@@ -256,6 +258,8 @@ public class SavedReportController {
             // Step j — return 200
             return ResponseEntity.ok(dto);
 
+        } catch (ServiceUnavailableException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(e.getMessage());
         } catch (RuntimeException e) {
             if (e.getMessage() != null && e.getMessage().contains("User not found")) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());

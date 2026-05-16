@@ -109,8 +109,4 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        @Query(value = "SELECT a.user_id FROM transactions t JOIN accounts a ON t.account_id = a.id WHERE t.id = :transactionId", nativeQuery = true)
        Optional<Long> findUserIdByTransactionId(@Param("transactionId") Long transactionId);
 
-       // ── S3-F11/S3-F12: get user details for Neo4j node creation ────────────────
-
-       @Query(value = "SELECT name, preferences FROM users WHERE id = :userId", nativeQuery = true)
-       Optional<Map<String, Object>> findUserDetailsById(@Param("userId") Long userId);
 }

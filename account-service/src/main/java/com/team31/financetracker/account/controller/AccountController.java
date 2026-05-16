@@ -360,6 +360,7 @@ public class AccountController {
     }
 
     @GetMapping("/user/{userId}/balance-summary")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public ResponseEntity<AccountBalanceSummaryDTO> getBalanceSummary(@PathVariable Long userId) {
         AccountBalanceSummaryDTO summaryDTO = accountService.getBalanceSummary(userId);
         if (summaryDTO == null) {

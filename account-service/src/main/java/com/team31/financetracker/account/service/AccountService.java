@@ -575,13 +575,10 @@ public class AccountService {
 
     public AccountBalanceSummaryDTO getBalanceSummary(Long userId) {
         List<Account> activeAccounts = accountRepository.findByUserIdAndStatus(userId, AccountStatus.ACTIVE);
-        if (activeAccounts == null || activeAccounts.isEmpty()) {
-            return new AccountBalanceSummaryDTO(
-                    0L,
-                    0.0,
-                    new HashMap<>()
-            );
-        }
+
+        double totalActiveBalance = activeAccounts.stream()
+                .mapToDouble(Account::getBalance)
+                .sum();
 
         Map<String, Double> currencyBreakdown = activeAccounts.stream()
                 .collect(Collectors.groupingBy(
@@ -589,16 +586,8 @@ public class AccountService {
                         Collectors.summingDouble(Account::getBalance)
                 ));
 
-        double totalActiveBalance = activeAccounts.stream()
-                .mapToDouble(Account::getBalance)
-                .sum();
-
-        if (totalActiveBalance == 0.0) {
-            currencyBreakdown.replaceAll((currency, balance) -> 0.0);
-        }
-
         return new AccountBalanceSummaryDTO(
-                (long) activeAccounts.size(),
+                activeAccounts.size(),
                 totalActiveBalance,
                 currencyBreakdown
         );

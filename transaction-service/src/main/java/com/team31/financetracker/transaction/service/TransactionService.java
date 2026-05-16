@@ -22,6 +22,10 @@ import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardA
 import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.team31.financetracker.contracts.feign.AccountServiceClient;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -45,6 +49,8 @@ public class TransactionService {
     private final CategoryNodeRepository categoryNodeRepository;
     private final CacheInvalidationService cacheInvalidationService;
     private final ObjectMapper objectMapper;
+    private final UserServiceClient userServiceClient;
+    private final AccountServiceClient accountServiceClient;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
     private final List<EntityObserver> observers = new ArrayList<>();
@@ -54,12 +60,16 @@ public class TransactionService {
             CategoryNodeRepository categoryNodeRepository,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            UserServiceClient userServiceClient,
+            AccountServiceClient accountServiceClient) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
+        this.userServiceClient = userServiceClient;
+        this.accountServiceClient = accountServiceClient;
         registerObserver(mongoEventLogger);
     }
 
@@ -568,28 +578,27 @@ public class TransactionService {
         }
 
         Long userId = transaction.getUserId();
+        try {
+            OwnerDTO owner = accountServiceClient.getOwner(transaction.getAccountId());
+            if (owner != null && owner.userId() != null) {
+                userId = owner.userId();
+            }
+        } catch (Exception e) {
+            System.err.println("[WARN] Could not load account owner for accountId="
+                    + transaction.getAccountId() + ": " + e.getMessage());
+        }
 
         // Get user details (soft dependency — use defaults if unavailable)
         String name = "User" + userId;
         String currency = "USD";
         try {
-            Map<String, Object> userDetails = transactionRepository
-                    .findUserDetailsById(userId).orElse(null);
+            UserDTO userDetails = userServiceClient.getUser(userId);
             if (userDetails != null) {
-                if (userDetails.get("name") != null)
-                    name = (String) userDetails.get("name");
-                Object preferencesObj = userDetails.get("preferences");
-                if (preferencesObj != null) {
-                    try {
-                        JsonNode node = (preferencesObj instanceof String)
-                                ? objectMapper.readTree((String) preferencesObj)
-                                : objectMapper.valueToTree(preferencesObj);
-                        if (node != null && node.has("currency"))
-                            currency = node.get("currency").asText();
-                    } catch (Exception e) {
-                        System.err.println("[WARN] Failed to parse user preferences: "
-                                + e.getMessage());
-                    }
+                if (userDetails.getName() != null)
+                    name = userDetails.getName();
+                Map<String, Object> preferencesObj = userDetails.getPreferences();
+                if (preferencesObj != null && preferencesObj.get("currency") != null) {
+                    currency = preferencesObj.get("currency").toString();
                 }
             }
         } catch (Exception e) {

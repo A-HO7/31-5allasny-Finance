@@ -1,0 +1,62 @@
+{
+  "title": "User Service Dashboard",
+  "tags": [
+    "user-service",
+    "m3"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "title": "User Service Error Rate",
+      "type": "timeseries",
+      "datasource": "Loki",
+      "targets": [
+        {
+          "expr": "sum(rate({app=\"user-service\", level=\"ERROR\"}[5m])) by (app)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Feign Client Status (Cross-Service calls)",
+      "type": "timeseries",
+      "datasource": "Loki",
+      "targets": [
+        {
+          "expr": "sum(rate({app=\"user-service\"} |= \"feign\" [5m])) by (level)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "title": "Trace Logs (Live correlation)",
+      "type": "logs",
+      "datasource": "Loki",
+      "targets": [
+        {
+          "expr": "{app=\"user-service\"} | json | line_format \"{{.message}} (User: {{.userId}}, Trace: {{.correlationId}})\"",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      }
+    }
+  ]
+}

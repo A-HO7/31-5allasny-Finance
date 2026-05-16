@@ -10,14 +10,16 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
+import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import com.team31.financetracker.contracts.dto.AccountTransactionSummaryDTO;
 import com.team31.financetracker.contracts.dto.UserDTO;
-import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.contracts.feign.UserServiceClient;
 import feign.FeignException;
 import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
 import com.team31.financetracker.contracts.dto.OwnerDTO;
-import jakarta.transaction.Transactional;
 import org.slf4j.MDC;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
@@ -51,6 +53,7 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final RabbitTemplate rabbitTemplate;
     private final UserServiceClient userServiceClient;
     private final TransactionServiceClient transactionServiceClient;
 
@@ -62,6 +65,7 @@ public class AccountService {
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
             RedisTemplate<String, Object> redisTemplate,
+            RabbitTemplate rabbitTemplate
             UserServiceClient userServiceClient,
             TransactionServiceClient transactionServiceClient
     ) {
@@ -72,6 +76,7 @@ public class AccountService {
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
+        this.rabbitTemplate = rabbitTemplate;
         this.userServiceClient = userServiceClient;
         this.transactionServiceClient = transactionServiceClient;
     }
@@ -171,7 +176,7 @@ public class AccountService {
         Account saved = accountRepository.save(existing);
         indexAccount(saved);
         notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, saved, Map.of("name", saved.getName()));
-        cacheInvalidator.invalidateAccountData(id); // Clear stale cache
+        cacheInvalidator.invalidateAccountData(id);
         return saved;
     }
 
@@ -197,6 +202,7 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
+
     @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
         if (minBalance == null || maxBalance == null) {
@@ -208,7 +214,6 @@ public class AccountService {
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
-
     }
 
     @Transactional
@@ -254,29 +259,56 @@ public class AccountService {
 
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        try {
+            MDC.put("accountId", String.valueOf(id));
 
-        if (newStatus == null) {
-            newStatus = AccountStatus.FROZEN;
-        }
+            Account account = accountRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+            
+            String oldStatus = account.getStatus() != null ? account.getStatus().name() : null;
 
-        if (newStatus == AccountStatus.FROZEN) {
-            long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
-            if (pendingCount > 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+            if (newStatus == null) {
+                newStatus = AccountStatus.FROZEN;
             }
+
+            if (newStatus == AccountStatus.FROZEN) {
+                int pendingCount = transactionServiceClient.getPendingTransactionCount(id);
+                if (pendingCount > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+                }
+            }
+
+            account.setStatus(newStatus);
+
+            Account saved = accountRepository.saveAndFlush(account);
+
+            String correlationId = MDC.get("correlationId");
+            AccountStatusChangedEvent event = new AccountStatusChangedEvent(
+                    saved.getId(), 
+                    saved.getUserId(), 
+                    oldStatus, 
+                    saved.getStatus().name()
+            );
+
+            rabbitTemplate.convertAndSend("account.events", "account.status-changed", event, message -> {
+                if (correlationId != null) {
+                    message.getMessageProperties().setHeader("X-Correlation-ID", correlationId);
+                }
+                return message;
+            });
+
+            log.info("Published account.status-changed for account= {}", id);
+
+            indexAccount(saved);
+            AccountEventActions action = newStatus == AccountStatus.FROZEN
+                    ? AccountEventActions.FROZEN
+                    : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+            notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
+            cacheInvalidator.invalidateAccountData(id);
+
+        } finally {
+            MDC.remove("accountId");
         }
-
-        account.setStatus(newStatus);
-
-        Account saved = accountRepository.saveAndFlush(account);
-        indexAccount(saved);
-        AccountEventActions action = newStatus == AccountStatus.FROZEN
-                ? AccountEventActions.FROZEN
-                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
-        notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
-        cacheInvalidator.invalidateAccountData(id);
     }
 
     @Cacheable(value = "account-service::S2-F9", key = "'expired-statements'")
@@ -301,13 +333,13 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = getById(id); 
+        Account account = getById(id);
 
         Map<String, Object> existing = account.getAccountDetails();
         if (existing == null) existing = new HashMap<>();
 
         if (accountDetails != null) {
-            existing.putAll(accountDetails); 
+            existing.putAll(accountDetails);
         }
 
         account.setAccountDetails(existing);

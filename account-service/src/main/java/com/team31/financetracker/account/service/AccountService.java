@@ -11,6 +11,7 @@ import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
 import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
@@ -333,7 +334,8 @@ public class AccountService {
         AccountStatement statement = accountStatementRepository.findById(statementId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
 
-        if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+        if (statement.getAccount()
+                == null || !statement.getAccount().getId().equals(accountId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
         }
 
@@ -592,4 +594,33 @@ public class AccountService {
                 currencyBreakdown
         );
     }
+    @Cacheable(value = "account-service::getAccount", key = "#id")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccountById(Long id) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        return com.team31.financetracker.contracts.dto.AccountDTO.builder()
+                .id(account.getId())
+                .userId(account.getUserId())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .accountDetails(account.getAccountDetails())
+                .build();
+    }
+
+    public boolean doAllAccountsExist(List<Long> ids) {
+        long foundCount = accountRepository.countByIdIn(ids);
+        boolean allExist = foundCount == ids.size();
+        return allExist;
+    }
+    public OwnerDTO getAccountOwner(Long accountId) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        return new OwnerDTO(account.getUserId());
+    }
+
 }

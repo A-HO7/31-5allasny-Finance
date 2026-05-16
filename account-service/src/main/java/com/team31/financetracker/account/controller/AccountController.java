@@ -6,6 +6,7 @@ import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
 import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -373,6 +374,15 @@ public class AccountController {
         accountStatementService.delete(stmtId);
     }
 
+    @GetMapping("/user/{userId}/balance-summary")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public ResponseEntity<AccountBalanceSummaryDTO> getBalanceSummary(@PathVariable Long userId) {
+        AccountBalanceSummaryDTO summaryDTO = accountService.getBalanceSummary(userId);
+        if (summaryDTO == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(summaryDTO);
+    }
     // Add a tiny holder inside AccountController
     private static final class Caller {
         final Long userId;

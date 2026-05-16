@@ -4,5 +4,10 @@ public enum TransactionStatus {
     PENDING,
     COMPLETED,
     APPROVED,
-    VOIDED
+    VOIDED,
+    COMPLETING,
+    REPORT_PENDING,
+    REPORTED,
+    REPORT_FAILED,
+    REVERTED
 }

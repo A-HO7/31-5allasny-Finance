@@ -61,6 +61,7 @@ public class SavedReportService {
     //private final com.team31.financetracker.reporting.adapter.UserReportSummaryAdapter userReportSummaryAdapter;
     private final com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor;
     private final RegenerationStrategySelector strategySelector;
+    private final com.team31.financetracker.contracts.feign.UserServiceClient userServiceClient;
     
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
@@ -73,7 +74,8 @@ public class SavedReportService {
                               MongoDocumentAdapter mongoDocumentAdapter,
                               ReportAuditEventRepository auditEventRepository,
                               com.team31.financetracker.reporting.util.RedisCacheEvictor redisCacheEvictor,
-                              RegenerationStrategySelector strategySelector) {
+                              RegenerationStrategySelector strategySelector,
+                              com.team31.financetracker.contracts.feign.UserServiceClient userServiceClient) {
         this.repository                 = repository;
         this.templateRepository         = templateRepository;
         this.usageRepository            = usageRepository;
@@ -84,6 +86,7 @@ public class SavedReportService {
         this.auditEventRepository       = auditEventRepository;
         this.redisCacheEvictor          = redisCacheEvictor;
         this.strategySelector           = strategySelector;
+        this.userServiceClient          = userServiceClient;
     }
     
     @PostConstruct
@@ -223,9 +226,8 @@ public class SavedReportService {
             typeBreakdown.put(row.getReportType(), row.getCount());
         }
 
-        long generatedCount = typeBreakdown.entrySet().stream()
-                .filter(e -> "GENERATED".equals(e.getKey()))
-                .mapToLong(e -> e.getValue().longValue())
+        long generatedCount = typeBreakdown.values().stream()
+                .mapToLong(Integer::longValue)
                 .sum();
 
         return UserReportSummaryDTO.builder()
@@ -488,20 +490,17 @@ public class SavedReportService {
         notifyObservers(action, payload);
     }
     private void ensureUserExists(Long userId) {
-
         try {
-            // Tier 1: Real DB check against shared 'users' table
-            if (!repository.existsUserById(userId)) {
-                // Secondary check: In case the query is valid but the record is missing
-                if (repository.countByUserId(userId) == 0) {
-                    throw new RuntimeException("User not found with id: " + userId);
-                }
-            }
-        } catch (Exception e) {
-            // Tier 2: SQL Error Fallback (e.g. users table not found in isolated test)
-            if (repository.countByUserId(userId) == 0) {
-                throw new RuntimeException("User not found with id: " + userId);
-            }
+            userServiceClient.getUser(userId);
+        } catch (feign.FeignException.NotFound e) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "user not found"
+            );
+        } catch (feign.FeignException e) {
+            log.warn("user-service unavailable: {}", e.getMessage());
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "user-service unavailable"
+            );
         }
     }
     private void evictWildcardCaches(Long entityId) {

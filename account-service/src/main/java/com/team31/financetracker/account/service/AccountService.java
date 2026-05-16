@@ -3,6 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
+import com.team31.financetracker.account.exception.ServiceUnavailableException;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
@@ -53,8 +54,6 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
-    private final RabbitTemplate rabbitTemplate;
-    private final UserServiceClient userServiceClient;
     private final TransactionServiceClient transactionServiceClient;
 
     public AccountService(
@@ -210,7 +209,7 @@ public class AccountService {
         }
 
         if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); 
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range");
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
@@ -490,26 +489,45 @@ public class AccountService {
                 .build();
     }
 
-    @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
-    public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    public AccountSummaryDTO getAccountTransactionSummary(Long accountId, String startDate, String endDate) {
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
 
-        Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+            Account account = accountRepository.findById(accountId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        if (resultRaw == null) {
-            return AccountSummaryDTO.builder()
-                    .accountId(id)
-                    .name(account.getName())
-                    .totalDeposits(0.0)
-                    .totalWithdrawals(0.0)
-                    .netChange(0.0)
-                    .totalTransactions(0L)
-                    .build();
+            log.info("Calling transaction-service for account: {} from {} to {}", accountId, startDate, endDate);
+
+            try {
+                AccountTransactionSummaryDTO dto = transactionServiceClient.getAccountTransactionSummary(accountId, startDate, endDate);
+                
+                log.info("Successfully retrieved transaction summary from transaction-service for account: {}", accountId);
+
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(dto.getTotalDeposits() != null ? dto.getTotalDeposits() : 0.0)
+                        .totalWithdrawals(dto.getTotalWithdrawals() != null ? dto.getTotalWithdrawals() : 0.0)
+                        .netChange(dto.getNetChange() != null ? dto.getNetChange() : 0.0)
+                        .totalTransactions(dto.getTransactionCount() != null ? dto.getTransactionCount() : 0L)
+                        .build();
+            } catch (FeignException.NotFound e) {
+                log.warn("transaction-service returned 404 for account {}, providing zeroed summary.", accountId);
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(0.0)
+                        .totalWithdrawals(0.0)
+                        .netChange(0.0)
+                        .totalTransactions(0L)
+                        .build();
+            } catch (FeignException e) {
+                log.warn("transaction-service unavailable for account {}: {}", accountId, e.getMessage());
+                throw new ServiceUnavailableException("Transaction service temporarily unavailable");
+            }
+        } finally {
+            MDC.remove("accountId");
         }
-
-        Object[] row = (Object[]) resultRaw;
-        return accountSummaryProjectionAdapter.adapt(row);
     }
 
     @org.springframework.beans.factory.annotation.Autowired

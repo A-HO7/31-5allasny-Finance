@@ -6,6 +6,7 @@ import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -254,6 +255,12 @@ public class AccountController {
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public com.team31.financetracker.contracts.dto.AccountDTO getAccount(@PathVariable Long id) {
         return accountService.getAccountById(id);
+    }
+
+    @GetMapping("/{id}/owner")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public OwnerDTO getAccountOwner(@PathVariable Long id) {
+        return accountService.getAccountOwner(id);
     }
 
     @PostMapping

@@ -14,6 +14,7 @@ import feign.FeignException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,8 +66,7 @@ public class TransactionEventConsumer {
     // Task 3 — transaction.completed → forward saga path
     // =========================================================================
 
-    @RabbitListener(queues = ReportEventConfig.SAGA_QUEUE,
-                    condition = "headers['amqp_receivedRoutingKey'] == 'transaction.completed'")
+    @RabbitHandler
     @Transactional
     public void onTransactionCompleted(TransactionCompletedEvent event) {
         MDC.put("routingKey", ReportEventConfig.RK_TXN_COMPLETED);
@@ -176,8 +176,7 @@ public class TransactionEventConsumer {
     // Task 4 — transaction.voided → compensation path
     // =========================================================================
 
-    @RabbitListener(queues = ReportEventConfig.SAGA_QUEUE,
-                    condition = "headers['amqp_receivedRoutingKey'] == 'transaction.voided'")
+    @RabbitHandler
     @Transactional
     public void onTransactionVoided(TransactionVoidedEvent event) {
         MDC.put("routingKey", ReportEventConfig.RK_TXN_VOIDED);

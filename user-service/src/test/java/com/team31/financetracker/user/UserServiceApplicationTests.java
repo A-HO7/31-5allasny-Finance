@@ -1,7 +1,6 @@
 package com.team31.financetracker.user;
 
 import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
-import com.team31.financetracker.user.adapter.ObjectArrayDtoAdapter;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
@@ -10,6 +9,8 @@ import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.repository.UserRepository;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.user.service.CacheInvalidationService;
 import com.team31.financetracker.user.service.JwtService;
 import com.team31.financetracker.user.service.UserService;
@@ -52,6 +53,10 @@ class UserServiceApplicationTests {
     private MongoEventLogger mongoEventLogger;
     @Mock
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    @Mock
+    private TransactionServiceClient transactionServiceClient;
+    @Mock
+    private BudgetServiceClient budgetServiceClient;
 
     @InjectMocks
     private UserService userService;
@@ -78,9 +83,10 @@ class UserServiceApplicationTests {
                 passwordEncoder,
                 jwtService,
                 authEventRepository,
-                new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
+                transactionServiceClient,
+                budgetServiceClient,
                 mongoEventLogger
         );
 
@@ -105,9 +111,10 @@ class UserServiceApplicationTests {
                 passwordEncoder,
                 jwtService,
                 authEventRepository,
-                new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
+                transactionServiceClient,
+                budgetServiceClient,
                 mongoEventLogger
         );
 

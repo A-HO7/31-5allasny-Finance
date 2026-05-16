@@ -3,6 +3,7 @@ package com.team31.financetracker.account.service;
 import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter;
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
+import com.team31.financetracker.account.exception.ServiceUnavailableException;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
@@ -10,7 +11,11 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.dto.AccountTransactionSummaryDTO;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
+import feign.FeignException;
 import jakarta.transaction.Transactional;
+import org.slf4j.MDC;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +32,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class AccountService {
@@ -41,6 +45,7 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final TransactionServiceClient transactionServiceClient;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -49,7 +54,8 @@ public class AccountService {
             CacheInvalidator cacheInvalidator,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
-            RedisTemplate<String, Object> redisTemplate
+            RedisTemplate<String, Object> redisTemplate,
+            TransactionServiceClient transactionServiceClient
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -58,6 +64,7 @@ public class AccountService {
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
+        this.transactionServiceClient = transactionServiceClient;
     }
 
     public void register(EntityObserver observer){
@@ -181,15 +188,15 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
+
     @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
-        // Return all if no balance provided (TC_S2_69)
         if (minBalance == null || maxBalance == null) {
             return (status != null) ? accountRepository.findByStatus(status) : accountRepository.findAll();
         }
 
         if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); // 400 requirement
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range");
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
@@ -239,28 +246,21 @@ public class AccountService {
 
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
-        // 1. Fetch
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        // 2. Validate
         if (newStatus == null) {
             newStatus = AccountStatus.FROZEN;
         }
 
-        // 3. Logic for Frozen
         if (newStatus == AccountStatus.FROZEN) {
-            // Use the count query
             long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
             if (pendingCount > 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
             }
         }
 
-        // 4. Update
         account.setStatus(newStatus);
-
-        // 5. Force Push to DB
         Account saved = accountRepository.saveAndFlush(account);
         indexAccount(saved);
         AccountEventActions action = newStatus == AccountStatus.FROZEN
@@ -292,13 +292,13 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = getById(id); // Use getById to ensure 404 (TC_S2_23)
+        Account account = getById(id);
 
         Map<String, Object> existing = account.getAccountDetails();
         if (existing == null) existing = new HashMap<>();
 
         if (accountDetails != null) {
-            existing.putAll(accountDetails); // Merge
+            existing.putAll(accountDetails);
         }
 
         account.setAccountDetails(existing);
@@ -357,16 +357,14 @@ public class AccountService {
         statement.setMetadata(metadata);
         accountStatementRepository.saveAndFlush(statement);
 
-
-        // Re-fetch with statements eagerly loaded
         Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        // Force initialize inside transaction so Jackson can serialize it
         result.getAccountStatements().size();
         cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
+
     @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
                                            String currency, Double min, Double max,
@@ -435,26 +433,45 @@ public class AccountService {
                 .build();
     }
 
-    @Cacheable(value = "account-service::S2-F3", key = "#id + '-' + #start + '-' + #end")
-    public AccountSummaryDTO getSummary(Long id, LocalDateTime start, LocalDateTime end) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+    public AccountSummaryDTO getAccountTransactionSummary(Long accountId, String startDate, String endDate) {
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
 
-        Object resultRaw = accountRepository.getAccountSummaryNative(id, start, end);
+            Account account = accountRepository.findById(accountId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        if (resultRaw == null) {
-            return AccountSummaryDTO.builder()
-                    .accountId(id)
-                    .name(account.getName())
-                    .totalDeposits(0.0)
-                    .totalWithdrawals(0.0)
-                    .netChange(0.0)
-                    .totalTransactions(0L)
-                    .build();
+            log.info("Calling transaction-service for account: {} from {} to {}", accountId, startDate, endDate);
+
+            try {
+                AccountTransactionSummaryDTO dto = transactionServiceClient.getAccountTransactionSummary(accountId, startDate, endDate);
+                
+                log.info("Successfully retrieved transaction summary from transaction-service for account: {}", accountId);
+
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(dto.getTotalDeposits() != null ? dto.getTotalDeposits() : 0.0)
+                        .totalWithdrawals(dto.getTotalWithdrawals() != null ? dto.getTotalWithdrawals() : 0.0)
+                        .netChange(dto.getNetChange() != null ? dto.getNetChange() : 0.0)
+                        .totalTransactions(dto.getTransactionCount() != null ? dto.getTransactionCount() : 0L)
+                        .build();
+            } catch (FeignException.NotFound e) {
+                log.warn("transaction-service returned 404 for account {}, providing zeroed summary.", accountId);
+                return AccountSummaryDTO.builder()
+                        .accountId(account.getId())
+                        .name(account.getName())
+                        .totalDeposits(0.0)
+                        .totalWithdrawals(0.0)
+                        .netChange(0.0)
+                        .totalTransactions(0L)
+                        .build();
+            } catch (FeignException e) {
+                log.warn("transaction-service unavailable for account {}: {}", accountId, e.getMessage());
+                throw new ServiceUnavailableException("Transaction service temporarily unavailable");
+            }
+        } finally {
+            MDC.remove("accountId");
         }
-
-        Object[] row = (Object[]) resultRaw;
-        return accountSummaryProjectionAdapter.adapt(row);
     }
 
     @org.springframework.beans.factory.annotation.Autowired

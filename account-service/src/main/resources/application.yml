@@ -52,3 +52,25 @@ feign:
 
   transaction-service:
     url: http://transaction-service:8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "prometheus,health,info"
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        
+rabbitmq:
+  exchanges:
+    account: account.events
+    transaction: transaction.events
+  queues:
+    transaction-saga-listener: account.transaction.saga-listener
+    transaction-saga-listener-dlq: account.transaction.saga-listener.dlq
+  routing-keys:
+    transaction-approved: transaction.approved
+    transaction-completed: transaction.completed
+    transaction-voided: transaction.voided

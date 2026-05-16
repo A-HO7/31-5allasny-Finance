@@ -1,12 +1,25 @@
 package com.team31.financetracker.user.service;
 
-import com.team31.financetracker.user.dto.*;
+import com.team31.financetracker.contracts.dto.NetIncomeDTO;
+import com.team31.financetracker.contracts.dto.TopSaverDTO;
+import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.contracts.events.UserDeactivatedEvent;
+import com.team31.financetracker.user.dto.ActivityEventDTO;
+import com.team31.financetracker.user.dto.FinancialGoalDTO;
+import com.team31.financetracker.user.dto.RegisterRequest;
+import com.team31.financetracker.user.dto.UserActivityFeedResponse;
+import com.team31.financetracker.user.dto.UserProfileDTO;
+import com.team31.financetracker.user.entity.OutboxEvent;
+import com.team31.financetracker.user.repository.OutboxEventRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team31.financetracker.user.exception.ServiceUnavailableException;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.observer.EntityObserver;
 import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
-import com.team31.financetracker.user.adapter.ObjectArrayDtoAdapter;
+import feign.FeignException;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
@@ -19,23 +32,24 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
-// M3: Feign clients from the shared contracts module
-import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class UserService {
@@ -44,12 +58,12 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthEventRepository authEventRepository;
-    private final ObjectArrayDtoAdapter objectArrayDtoAdapter;
-    private final MongoDocumentAdapter mongoDocumentAdapter;
-    private final CacheInvalidationService cacheInvalidationService;
-    // M3: Feign clients replace the deleted cross-service SQL queries
     private final TransactionServiceClient transactionServiceClient;
     private final BudgetServiceClient budgetServiceClient;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
+    private final MongoDocumentAdapter mongoDocumentAdapter;
+    private final CacheInvalidationService cacheInvalidationService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
     public UserService(UserRepository userRepository,
@@ -57,22 +71,24 @@ public class UserService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             AuthEventRepository authEventRepository,
-            ObjectArrayDtoAdapter objectArrayDtoAdapter,
             MongoDocumentAdapter mongoDocumentAdapter,
             CacheInvalidationService cacheInvalidationService,
-            MongoEventLogger mongoEventLogger,
             TransactionServiceClient transactionServiceClient,
-            BudgetServiceClient budgetServiceClient) {
+            BudgetServiceClient budgetServiceClient,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper,
+            MongoEventLogger mongoEventLogger) {
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authEventRepository = authEventRepository;
-        this.objectArrayDtoAdapter = objectArrayDtoAdapter;
         this.mongoDocumentAdapter = mongoDocumentAdapter;
         this.cacheInvalidationService = cacheInvalidationService;
         this.transactionServiceClient = transactionServiceClient;
         this.budgetServiceClient = budgetServiceClient;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
         register(mongoEventLogger);
     }
 
@@ -241,35 +257,39 @@ public class UserService {
     }
 
     // Deactivate User (S1-F4)
-    // M3: Cross-service SQL replaced by Feign → budget-service (active-count check)
-    // and RabbitMQ user.deactivated event (void PENDING transactions).
-    // Full implementation lands in feat/M3/user/S1-F4/<studentID>.
     @Transactional
     public User deactivateUser(Long id) {
-        // User user = getUserById(id);
+        validateOwnershipOrAdmin(id);
 
-        // int activeBudgets = userRepository.countActiveBudgetsNative(id);
-        // if (activeBudgets > 0) {
-        // throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate
-        // user with active budgets");
-        // }
+        int activeBudgets;
+        try {
+            activeBudgets = budgetServiceClient.getActiveBudgetCount(id);
+        } catch (FeignException.NotFound e) {
+            activeBudgets = 0;
+        } catch (FeignException e) {
+            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
+        }
 
-        // userRepository.voidPendingTransactionsNative(id);
+        if (activeBudgets > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has active budgets");
+        }
 
-        // user.setStatus(UserStatus.DEACTIVATED);
-        // User savedUser = userRepository.save(user);
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // // RETROFIT: Observer notification
-        // Map<String, Object> payload = new HashMap<>();
-        // payload.put("userId", savedUser.getId());
-        // payload.put("action", "USER_DEACTIVATED");
-        // notifyObservers("USER_DEACTIVATED", payload);
-        // cacheInvalidationService.evictUserDetail(id);
-        // cacheInvalidationService.evictUserFeatureCaches();
+        user.setStatus(UserStatus.DEACTIVATED);
+        User savedUser = userRepository.save(user);
 
-        // return savedUser;
-        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "S1-F4 pending M3 refactor: feat/M3/user/S1-F4 branch");
+        publishUserDeactivatedEvent(id);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", savedUser.getId());
+        payload.put("action", "USER_DEACTIVATED");
+        notifyObservers("USER_DEACTIVATED", payload);
+        cacheInvalidationService.evictUserDetail(id);
+        cacheInvalidationService.evictUserFeatureCaches();
+
+        return savedUser;
     }
 
     // Set Primary Financial Goal (S1-F7)
@@ -327,78 +347,138 @@ public class UserService {
     }
 
     // Get User Transaction Summary (S1-F3)
-    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F3
-    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F3::' + #userId")
+    @Transactional(readOnly = true)
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
-        // User user = getUserById(userId);
+        User user = getUserById(userId);
 
-        // List<Object[]> results = userRepository.getUserTransactionSummary(userId);
+        UserTransactionSummaryDTO remote;
+        try {
+            remote = transactionServiceClient.getUserTransactionSummary(userId);
+        } catch (FeignException.NotFound e) {
+            remote = null;
+        } catch (FeignException e) {
+            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
+        }
 
-        // if (results == null || results.isEmpty()) {
-        // return UserTransactionSummaryDTO.builder()
-        // .userId(user.getId())
-        // .name(user.getName())
-        // .totalTransactions(0L)
-        // .completedTransactions(0L)
-        // .voidedTransactions(0L)
-        // .totalIncome(0.0)
-        // .totalExpenses(0.0)
-        // .build();
-        // }
+        if (remote == null) {
+            return emptyUserTransactionSummary(user);
+        }
 
-        // return objectArrayDtoAdapter.adaptToUserTransactionSummary(results.get(0));
-        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "S1-F3 pending M3 refactor: feat/M3/user/S1-F3 branch");
+        return UserTransactionSummaryDTO.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .totalTransactions(longOrZero(remote.getTotalTransactions()))
+                .completedTransactions(longOrZero(remote.getCompletedTransactions()))
+                .voidedTransactions(longOrZero(remote.getVoidedTransactions()))
+                .totalIncome(remote.getTotalIncome() != null ? remote.getTotalIncome() : 0.0)
+                .totalExpenses(remote.getTotalExpenses() != null ? remote.getTotalExpenses() : 0.0)
+                .build();
     }
 
     // Top Savers by Net Income (S1-F6)
-    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F6
-    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
+    @Transactional(readOnly = true)
     public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
         if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
         }
-        // if (limit <= 0) {
-        // throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be
-        // greater than 0");
-        // }
 
-        // LocalDateTime startDateTime = startDate.atStartOfDay();
-        // LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+        if (limit <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be greater than 0");
+        }
 
-        // List<Object[]> results =
-        // userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
+        String startDateStr = startDate.toString();
+        String endDateStr = endDate.toString();
 
-        // return results.stream()
-        // .map(objectArrayDtoAdapter::adaptToTopSaver)
-        // .toList();
-        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "S1-F6 pending M3 refactor: feat/M3/user/S1-F6 branch");
+        List<TopSaverDTO> aggregated = new ArrayList<>();
+        for (User u : userRepository.findAll()) {
+            NetIncomeDTO netIncomeDTO = fetchUserNetIncomeOrZero(u.getId(), startDateStr, endDateStr);
+            double savings = netIncomeDTO.netSavings() != null ? netIncomeDTO.netSavings() : 0.0;
+            aggregated.add(TopSaverDTO.builder()
+                    .userId(u.getId())
+                    .name(u.getName())
+                    .netSavings(savings)
+                    .transactionCount((long) netIncomeDTO.transactionCount())
+                    .build());
+        }
+
+        aggregated.sort(Comparator.comparing(TopSaverDTO::getNetSavings).reversed());
+        return aggregated.stream().limit(limit).toList();
     }
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
-    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F9
-    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
-    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
+    @Transactional(readOnly = true)
+    public List<User> findUsersByCurrencyPreference(String currency, int minTransactions) {
         if (currency == null || currency.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
         }
-        // String trimmed = currency.trim();
-        // List<Object[]> rows =
-        // userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
-        // trimmed, minTransactions);
 
-        // return rows.stream()
-        // .map(row -> new CurrencyPreferenceUserDTO(
-        // ((Number) row[0]).longValue(),
-        // (String) row[1],
-        // ((Number) row[2]).longValue()))
-        // .toList();
-        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "S1-F9 pending M3 refactor: feat/M3/user/S1-F9 branch");
+        String trimmed = currency.trim();
+        List<User> matched = userRepository.findUsersWithDefaultCurrency(trimmed);
+        List<User> result = new ArrayList<>();
+
+        for (User u : matched) {
+            long count = fetchCompletedTransactionCountOrZero(u.getId());
+            if (count >= minTransactions) {
+                result.add(u);
+            }
+        }
+        return result;
+    }
+
+    private UserTransactionSummaryDTO emptyUserTransactionSummary(User user) {
+        return UserTransactionSummaryDTO.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .totalTransactions(0L)
+                .completedTransactions(0L)
+                .voidedTransactions(0L)
+                .totalIncome(0.0)
+                .totalExpenses(0.0)
+                .build();
+    }
+
+    private long longOrZero(Long value) {
+        return value != null ? value : 0L;
+    }
+
+    private NetIncomeDTO fetchUserNetIncomeOrZero(Long userId, String startDateStr, String endDateStr) {
+        try {
+            NetIncomeDTO dto = transactionServiceClient.getUserNetIncome(userId, startDateStr, endDateStr);
+            return dto != null ? dto : new NetIncomeDTO(0.0, 0);
+        } catch (FeignException.NotFound e) {
+            return new NetIncomeDTO(0.0, 0);
+        } catch (FeignException e) {
+            return new NetIncomeDTO(0.0, 0);
+        }
+    }
+
+    private long fetchCompletedTransactionCountOrZero(Long userId) {
+        try {
+            return transactionServiceClient.getCompletedTransactionCount(userId);
+        } catch (FeignException.NotFound e) {
+            return 0L;
+        } catch (FeignException e) {
+            return 0L;
+        }
+    }
+
+    private void publishUserDeactivatedEvent(Long userId) {
+        try {
+            UserDeactivatedEvent event = new UserDeactivatedEvent(userId);
+            String json = objectMapper.writeValueAsString(event);
+            OutboxEvent row = new OutboxEvent(
+                    "user.deactivated",
+                    json,
+                    OutboxEvent.Status.PENDING,
+                    LocalDateTime.now()
+            );
+            outboxEventRepository.save(row);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize UserDeactivatedEvent", e);
+        }
     }
 
     // Register User (S1-F10)

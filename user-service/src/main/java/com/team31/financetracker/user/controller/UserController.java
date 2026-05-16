@@ -1,8 +1,7 @@
 package com.team31.financetracker.user.controller;
 
-import com.team31.financetracker.user.dto.CurrencyPreferenceUserDTO;
-import com.team31.financetracker.user.dto.TopSaverDTO;
-import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.contracts.dto.TopSaverDTO;
+import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
@@ -113,7 +112,7 @@ public class UserController {
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
     @GetMapping("/preferences/currency")
-    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(
+    public List<User> findUsersByCurrencyPreference(
             @RequestParam String currency,
             @RequestParam int minTransactions) {
         return userService.findUsersByCurrencyPreference(currency, minTransactions);

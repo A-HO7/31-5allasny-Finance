@@ -26,20 +26,26 @@ public class Account {
     private AccountType type;
 
     @Column(nullable = false)
-    private String currency ="EGP";
+    private String currency = "EGP";
 
     @Column(nullable = false)
-    private Double balance=0.0;
+    private Double balance = 0.0;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private AccountStatus  status = AccountStatus.ACTIVE;
+    private AccountStatus status = AccountStatus.ACTIVE;
 
     @Column(nullable = false)
-    private Double rating =0.0;
+    private Double rating = 0.0;
 
     @Column(nullable = false)
-    private Integer totalRatings =0;
+    private Integer totalRatings = 0;
+
+    @Column(name = "total_transactions", nullable = false)
+    private Integer totalTransactions = 0;
+
+    @Column(name = "last_transaction_date")
+    private LocalDateTime lastTransactionDate;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
@@ -71,6 +77,9 @@ public class Account {
         }
         if (status == null){
             status=AccountStatus.ACTIVE;
+        }
+        if (totalTransactions == null) {
+            totalTransactions = 0;
         }
     }
 
@@ -144,6 +153,22 @@ public class Account {
 
     public void setTotalRatings(Integer totalRatings) {
         this.totalRatings = totalRatings;
+    }
+
+    public Integer getTotalTransactions() {
+        return totalTransactions;
+    }
+
+    public void setTotalTransactions(Integer totalTransactions) {
+        this.totalTransactions = totalTransactions;
+    }
+
+    public LocalDateTime getLastTransactionDate() {
+        return lastTransactionDate;
+    }
+
+    public void setLastTransactionDate(LocalDateTime lastTransactionDate) {
+        this.lastTransactionDate = lastTransactionDate;
     }
 
     public Map<String, Object> getAccountDetails() {

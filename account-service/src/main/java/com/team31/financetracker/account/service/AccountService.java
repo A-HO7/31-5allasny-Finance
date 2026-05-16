@@ -10,7 +10,11 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.slf4j.MDC;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +31,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class AccountService {
@@ -41,6 +44,8 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final TransactionServiceClient transactionServiceClient;
+    private final RabbitTemplate rabbitTemplate;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -49,7 +54,9 @@ public class AccountService {
             CacheInvalidator cacheInvalidator,
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
-            RedisTemplate<String, Object> redisTemplate
+            RedisTemplate<String, Object> redisTemplate,
+            TransactionServiceClient transactionServiceClient,
+            RabbitTemplate rabbitTemplate
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -58,6 +65,8 @@ public class AccountService {
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
+        this.transactionServiceClient = transactionServiceClient;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     public void register(EntityObserver observer){
@@ -155,7 +164,7 @@ public class AccountService {
         Account saved = accountRepository.save(existing);
         indexAccount(saved);
         notifyAccountEvent(AccountEventActions.ACCOUNT_UPDATED, saved, Map.of("name", saved.getName()));
-        cacheInvalidator.invalidateAccountData(id); // Clear stale cache
+        cacheInvalidator.invalidateAccountData(id);
         return saved;
     }
 
@@ -181,19 +190,18 @@ public class AccountService {
         cacheInvalidator.invalidateAccountData(id);
         return rowsAffected;
     }
+
     @Cacheable(value = "account-service::S2-F1", key = "T(java.util.Objects).hash(#status, #minBalance, #maxBalance)")
     public List<Account> searchByStatusAndBalanceRange(AccountStatus status, Double minBalance, Double maxBalance) {
-        // Return all if no balance provided (TC_S2_69)
         if (minBalance == null || maxBalance == null) {
             return (status != null) ? accountRepository.findByStatus(status) : accountRepository.findAll();
         }
 
         if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); // 400 requirement
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range");
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
-
     }
 
     @Transactional
@@ -239,35 +247,56 @@ public class AccountService {
 
     @Transactional
     public void freezeAccount(Long id, AccountStatus newStatus) {
-        // 1. Fetch
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        try {
+            MDC.put("accountId", String.valueOf(id));
 
-        // 2. Validate
-        if (newStatus == null) {
-            newStatus = AccountStatus.FROZEN;
-        }
+            Account account = accountRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+            
+            String oldStatus = account.getStatus() != null ? account.getStatus().name() : null;
 
-        // 3. Logic for Frozen
-        if (newStatus == AccountStatus.FROZEN) {
-            // Use the count query
-            long pendingCount = accountRepository.countPendingTransactionsForAccount(id);
-            if (pendingCount > 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+            if (newStatus == null) {
+                newStatus = AccountStatus.FROZEN;
             }
+
+            if (newStatus == AccountStatus.FROZEN) {
+                int pendingCount = transactionServiceClient.getPendingTransactionCount(id);
+                if (pendingCount > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account has pending transactions");
+                }
+            }
+
+            account.setStatus(newStatus);
+
+            Account saved = accountRepository.saveAndFlush(account);
+
+            String correlationId = MDC.get("correlationId");
+            AccountStatusChangedEvent event = new AccountStatusChangedEvent(
+                    saved.getId(), 
+                    saved.getUserId(), 
+                    oldStatus, 
+                    saved.getStatus().name()
+            );
+
+            rabbitTemplate.convertAndSend("account.events", "account.status-changed", event, message -> {
+                if (correlationId != null) {
+                    message.getMessageProperties().setHeader("X-Correlation-ID", correlationId);
+                }
+                return message;
+            });
+
+            log.info("Published account.status-changed for account= {}", id);
+
+            indexAccount(saved);
+            AccountEventActions action = newStatus == AccountStatus.FROZEN
+                    ? AccountEventActions.FROZEN
+                    : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
+            notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
+            cacheInvalidator.invalidateAccountData(id);
+
+        } finally {
+            MDC.remove("accountId");
         }
-
-        // 4. Update
-        account.setStatus(newStatus);
-
-        // 5. Force Push to DB
-        Account saved = accountRepository.saveAndFlush(account);
-        indexAccount(saved);
-        AccountEventActions action = newStatus == AccountStatus.FROZEN
-                ? AccountEventActions.FROZEN
-                : newStatus == AccountStatus.ACTIVE ? AccountEventActions.UNFROZEN : AccountEventActions.ACCOUNT_UPDATED;
-        notifyAccountEvent(action, saved, Map.of("status", saved.getStatus().name()));
-        cacheInvalidator.invalidateAccountData(id);
     }
 
     @Cacheable(value = "account-service::S2-F9", key = "'expired-statements'")
@@ -292,13 +321,13 @@ public class AccountService {
     }
 
     public Account updateAccountDetails(Long id, Map<String, Object> accountDetails) {
-        Account account = getById(id); // Use getById to ensure 404 (TC_S2_23)
+        Account account = getById(id);
 
         Map<String, Object> existing = account.getAccountDetails();
         if (existing == null) existing = new HashMap<>();
 
         if (accountDetails != null) {
-            existing.putAll(accountDetails); // Merge
+            existing.putAll(accountDetails);
         }
 
         account.setAccountDetails(existing);
@@ -358,15 +387,14 @@ public class AccountService {
         accountStatementRepository.saveAndFlush(statement);
 
 
-        // Re-fetch with statements eagerly loaded
         Account result = accountRepository.findByIdWithStatements(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
-        // Force initialize inside transaction so Jackson can serialize it
         result.getAccountStatements().size();
         cacheInvalidator.invalidateAccountData(accountId);
         return result;
     }
+
     @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
                                            String currency, Double min, Double max,

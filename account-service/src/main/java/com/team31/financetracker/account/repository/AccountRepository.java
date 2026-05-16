@@ -47,13 +47,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     boolean doesTransactionsTableExist();
 
     @Query(value = """
-    SELECT COUNT(*) FROM transactions t
-    WHERE CAST(t.status AS text) = 'PENDING'
-    AND (t.account_id = :accountId OR t.to_account_id = :accountId)
-    """, nativeQuery = true)
-    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
-
-    @Query(value = """
             SELECT * FROM accounts
             WHERE (:status IS NULL OR status = :status)
             AND (:minBalance IS NULL OR balance >= :minBalance)

@@ -10,9 +10,13 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.AccountDTO;
+import com.team31.financetracker.contracts.dto.BudgetDTO;
+import com.team31.financetracker.contracts.events.TransactionCompletedEvent;
 import com.team31.financetracker.contracts.dto.UserDTO;
 import com.team31.financetracker.contracts.events.TransactionApprovedEvent;
 import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
 import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
@@ -20,6 +24,8 @@ import com.team31.financetracker.transaction.model.TransactionSplit;
 import com.team31.financetracker.transaction.neo4j.SpentOnRelationship;
 import com.team31.financetracker.transaction.observer.EntityObserver;
 import com.team31.financetracker.transaction.observer.MongoEventLogger;
+import com.team31.financetracker.transaction.outbox.OutboxEvent;
+import com.team31.financetracker.transaction.outbox.OutboxRepository;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
@@ -53,6 +59,8 @@ public class TransactionService {
     private final CacheInvalidationService cacheInvalidationService;
     private final UserServiceClient userServiceClient;
     private final AccountServiceClient accountServiceClient;
+    private final BudgetServiceClient budgetServiceClient;
+    private final OutboxRepository outboxRepository;
     private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -64,6 +72,8 @@ public class TransactionService {
             CategoryNodeRepository categoryNodeRepository,
             UserServiceClient userServiceClient,
             AccountServiceClient accountServiceClient,
+            BudgetServiceClient budgetServiceClient,
+            OutboxRepository outboxRepository,
             EventPublisher eventPublisher,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
@@ -73,6 +83,8 @@ public class TransactionService {
         this.categoryNodeRepository = categoryNodeRepository;
         this.userServiceClient = userServiceClient;
         this.accountServiceClient = accountServiceClient;
+        this.budgetServiceClient = budgetServiceClient;
+        this.outboxRepository = outboxRepository;
         this.eventPublisher = eventPublisher;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
@@ -301,23 +313,75 @@ public class TransactionService {
                     "Only APPROVED transactions can be completed");
         }
 
-        transaction.setStatus(TransactionStatus.COMPLETED);
+        Long userId = transaction.getUserId();
+
+        try {
+            UserDTO user = userServiceClient.getUser(userId);
+            if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "User must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User must be ACTIVE");
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify user");
+        }
+
+        try {
+            AccountDTO account = accountServiceClient.getAccount(transaction.getAccountId());
+            if (!"ACTIVE".equalsIgnoreCase(account.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Account must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Account must be ACTIVE");
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not verify account");
+        }
+
+        String category = transaction.getCategory() != null ? transaction.getCategory().name() : null;
+        try {
+            BudgetDTO budget = budgetServiceClient.getActiveBudgetForUser(userId, category);
+            if (budget != null && budget.getStatus() != null
+                    && !"ACTIVE".equalsIgnoreCase(budget.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Budget must be ACTIVE");
+            }
+        } catch (feign.FeignException.NotFound e) {
+            // No active budget is acceptable; continue with completion.
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Could not verify budget");
+        }
+
+        transaction.setStatus(TransactionStatus.COMPLETING);
         transaction.setCompletedAt(LocalDateTime.now());
         transaction = transactionRepository.save(transaction);
 
-        if (transaction.getType() == TransactionType.EXPENSE) {
-            try {
-                transactionRepository.updateBudgetSpentAmount(
-                        transaction.getAmount(),
-                        transaction.getCategory().name(),
-                        transaction.getTransactionDate().toLocalDate());
-            } catch (Exception e) {
-                System.err.println("[WARN] Could not update budget for transaction "
-                        + id + ": " + e.getMessage());
-            }
+        try {
+            String payload = objectMapper.writeValueAsString(
+                    new TransactionCompletedEvent(
+                            transaction.getId(),
+                            transaction.getUserId(),
+                            transaction.getAccountId(),
+                            transaction.getCategory() != null ? transaction.getCategory().name() : null,
+                            transaction.getType().name(),
+                            transaction.getAmount(),
+                            transaction.getCompletedAt()));
+            outboxRepository.save(new OutboxEvent(
+                    "transaction.events",
+                    "transaction.completed",
+                    payload));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not queue completion event");
         }
 
-        notifyObservers("COMPLETED", transaction);
+        notifyObservers("COMPLETING", transaction);
         cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
         return transaction;
     }

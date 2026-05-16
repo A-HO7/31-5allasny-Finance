@@ -53,11 +53,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        int subtractFromAccountBalance(@Param("accountId") Long accountId,
                      @Param("amount") Double amount);
 
-       // ── F3: validate both accounts exist (cross-service) ─────────────────────
-       @Query(value = "SELECT COUNT(*) FROM accounts WHERE id = :accountId OR id = :toAccountId", nativeQuery = true)
-       long countAccountsByIds(@Param("accountId") Long accountId,
-                     @Param("toAccountId") Long toAccountId);
-
        // ── F3: count active transactions in amount range for fee tier ────────────
        @Query(value = "SELECT COUNT(*) FROM transactions " +
                      "WHERE status IN ('PENDING', 'APPROVED') " +

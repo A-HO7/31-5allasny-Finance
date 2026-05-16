@@ -67,13 +67,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     boolean doesTransactionsTableExist();
 
     @Query(value = """
-    SELECT COUNT(*) FROM transactions t
-    WHERE CAST(t.status AS text) = 'PENDING'
-    AND (t.account_id = :accountId OR t.to_account_id = :accountId)
-    """, nativeQuery = true)
-    long countPendingTransactionsForAccount(@Param("accountId") Long accountId);
-
-    @Query(value = """
             SELECT * FROM accounts
             WHERE (:status IS NULL OR status = :status)
             AND (:minBalance IS NULL OR balance >= :minBalance)
@@ -127,14 +120,14 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     Optional<Account> findByIdWithStatements(@Param("id") Long id);
 
     @Query(value = """
-    SELECT
-        COALESCE(COUNT(t.id), 0) as totalTransactions,
-        COALESCE(SUM(CASE WHEN t.type = 'INCOME' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) as totalIncome,
-        COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' AND t.status = 'COMPLETED' THEN t.amount ELSE 0 END), 0) as totalExpenses
-    FROM transactions t
-    WHERE t.account_id = :accountId
+    SELECT role 
+    FROM users 
+    WHERE id = :userId
     """, nativeQuery = true)
-    Object[] getTransactionStats(@Param("accountId") Long accountId);
+    String getUserRoleNative(@Param("userId") Long userId);
+
+    @Query("SELECT a FROM Account a LEFT JOIN FETCH a.accountStatements WHERE a.id = :id")
+    Optional<Account> findByIdWithStatements(@Param("id") Long id);
 
     @Query(value = """
     SELECT COUNT(s.id)
@@ -143,5 +136,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     AND s.expiry_date > CURRENT_DATE
     """, nativeQuery = true)
     Long getActiveStatementsCount(@Param("accountId") Long accountId);
+
+    long countByIdIn(List<Long> ids);
+
+    List<Account> findByUserIdAndStatus(Long userId, AccountStatus status);
+
 
 }

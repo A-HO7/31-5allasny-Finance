@@ -52,3 +52,13 @@ feign:
 
   transaction-service:
     url: http://transaction-service:8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "prometheus,health,info"
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

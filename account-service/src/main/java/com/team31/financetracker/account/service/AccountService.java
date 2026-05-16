@@ -588,4 +588,10 @@ public class AccountService {
                 .build();
     }
 
+    public boolean doAllAccountsExist(List<Long> ids) {
+        long foundCount = accountRepository.countByIdIn(ids);
+        boolean allExist = foundCount == ids.size();
+        return allExist;
+    }
+
 }

@@ -13,6 +13,7 @@ import com.team31.financetracker.contracts.dto.AccountsExistDTO;
 import com.team31.financetracker.contracts.dto.OwnerDTO;
 import com.team31.financetracker.contracts.dto.UserDTO;
 import com.team31.financetracker.contracts.events.TransactionApprovedEvent;
+import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
 import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
@@ -419,29 +420,25 @@ public class TransactionService {
                     "Only PENDING or APPROVED transactions can be voided");
         }
 
-        if (transaction.getStatus() == TransactionStatus.APPROVED) {
-            double amount = transaction.getAmount();
-            Long accountId = transaction.getAccountId();
-            try {
-                switch (transaction.getType()) {
-                    case INCOME -> transactionRepository.subtractFromAccountBalance(accountId, amount);
-                    case EXPENSE -> transactionRepository.addToAccountBalance(accountId, amount);
-                    case TRANSFER -> {
-                        transactionRepository.addToAccountBalance(accountId, amount);
-                        if (transaction.getToAccountId() != null) {
-                            transactionRepository.subtractFromAccountBalance(
-                                    transaction.getToAccountId(), amount);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                        "Could not reverse account balance");
-            }
-        }
-
+        String previousStatus = transaction.getStatus().name();
         transaction.setStatus(TransactionStatus.VOIDED);
         Transaction saved = transactionRepository.save(transaction);
+        try {
+            eventPublisher.publish("transaction.events", "transaction.voided",
+                    new TransactionVoidedEvent(
+                            saved.getId(),
+                            saved.getUserId(),
+                            saved.getAccountId(),
+                            saved.getToAccountId(),
+                            saved.getCategory() != null ? saved.getCategory().name() : null,
+                            saved.getType().name(),
+                            saved.getAmount(),
+                            previousStatus,
+                            "user_requested"));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Could not publish void event");
+        }
         notifyObservers("VOIDED", saved);
         cacheInvalidationService.evictAllTransactionCaches(saved.getId());
     }

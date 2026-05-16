@@ -388,6 +388,7 @@ public class AccountService {
             MDC.remove("transactionId");
         }
     }
+
     
     @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,

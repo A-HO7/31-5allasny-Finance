@@ -411,6 +411,7 @@ public class AccountController {
     }
 
     @GetMapping("/exists")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public ResponseEntity<AccountsExistDTO> accountsExist(@RequestParam List<Long> ids) {
         boolean allExist = accountService.doAllAccountsExist(ids);
         return ResponseEntity.ok(new AccountsExistDTO(allExist));

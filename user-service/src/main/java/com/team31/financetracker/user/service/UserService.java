@@ -3,9 +3,14 @@ package com.team31.financetracker.user.service;
 import com.team31.financetracker.contracts.dto.NetIncomeDTO;
 import com.team31.financetracker.contracts.dto.TopSaverDTO;
 import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.contracts.events.UserDeactivatedEvent;
 import com.team31.financetracker.contracts.feign.BudgetServiceClient;
 import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.user.dto.*;
+import com.team31.financetracker.user.entity.OutboxEvent;
+import com.team31.financetracker.user.repository.OutboxEventRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team31.financetracker.user.exception.ServiceUnavailableException;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
@@ -39,6 +44,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -50,6 +56,8 @@ public class UserService {
     private final AuthEventRepository authEventRepository;
     private final TransactionServiceClient transactionServiceClient;
     private final BudgetServiceClient budgetServiceClient;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
     private final MongoDocumentAdapter mongoDocumentAdapter;
     private final CacheInvalidationService cacheInvalidationService;
     private final List<EntityObserver> observers = new ArrayList<>();
@@ -64,6 +72,8 @@ public class UserService {
             CacheInvalidationService cacheInvalidationService,
             TransactionServiceClient transactionServiceClient,
             BudgetServiceClient budgetServiceClient,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper,
             MongoEventLogger mongoEventLogger) {
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
@@ -74,6 +84,8 @@ public class UserService {
         this.cacheInvalidationService = cacheInvalidationService;
         this.transactionServiceClient = transactionServiceClient;
         this.budgetServiceClient = budgetServiceClient;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
         register(mongoEventLogger);
     }
 
@@ -441,7 +453,19 @@ public class UserService {
     }
 
     private void publishUserDeactivatedEvent(Long userId) {
-        // Placeholder — RabbitMQ outbox publishing implemented later.
+        try {
+            UserDeactivatedEvent event = new UserDeactivatedEvent(userId);
+            String json = objectMapper.writeValueAsString(event);
+            OutboxEvent row = new OutboxEvent(
+                    "user.deactivated",
+                    json,
+                    OutboxEvent.Status.PENDING,
+                    LocalDateTime.now()
+            );
+            outboxEventRepository.save(row);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize UserDeactivatedEvent", e);
+        }
     }
 
     // Register User (S1-F10)

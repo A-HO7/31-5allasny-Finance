@@ -1,5 +1,8 @@
 package com.team31.financetracker.user;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
@@ -7,16 +10,14 @@ import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
+import com.team31.financetracker.user.repository.OutboxEventRepository;
 import com.team31.financetracker.user.repository.UserRepository;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
-import com.team31.financetracker.contracts.feign.BudgetServiceClient;
-import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.user.service.CacheInvalidationService;
 import com.team31.financetracker.user.service.JwtService;
 import com.team31.financetracker.user.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -57,9 +58,8 @@ class UserServiceApplicationTests {
     private TransactionServiceClient transactionServiceClient;
     @Mock
     private BudgetServiceClient budgetServiceClient;
-
-    @InjectMocks
-    private UserService userService;
+    @Mock
+    private OutboxEventRepository outboxEventRepository;
 
     @Test
     void ownerCanReadActivityFeed() {
@@ -87,6 +87,8 @@ class UserServiceApplicationTests {
                 cacheInvalidationService,
                 transactionServiceClient,
                 budgetServiceClient,
+                outboxEventRepository,
+                new ObjectMapper(),
                 mongoEventLogger
         );
 
@@ -115,6 +117,8 @@ class UserServiceApplicationTests {
                 cacheInvalidationService,
                 transactionServiceClient,
                 budgetServiceClient,
+                outboxEventRepository,
+                new ObjectMapper(),
                 mongoEventLogger
         );
 

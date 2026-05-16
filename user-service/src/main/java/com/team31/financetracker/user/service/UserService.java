@@ -23,7 +23,6 @@ import com.team31.financetracker.user.model.FinancialGoal;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.team31.financetracker.user.dto.RegisterRequest;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -68,8 +67,14 @@ public class UserService {
         register(mongoEventLogger);
     }
 
-    public void register(EntityObserver observer) { observers.add(observer); }
-    public void unregister(EntityObserver observer) { observers.remove(observer); }
+    public void register(EntityObserver observer) {
+        observers.add(observer);
+    }
+
+    public void unregister(EntityObserver observer) {
+        observers.remove(observer);
+    }
+
     private void notifyObservers(String eventType, Object payload) {
         for (EntityObserver obs : observers) {
             obs.onEvent(eventType, payload);
@@ -113,7 +118,8 @@ public class UserService {
     // Helper: get the currently authenticated user from SecurityContextHolder
     private User getAuthenticatedUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null) return null;
+        if (auth == null || auth.getName() == null)
+            return null;
         return userRepository.findByEmail(auth.getName()).orElse(null);
     }
 
@@ -226,29 +232,35 @@ public class UserService {
     }
 
     // Deactivate User (S1-F4)
+    // M3: Cross-service SQL replaced by Feign → budget-service (active-count check)
+    // and RabbitMQ user.deactivated event (void PENDING transactions).
+    // Full implementation lands in feat/M3/user/S1-F4/<studentID>.
     @Transactional
     public User deactivateUser(Long id) {
-        User user = getUserById(id);
+        // User user = getUserById(id);
 
-        int activeBudgets = userRepository.countActiveBudgetsNative(id);
-        if (activeBudgets > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate user with active budgets");
-        }
+        // int activeBudgets = userRepository.countActiveBudgetsNative(id);
+        // if (activeBudgets > 0) {
+        // throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate
+        // user with active budgets");
+        // }
 
-        userRepository.voidPendingTransactionsNative(id);
+        // userRepository.voidPendingTransactionsNative(id);
 
-        user.setStatus(UserStatus.DEACTIVATED);
-        User savedUser = userRepository.save(user);
+        // user.setStatus(UserStatus.DEACTIVATED);
+        // User savedUser = userRepository.save(user);
 
-        // RETROFIT: Observer notification
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("userId", savedUser.getId());
-        payload.put("action", "USER_DEACTIVATED");
-        notifyObservers("USER_DEACTIVATED", payload);
-        cacheInvalidationService.evictUserDetail(id);
-        cacheInvalidationService.evictUserFeatureCaches();
+        // // RETROFIT: Observer notification
+        // Map<String, Object> payload = new HashMap<>();
+        // payload.put("userId", savedUser.getId());
+        // payload.put("action", "USER_DEACTIVATED");
+        // notifyObservers("USER_DEACTIVATED", payload);
+        // cacheInvalidationService.evictUserDetail(id);
+        // cacheInvalidationService.evictUserFeatureCaches();
 
-        return savedUser;
+        // return savedUser;
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "S1-F4 pending M3 refactor: feat/M3/user/S1-F4 branch");
     }
 
     // Set Primary Financial Goal (S1-F7)
@@ -306,65 +318,78 @@ public class UserService {
     }
 
     // Get User Transaction Summary (S1-F3)
+    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F3
+    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F3::' + #userId")
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
-        User user = getUserById(userId);
+        // User user = getUserById(userId);
 
-        List<Object[]> results = userRepository.getUserTransactionSummary(userId);
+        // List<Object[]> results = userRepository.getUserTransactionSummary(userId);
 
-        if (results == null || results.isEmpty()) {
-            return UserTransactionSummaryDTO.builder()
-                    .userId(user.getId())
-                    .name(user.getName())
-                    .totalTransactions(0L)
-                    .completedTransactions(0L)
-                    .voidedTransactions(0L)
-                    .totalIncome(0.0)
-                    .totalExpenses(0.0)
-                    .build();
-        }
+        // if (results == null || results.isEmpty()) {
+        // return UserTransactionSummaryDTO.builder()
+        // .userId(user.getId())
+        // .name(user.getName())
+        // .totalTransactions(0L)
+        // .completedTransactions(0L)
+        // .voidedTransactions(0L)
+        // .totalIncome(0.0)
+        // .totalExpenses(0.0)
+        // .build();
+        // }
 
-        return objectArrayDtoAdapter.adaptToUserTransactionSummary(results.get(0));
+        // return objectArrayDtoAdapter.adaptToUserTransactionSummary(results.get(0));
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "S1-F3 pending M3 refactor: feat/M3/user/S1-F3 branch");
     }
 
     // Top Savers by Net Income (S1-F6)
+    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F6
+    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
     public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
         if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
         }
+        // if (limit <= 0) {
+        // throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be
+        // greater than 0");
+        // }
 
-        if (limit <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be greater than 0");
-        }
+        // LocalDateTime startDateTime = startDate.atStartOfDay();
+        // LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
 
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+        // List<Object[]> results =
+        // userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
 
-        List<Object[]> results = userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
-
-        return results.stream()
-                .map(objectArrayDtoAdapter::adaptToTopSaver)
-                .toList();
+        // return results.stream()
+        // .map(objectArrayDtoAdapter::adaptToTopSaver)
+        // .toList();
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "S1-F6 pending M3 refactor: feat/M3/user/S1-F6 branch");
     }
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
+    // M3: SQL JOIN on transactions removed. Full Feign impl in feat/M3/user/S1-F9
+    // branch.
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
     public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
         if (currency == null || currency.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
         }
+        // String trimmed = currency.trim();
+        // List<Object[]> rows =
+        // userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
+        // trimmed, minTransactions);
 
-        String trimmed = currency.trim();
-        List<Object[]> rows = userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
-                trimmed, minTransactions);
-
-        return rows.stream()
-                .map(row -> new CurrencyPreferenceUserDTO(
-                        ((Number) row[0]).longValue(),
-                        (String) row[1],
-                        ((Number) row[2]).longValue()))
-                .toList();
+        // return rows.stream()
+        // .map(row -> new CurrencyPreferenceUserDTO(
+        // ((Number) row[0]).longValue(),
+        // (String) row[1],
+        // ((Number) row[2]).longValue()))
+        // .toList();
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "S1-F9 pending M3 refactor: feat/M3/user/S1-F9 branch");
     }
 
     // Register User (S1-F10)
@@ -417,12 +442,12 @@ public class UserService {
 
         // 3. Generate and return token
         String token = jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
-        
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", user.getId());
         payload.put("email", user.getEmail());
         notifyObservers("LOGGED_IN", payload);
-        
+
         return token;
     }
 
@@ -434,7 +459,8 @@ public class UserService {
         try {
             user.setRole(Role.valueOf(roleName.toUpperCase()));
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
         }
         User savedUser = userRepository.save(user);
 
@@ -467,8 +493,7 @@ public class UserService {
 
         Page<AuthEvent> eventsPage = authEventRepository.findByUserIdOrderByTimestampDesc(
                 id,
-                PageRequest.of(resolvedPage, resolvedSize)
-        );
+                PageRequest.of(resolvedPage, resolvedSize));
 
         List<ActivityEventDTO> content = eventsPage.getContent().stream()
                 .map(mongoDocumentAdapter::adapt)

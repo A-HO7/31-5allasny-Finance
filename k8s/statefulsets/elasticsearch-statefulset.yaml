@@ -19,14 +19,15 @@ spec:
       containers:
         - name: elasticsearch
           image: elasticsearch:8.19.12
-          args:
-            - -Ediscovery.type=single-node
-            - -Expack.security.enabled=false
           ports:
             - name: http
               containerPort: 9200
               protocol: TCP
           env:
+            - name: discovery.type
+              value: "single-node"
+            - name: xpack.security.enabled
+              value: "false"
             - name: ES_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
           volumeMounts:

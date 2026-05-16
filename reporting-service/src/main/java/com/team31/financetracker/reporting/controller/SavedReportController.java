@@ -109,6 +109,8 @@ public class SavedReportController {
     public ResponseEntity<?> getUserReportSummary(@PathVariable Long id) {
         try {
             return ResponseEntity.ok(service.getUserReportSummary(id));
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
@@ -123,6 +125,8 @@ public class SavedReportController {
             return new ResponseEntity<>(newReport, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

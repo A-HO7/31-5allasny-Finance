@@ -14,12 +14,19 @@ import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
 import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import jakarta.transaction.Transactional;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.team31.financetracker.contracts.dto.AccountTransactionSummaryDTO;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import org.slf4j.MDC;
 import org.springframework.cache.annotation.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import com.team31.financetracker.account.model.AccountSearchDocument;
@@ -31,6 +38,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class AccountService {
@@ -44,8 +53,9 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
-    private final TransactionServiceClient transactionServiceClient;
     private final RabbitTemplate rabbitTemplate;
+    private final UserServiceClient userServiceClient;
+    private final TransactionServiceClient transactionServiceClient;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -55,8 +65,9 @@ public class AccountService {
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
             RedisTemplate<String, Object> redisTemplate,
-            TransactionServiceClient transactionServiceClient,
             RabbitTemplate rabbitTemplate
+            UserServiceClient userServiceClient,
+            TransactionServiceClient transactionServiceClient
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -65,8 +76,9 @@ public class AccountService {
         this.accountSummaryProjectionAdapter = accountSummaryProjectionAdapter;
         this.topAccountProjectionAdapter = topAccountProjectionAdapter;
         this.redisTemplate = redisTemplate;
-        this.transactionServiceClient = transactionServiceClient;
         this.rabbitTemplate = rabbitTemplate;
+        this.userServiceClient = userServiceClient;
+        this.transactionServiceClient = transactionServiceClient;
     }
 
     public void register(EntityObserver observer){
@@ -198,7 +210,7 @@ public class AccountService {
         }
 
         if (minBalance > maxBalance) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid range"); 
         }
 
         return accountRepository.searchByStatusAndBalanceRange(status != null ? status.name() : null, minBalance, maxBalance);
@@ -354,47 +366,62 @@ public class AccountService {
 
     @Transactional
     public Account verifyStatement(Long accountId, Long statementId, Long verifiedBy) {
-        getById(accountId);
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
+            
+            getById(accountId);
 
-        AccountStatement statement = accountStatementRepository.findById(statementId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
+            AccountStatement statement = accountStatementRepository.findById(statementId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Statement not found"));
 
-        if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
+            if (statement.getAccount() == null || !statement.getAccount().getId().equals(accountId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement does not belong to the specified account");
+            }
+
+            if (!statement.getExpiryDate().isAfter(LocalDate.now())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
+            }
+
+            if (verifiedBy == null || verifiedBy <= 0) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
+            }
+
+            try {
+                UserDTO verifier = userServiceClient.getUser(verifiedBy);
+                if (!"ADMIN".equals(verifier.getRole())) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "verifier must be ADMIN");
+                }
+            } catch (FeignException.NotFound e) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "verifier not found");
+            } catch (FeignException e) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Error validating user role via user-service");
+            }
+
+            Map<String, Object> metadata = new HashMap<>();
+            if (statement.getMetadata() != null) {
+                metadata.putAll(statement.getMetadata());
+            }
+            metadata.put("verifiedAt", LocalDateTime.now().toString());
+            metadata.put("verifiedBy", verifiedBy);
+
+            statement.setVerified(true);
+            statement.setMetadata(metadata);
+            accountStatementRepository.saveAndFlush(statement);
+
+
+            Account result = accountRepository.findByIdWithStatements(accountId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+            result.getAccountStatements().size();
+            cacheInvalidator.invalidateAccountData(accountId);
+            return result;
+        } finally {
+            MDC.remove("accountId");
+            MDC.remove("transactionId");
         }
-
-        if (!statement.getExpiryDate().isAfter(LocalDate.now())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statement has expired");
-        }
-
-        if (verifiedBy == null || verifiedBy <= 0) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid verifier ID");
-        }
-        String role = accountRepository.getUserRoleNative(verifiedBy);
-        if (!"ADMIN".equals(role)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to verify this statement");
-        }
-
-        Map<String, Object> metadata = new HashMap<>();
-        if (statement.getMetadata() != null) {
-            metadata.putAll(statement.getMetadata());
-        }
-        metadata.put("verifiedAt", LocalDateTime.now().toString());
-        metadata.put("verifiedBy", verifiedBy);
-
-        statement.setVerified(true);
-        statement.setMetadata(metadata);
-        accountStatementRepository.saveAndFlush(statement);
-
-
-        Account result = accountRepository.findByIdWithStatements(accountId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
-
-        result.getAccountStatements().size();
-        cacheInvalidator.invalidateAccountData(accountId);
-        return result;
     }
 
+    
     @Cacheable(value = "account-service::S2-F10", key = "T(java.util.Objects).hash(#query, #type, #status, #currency, #min, #max, #minRating, #maxRating)")
     public List<AccountDTO> fullTextSearch(String query, String type, String status,
                                            String currency, Double min, Double max,
@@ -493,48 +520,63 @@ public class AccountService {
             Long requestingUserId,
             String requestingUserRole
     ) {
-        Account account = getById(accountId);
+        long startTime = System.currentTimeMillis();
+        try {
+            MDC.put("accountId", String.valueOf(accountId));
 
-        boolean isAdmin = "ADMIN".equals(requestingUserRole);
-        boolean isOwner =
-                requestingUserId != null
-                &&
-                requestingUserId.equals(account.getUserId());
+            Account account = getById(accountId);
 
-        if (!isOwner && !isAdmin) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            boolean isAdmin = "ADMIN".equals(requestingUserRole);
+            boolean isOwner = requestingUserId != null && requestingUserId.equals(account.getUserId());
+
+            if (!isOwner && !isAdmin) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("accountId", accountId);
+            payload.put("requestedBy", requestingUserId);
+            payload.put("requestedByRole", requestingUserRole);
+            notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
+
+            return applicationContext.getBean(AccountService.class).getDashboardCached(accountId, account.getName(), account.getType().name(), account.getBalance());
+
+        } finally {
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (elapsed >= 1000) {
+                log.warn("Slow dashboard took {}ms", elapsed);
+            }
+            MDC.remove("accountId");
         }
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("accountId", accountId);
-        payload.put("requestedBy", requestingUserId);
-        payload.put("requestedByRole", requestingUserRole);
-        notifyObservers(AccountEventActions.DASHBOARD_VIEWED.name(), payload);
-
-        return applicationContext.getBean(AccountService.class).getDashboardCached(accountId, account.getName(), account.getType().name(), account.getBalance());
     }
 
     @Cacheable(value = "account-service::S2-F12", key = "#accountId")
     public AccountPerformanceDashboardDTO getDashboardCached(Long accountId, String name, String type, Double balance) {
-        Object[] stats = accountRepository.getTransactionStats(accountId);
-        if (stats.length == 1 && stats[0] instanceof Object[] row) {
-            stats = row;
+        AccountTransactionSummaryDTO summary;
+        try {
+            summary = transactionServiceClient.getAccountTransactionSummary(accountId, null, null);
+        } catch (feign.FeignException.NotFound e) {
+            summary = AccountTransactionSummaryDTO.builder()
+                .totalDeposits(0.0)
+                .totalWithdrawals(0.0)
+                .netChange(0.0)
+                .transactionCount(0L)
+                .build();
+        } catch (feign.FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Transaction service temporarily unavailable");
         }
-        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
-        Long totalTransactions = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
-        Double totalIncome = stats[1] != null ? ((Number) stats[1]).doubleValue() : 0.0;
-        Double totalExpenses = stats[2] != null ? ((Number) stats[2]).doubleValue() : 0.0;
+        Long activeStatements = accountRepository.getActiveStatementsCount(accountId);
 
         return AccountPerformanceDashboardDTO.builder()
                 .accountId(accountId)
                 .name(name)
                 .type(type)
                 .balance(balance)
-                .totalTransactions(totalTransactions)
-                .totalIncome(totalIncome)
-                .totalExpenses(totalExpenses)
-                .netChange(totalIncome - totalExpenses)
+                .totalTransactions(summary.getTransactionCount() != null ? summary.getTransactionCount() : 0L)
+                .totalIncome(summary.getTotalDeposits() != null ? summary.getTotalDeposits() : 0.0)
+                .totalExpenses(summary.getTotalWithdrawals() != null ? summary.getTotalWithdrawals() : 0.0)
+                .netChange(summary.getNetChange() != null ? summary.getNetChange() : 0.0)
                 .activeStatementsCount(activeStatements)
                 .build();
     }
@@ -597,4 +639,53 @@ public class AccountService {
         }
         notifyObservers(action.name(), payload);
     }
+
+    public AccountBalanceSummaryDTO getBalanceSummary(Long userId) {
+        List<Account> activeAccounts = accountRepository.findByUserIdAndStatus(userId, AccountStatus.ACTIVE);
+
+        double totalActiveBalance = activeAccounts.stream()
+                .mapToDouble(Account::getBalance)
+                .sum();
+
+        Map<String, Double> currencyBreakdown = activeAccounts.stream()
+                .collect(Collectors.groupingBy(
+                        Account::getCurrency,
+                        Collectors.summingDouble(Account::getBalance)
+                ));
+
+        return new AccountBalanceSummaryDTO(
+                activeAccounts.size(),
+                totalActiveBalance,
+                currencyBreakdown
+        );
+    }
+    @Cacheable(value = "account-service::getAccount", key = "#id")
+    public com.team31.financetracker.contracts.dto.AccountDTO getAccountById(Long id) {
+        Account account = accountRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        return com.team31.financetracker.contracts.dto.AccountDTO.builder()
+                .id(account.getId())
+                .userId(account.getUserId())
+                .name(account.getName())
+                .type(account.getType() != null ? account.getType().name() : null)
+                .currency(account.getCurrency())
+                .balance(account.getBalance())
+                .status(account.getStatus() != null ? account.getStatus().name() : null)
+                .rating(account.getRating())
+                .accountDetails(account.getAccountDetails())
+                .build();
+    }
+
+    public boolean doAllAccountsExist(List<Long> ids) {
+        long foundCount = accountRepository.countByIdIn(ids);
+        boolean allExist = foundCount == ids.size();
+        return allExist;
+    }
+    public OwnerDTO getAccountOwner(Long accountId) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+        return new OwnerDTO(account.getUserId());
+    }
+
 }

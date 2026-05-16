@@ -590,6 +590,11 @@ public class AccountService {
                 .build();
     }
 
+    public boolean doAllAccountsExist(List<Long> ids) {
+        long foundCount = accountRepository.countByIdIn(ids);
+        boolean allExist = foundCount == ids.size();
+        return allExist;
+    }
     public OwnerDTO getAccountOwner(Long accountId) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));

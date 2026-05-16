@@ -6,6 +6,7 @@ import com.team31.financetracker.account.model.AccountStatement;
 import com.team31.financetracker.account.model.AccountStatus;
 import com.team31.financetracker.account.model.AccountType;
 import com.team31.financetracker.account.service.AccountService;
+import com.team31.financetracker.contracts.dto.AccountsExistDTO;
 import com.team31.financetracker.contracts.dto.OwnerDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -407,4 +408,12 @@ public class AccountController {
         }
         return new Caller(uid, role);
     }
+
+    @GetMapping("/exists")
+    @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
+    public ResponseEntity<AccountsExistDTO> accountsExist(@RequestParam List<Long> ids) {
+        boolean allExist = accountService.doAllAccountsExist(ids);
+        return ResponseEntity.ok(new AccountsExistDTO(allExist));
+    }
+
 }

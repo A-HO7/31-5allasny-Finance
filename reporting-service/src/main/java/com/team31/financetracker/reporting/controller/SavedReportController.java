@@ -118,6 +118,11 @@ public class SavedReportController {
         }
     }
 
+    @GetMapping("/user/{id}/snapshot-count")
+    public ResponseEntity<Long> getSnapshotCount(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getSnapshotCount(id));
+    }
+
     @PostMapping("/generate/{userId}")
     public ResponseEntity<?> generateReport(@PathVariable Long userId, 
                                             @RequestBody GenerateReportRequestDTO request,

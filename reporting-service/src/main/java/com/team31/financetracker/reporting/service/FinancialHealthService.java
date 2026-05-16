@@ -70,7 +70,7 @@ public class FinancialHealthService {
     public FinancialHealthScoreDTO computeHealthScore(Long userId,
                                                       LocalDate startDate,
                                                       LocalDate endDate) {
-        // Step c, e — Orchestrate Feign calls
+        // Step c — user existence & goals
         UserProfileDTO profile;
         try {
             profile = userServiceClient.getUserProfile(userId);
@@ -112,10 +112,10 @@ public class FinancialHealthService {
         }
 
         // Step e — compute component rates
-        double savingsRate = clamp(100.0 * (txn.totalIncome() - txn.totalExpenses()) / Math.max(1, txn.totalIncome()), 0, 100);
-        double budgetAdherenceRate = budgets.getWeightedAdherenceRate();
-        double goalProgressRate = computeGoalProgress(profile.getFinancialGoals());
-        double accountLiquidityRate = computeLiquidity(accounts.getTotalActiveBalance(), txn.totalExpenses(), startDate, endDate);
+        double savingsRate          = computeSavingsRate(txn);
+        double budgetAdherenceRate  = budgets.getWeightedAdherenceRate();
+        double goalProgressRate     = computeGoalProgressRate(profile.getFinancialGoals());
+        double accountLiquidityRate = computeAccountLiquidityRate(accounts.getTotalActiveBalance(), txn.totalExpenses(), startDate, endDate);
 
         // Step f — composite score
         double raw = 0.35 * savingsRate
@@ -163,7 +163,24 @@ public class FinancialHealthService {
 
     // ── Private computation helpers ──────────────────────────────────────────
 
-    private double computeGoalProgress(List<FinancialGoalDTO> goals) {
+    /**
+     * savingsRate = 100 * (totalIncome - totalExpenses) / totalIncome
+     * Returns 0 when totalIncome = 0. Clamped to [0, 100].
+     */
+    private double computeSavingsRate(NetIncomeDTO txn) {
+        double totalIncome = txn.totalIncome() != null ? txn.totalIncome() : 0.0;
+        double totalExpenses = txn.totalExpenses() != null ? txn.totalExpenses() : 0.0;
+        if (totalIncome <= 0.0) return 0.0;
+        double rate = 100.0 * (totalIncome - totalExpenses) / totalIncome;
+        return clamp(rate);
+    }
+
+    /**
+     * goalProgressRate = average of 100 * min(1, currentAmount/targetAmount)
+     * across non-completed goals (deadline >= today, currentAmount < targetAmount).
+     * Returns 0 when no qualifying goals.
+     */
+    private double computeGoalProgressRate(List<FinancialGoalDTO> goals) {
         if (goals == null || goals.isEmpty()) return 0.0;
 
         double sum = 0.0;
@@ -173,24 +190,41 @@ public class FinancialHealthService {
         for (FinancialGoalDTO goal : goals) {
             if (goal.getDeadline() != null && !goal.getDeadline().isBefore(today) && goal.getCurrentAmount() < goal.getTargetAmount()) {
                 activeCount++;
-                if (goal.getTargetAmount() > 0) {
-                    sum += 100.0 * Math.min(1.0, goal.getCurrentAmount() / goal.getTargetAmount());
-                }
+                double target = goal.getTargetAmount() != null ? goal.getTargetAmount() : 0.0;
+                double current = goal.getCurrentAmount() != null ? goal.getCurrentAmount() : 0.0;
+                if (target <= 0.0) continue;
+                sum += 100.0 * Math.min(1.0, current / target);
             }
         }
-
+        
         if (activeCount == 0) return 0.0;
-        return sum / activeCount;
+        return clamp(sum / activeCount);
     }
 
-    private double computeLiquidity(double totalBalance, double totalExpense, LocalDate startDate, LocalDate endDate) {
-        if (totalExpense <= 0) return 100.0;
-        long daysInRange = ChronoUnit.DAYS.between(startDate, endDate) + 1;
-        double monthlyAvg = totalExpense * 30.0 / daysInRange;
-        double threeMthAvg = 3.0 * monthlyAvg;
+    /**
+     * accountLiquidityRate = 100 * min(1, totalActiveBalance / (3 * monthlyAverage))
+     * monthlyAverage = totalExpenseInRange * 30.0 / daysInRange
+     * daysInRange = ChronoUnit.DAYS.between(startDate, endDate) + 1
+     * Returns 100 if no COMPLETED EXPENSE transactions in range (fully liquid by default).
+     */
+    private double computeAccountLiquidityRate(Double activeBalance,
+                                                Double expenses,
+                                                LocalDate startDate,
+                                                LocalDate endDate) {
+        double totalExpense = expenses != null ? expenses : 0.0;
+        if (totalExpense <= 0.0) return 100.0;
 
-        if (threeMthAvg <= 0) return 100.0;
-        return clamp(100.0 * Math.min(1.0, totalBalance / threeMthAvg), 0, 100);
+        long daysInRange    = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        double monthlyAvg   = totalExpense * 30.0 / daysInRange;
+        double threeMthAvg  = 3.0 * monthlyAvg;
+
+        double totalBalance = activeBalance != null ? activeBalance : 0.0;
+        double rate = 100.0 * Math.min(1.0, totalBalance / threeMthAvg);
+        return clamp(rate);
+    }
+
+    private double clamp(double rate) {
+        return Math.min(100.0, Math.max(0.0, rate));
     }
 
     private double clamp(double value, double min, double max) {

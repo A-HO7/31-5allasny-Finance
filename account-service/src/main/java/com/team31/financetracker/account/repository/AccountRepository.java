@@ -140,5 +140,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     """, nativeQuery = true)
     Long getActiveStatementsCount(@Param("accountId") Long accountId);
 
+    long countByIdIn(List<Long> ids);
+
+    List<Account> findByUserIdAndStatus(Long userId, AccountStatus status);
+
 
 }

@@ -1,20 +1,18 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: user-postgres
+  name: budget-postgres
   namespace: financetracker
-  labels:
-    app: user-postgres
 spec:
-  serviceName: user-postgres
+  serviceName: budget-postgres
   replicas: 1
   selector:
     matchLabels:
-      app: user-postgres
+      app: budget-postgres
   template:
     metadata:
       labels:
-        app: user-postgres
+        app: budget-postgres
     spec:
       containers:
         - name: postgres
@@ -22,37 +20,29 @@ spec:
           ports:
             - containerPort: 5432
           env:
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: user-postgres-secret
-                  key: POSTGRES_DB
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: user-postgres-secret
+                  name: budget-postgres-secret
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: user-postgres-secret
+                  name: budget-postgres-secret
                   key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: budget-postgres-secret
+                  key: POSTGRES_DB
           volumeMounts:
-            - name: user-postgres-data
+            - name: data
               mountPath: /var/lib/postgresql/data
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
   volumeClaimTemplates:
     - metadata:
-        name: user-postgres-data
+        name: data
       spec:
-        accessModes:
-          - ReadWriteOnce
+        accessModes: ["ReadWriteOnce"]
         resources:
           requests:
             storage: 1Gi

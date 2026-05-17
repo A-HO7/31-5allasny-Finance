@@ -1,4 +1,4 @@
-package com.team31.financetracker.contracts.dto;
+package com.team31.financetracker.user.dto;
 
 import java.io.Serializable;
 

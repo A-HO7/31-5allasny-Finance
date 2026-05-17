@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: user-service
+        static_configs:
+          - targets: ['user-service.financetracker.svc.cluster.local:8080']
+        metrics_path: /actuator/prometheus
+      - job_name: account-service
+        static_configs:
+          - targets: ['account-service.financetracker.svc.cluster.local:8080']
+        metrics_path: /actuator/prometheus
+      - job_name: transaction-service
+        static_configs:
+          - targets: ['transaction-service.financetracker.svc.cluster.local:8080']
+        metrics_path: /actuator/prometheus
+      - job_name: budget-service
+        static_configs:
+          - targets: ['budget-service.financetracker.svc.cluster.local:8080']
+        metrics_path: /actuator/prometheus
+      - job_name: reporting-service
+        static_configs:
+          - targets: ['reporting-service.financetracker.svc.cluster.local:8080']
+        metrics_path: /actuator/prometheus

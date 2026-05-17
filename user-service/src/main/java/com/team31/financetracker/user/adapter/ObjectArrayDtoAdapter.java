@@ -1,7 +1,7 @@
 package com.team31.financetracker.user.adapter;
 
-import com.team31.financetracker.user.dto.TopSaverDTO;
-import com.team31.financetracker.user.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.contracts.dto.TopSaverDTO;
+import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;

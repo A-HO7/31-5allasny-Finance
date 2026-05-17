@@ -8,13 +8,20 @@ data:
     global:
       scrape_interval: 15s
     scrape_configs:
+      # S2-INFRA scrape job
+      - job_name: account-service
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ["account-service.finance-tracker.svc.cluster.local:8080"]
+
       # S5-INFRA scrape job
       - job_name: reporting-service
+        metrics_path: /actuator/prometheus
         static_configs:
           - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]
-        metrics_path: /actuator/prometheus
       # S4-INFRA scrape job
       - job_name: budget-service
+        metrics_path: /actuator/prometheus
         static_configs:
           - targets: ["budget-service.finance-tracker.svc.cluster.local:8080"]
       # S3-INFRA scrape job

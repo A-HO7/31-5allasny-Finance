@@ -3,27 +3,25 @@
         <http>
             <url>http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push</url>
         </http>
-        <format>
-            <label>
-                <pattern>app=financetracker,service=account-service,level=%level,env=k8s</pattern>
-            </label>
-            <message>
-                <pattern>
-                    {
-                    "timestamp": "%d{ISO8601}",
-                    "level": "%level",
-                    "service": "account-service",
-                    "thread": "%thread",
-                    "logger": "%logger{36}",
-                    "correlationId": "%X{correlationId:-}",
-                    "accountId": "%X{accountId:-}",
-                    "transactionId": "%X{transactionId:-}",
-                    "routingKey": "%X{routingKey:-}",
-                    "message": "%msg"
-                    }
-                </pattern>
-            </message>
-        </format>
+        <labels>
+            app=financetracker
+            service=account-service
+            level=%level
+            env=k8s
+        </labels>
+        <structuredMetadata>
+            correlationId=%X{correlationId:-}
+            accountId=%X{accountId:-}
+            transactionId=%X{transactionId:-}
+            routingKey=%X{routingKey:-}
+        </structuredMetadata>
+        <message>
+            <pattern>{"timestamp":"%d{ISO8601}","level":"%level","service":"account-service","thread":"%thread","logger":"%logger{36}","correlationId":"%X{correlationId:-}","accountId":"%X{accountId:-}","transactionId":"%X{transactionId:-}","routingKey":"%X{routingKey:-}","message":"%msg"}</pattern>
+        </message>
+        <batch>
+            <maxItems>1000</maxItems>
+            <timeoutMs>1000</timeoutMs>
+        </batch>
     </appender>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">

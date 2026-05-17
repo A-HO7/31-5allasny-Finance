@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: transaction-service-configmap
-  namespace: financetracker
+  namespace: finance-tracker
 data:
   SPRING_DATASOURCE_URL: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
   SPRING_DATASOURCE_USERNAME: user

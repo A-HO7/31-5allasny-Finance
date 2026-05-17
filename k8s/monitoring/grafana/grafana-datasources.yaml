@@ -8,11 +8,13 @@ data:
     apiVersion: 1
     datasources:
       - name: Loki
+        uid: loki
         type: loki
         access: proxy
-        url: http://loki.finance-tracker.svc.cluster.local:3100
+        url: http://loki.monitoring.svc.cluster.local:3100
         isDefault: true
       - name: Prometheus
+        uid: prometheus
         type: prometheus
         access: proxy
         url: http://prometheus.finance-tracker.svc.cluster.local:9090

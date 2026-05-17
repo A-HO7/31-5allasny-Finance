@@ -1,10 +1,19 @@
 package com.team31.financetracker.reporting.service;
 
+import com.team31.financetracker.contracts.dto.AccountBalanceSummaryDTO;
+import com.team31.financetracker.contracts.dto.BudgetSummaryDTO;
+import com.team31.financetracker.contracts.dto.FinancialGoalDTO;
+import com.team31.financetracker.contracts.dto.NetIncomeDTO;
+import com.team31.financetracker.contracts.dto.UserProfileDTO;
+import com.team31.financetracker.contracts.feign.AccountServiceClient;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.reporting.dto.FinancialHealthScoreDTO;
-import com.team31.financetracker.reporting.mongo.ReportAuditEventRepository;
+import com.team31.financetracker.reporting.exception.ServiceUnavailableException;
 import com.team31.financetracker.reporting.observer.EntityObserver;
 import com.team31.financetracker.reporting.observer.MongoEventLogger;
-import com.team31.financetracker.reporting.repository.FinancialHealthRepository;
+import feign.FeignException;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,37 +21,39 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.slf4j.MDC;
 
 /**
  * Service for S5-F10: Get Financial Health Score.
- *
- * Design: Two public methods are intentionally separated:
- *   1. computeHealthScore() — @Cacheable, does the expensive cross-service SQL computation.
- *   2. logHealthScoreViewed() — NOT cached, always fires MongoDB ANALYTICS_VIEWED audit log.
- *
- * The controller calls BOTH on every request, ensuring the audit log fires
- * on cache hits as well as misses (per spec requirement h).
  */
 @Service
 public class FinancialHealthService {
 
     private static final Logger log = LoggerFactory.getLogger(FinancialHealthService.class);
 
-    private final FinancialHealthRepository healthRepository;
+    private final UserServiceClient userServiceClient;
+    private final AccountServiceClient accountServiceClient;
+    private final TransactionServiceClient transactionServiceClient;
+    private final BudgetServiceClient budgetServiceClient;
     private final MongoEventLogger mongoEventLogger;
 
     private final List<EntityObserver> observers = new CopyOnWriteArrayList<>();
 
-    public FinancialHealthService(FinancialHealthRepository healthRepository,
+    public FinancialHealthService(UserServiceClient userServiceClient,
+                                  AccountServiceClient accountServiceClient,
+                                  TransactionServiceClient transactionServiceClient,
+                                  BudgetServiceClient budgetServiceClient,
                                   MongoEventLogger mongoEventLogger) {
-        this.healthRepository = healthRepository;
+        this.userServiceClient = userServiceClient;
+        this.accountServiceClient = accountServiceClient;
+        this.transactionServiceClient = transactionServiceClient;
+        this.budgetServiceClient = budgetServiceClient;
         this.mongoEventLogger = mongoEventLogger;
     }
 
@@ -55,36 +66,78 @@ public class FinancialHealthService {
 
     // ── Cached computation ───────────────────────────────────────────────────
 
-    /**
-     * Computes the financial health score for the given user and date range.
-     * Result is cached for 10 minutes in Redis under key: userId:startDate:endDate.
-     *
-     * Steps c, d, e, f, g from the spec.
-     * Step c: user existence check.
-     * Step d: date range expansion to full-day timestamps.
-     * Step e: compute four component rates via cross-service native SQL.
-     * Step f: compositeScore weighted sum, rounded to 1 decimal.
-     * Step g: recommendations list.
-     */
     @Cacheable(value = "reporting-service::S5-F10",
                key = "#userId + ':' + #startDate + ':' + #endDate")
     public FinancialHealthScoreDTO computeHealthScore(Long userId,
                                                       LocalDate startDate,
                                                       LocalDate endDate) {
-        // Step c — user existence
-        if (!healthRepository.existsUserById(userId)) {
+        // Step c — user existence & goals
+        MDC.put("userId", userId.toString());
+        long fanOutStart = System.currentTimeMillis();
+
+        UserProfileDTO profile;
+        try {
+            log.info("Calling UserServiceClient.getUserProfile with args={}", userId);
+            profile = userServiceClient.getUserProfile(userId);
+            log.info("UserServiceClient.getUserProfile returned successfully");
+        } catch (FeignException.NotFound e) {
+            MDC.remove("userId");
             throw new RuntimeException("User not found with id: " + userId);
+        } catch (FeignException e) {
+            log.warn("Feign call to user-service failed: {}", e.getMessage());
+            MDC.remove("userId");
+            throw new ServiceUnavailableException("User service temporarily unavailable");
         }
 
-        // Step d — expand to closed timestamp window
-        LocalDateTime windowStart = startDate.atStartOfDay();
-        LocalDateTime windowEnd   = endDate.atTime(23, 59, 59, 999_000_000);
+        AccountBalanceSummaryDTO accounts;
+        try {
+            log.info("Calling AccountServiceClient.getBalanceSummary with args={}", userId);
+            accounts = accountServiceClient.getBalanceSummary(userId);
+            log.info("AccountServiceClient.getBalanceSummary returned successfully");
+        } catch (FeignException.NotFound e) {
+            accounts = new AccountBalanceSummaryDTO(0, 0.0, null);
+        } catch (FeignException e) {
+            log.warn("Feign call to account-service failed: {}", e.getMessage());
+            throw new ServiceUnavailableException("Account service temporarily unavailable");
+        }
+
+        NetIncomeDTO txn;
+        try {
+            log.info("Calling TransactionServiceClient.getUserNetIncome with args={},{},{}", userId, startDate, endDate);
+            txn = transactionServiceClient.getUserNetIncome(userId, startDate.toString(), endDate.toString());
+            log.info("TransactionServiceClient.getUserNetIncome returned successfully");
+        } catch (FeignException.NotFound e) {
+            txn = new NetIncomeDTO(0.0, 0, 0.0, 0.0);
+        } catch (FeignException e) {
+            log.warn("Feign call to transaction-service failed: {}", e.getMessage());
+            throw new ServiceUnavailableException("Transaction service temporarily unavailable");
+        }
+
+        BudgetSummaryDTO budgets;
+        try {
+            log.info("Calling BudgetServiceClient.getUserBudgetSummary with args={},{},{}", userId, startDate, endDate);
+            budgets = budgetServiceClient.getUserBudgetSummary(userId, startDate.toString(), endDate.toString());
+            log.info("BudgetServiceClient.getUserBudgetSummary returned successfully");
+        } catch (FeignException.NotFound e) {
+            budgets = new BudgetSummaryDTO(0.0, 0.0, 0.0);
+        } catch (FeignException e) {
+            log.warn("Feign call to budget-service failed: {}", e.getMessage());
+            throw new ServiceUnavailableException("Budget service temporarily unavailable");
+        }
+
+        // Slow operation detection — emit WARN if four-way fan-out exceeds 1000ms
+        long fanOutElapsed = System.currentTimeMillis() - fanOutStart;
+        if (fanOutElapsed > 1000) {
+            log.warn("Slow S5-F10 four-way Feign fan-out took {}ms", fanOutElapsed);
+        }
+
+        MDC.remove("userId");
 
         // Step e — compute component rates
-        double savingsRate          = computeSavingsRate(userId, windowStart, windowEnd);
-        double budgetAdherenceRate  = computeBudgetAdherenceRate(userId, windowStart, windowEnd);
-        double goalProgressRate     = computeGoalProgressRate(userId);
-        double accountLiquidityRate = computeAccountLiquidityRate(userId, startDate, endDate, windowStart, windowEnd);
+        double savingsRate          = computeSavingsRate(txn);
+        double budgetAdherenceRate  = budgets.getWeightedAdherenceRate();
+        double goalProgressRate     = computeGoalProgressRate(profile.getFinancialGoals());
+        double accountLiquidityRate = computeAccountLiquidityRate(accounts.getTotalActiveBalance(), txn.totalExpenses(), startDate, endDate);
 
         // Step f — composite score
         double raw = 0.35 * savingsRate
@@ -110,11 +163,6 @@ public class FinancialHealthService {
 
     // ── Audit log (NOT cached — always fires) ────────────────────────────────
 
-    /**
-     * Logs an ANALYTICS_VIEWED event to MongoDB.
-     * Called by the controller on EVERY request, including cache hits.
-     * Soft dependency: never throws — failures are logged at WARN level.
-     */
     public void logHealthScoreViewed(Long userId) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -141,50 +189,12 @@ public class FinancialHealthService {
      * savingsRate = 100 * (totalIncome - totalExpenses) / totalIncome
      * Returns 0 when totalIncome = 0. Clamped to [0, 100].
      */
-    private double computeSavingsRate(Long userId, LocalDateTime start, LocalDateTime end) {
-        try {
-            Object[] row = healthRepository.querySavingsRateData(userId, start, end);
-            double totalIncome   = row[0] != null ? ((Number) row[0]).doubleValue() : 0.0;
-            double totalExpenses = row[1] != null ? ((Number) row[1]).doubleValue() : 0.0;
-            if (totalIncome == 0.0) return 0.0;
-            double rate = 100.0 * (totalIncome - totalExpenses) / totalIncome;
-            return clamp(rate);
-        } catch (Exception e) {
-            log.warn("S5-F10 savingsRate query failed: {}", e.getMessage());
-            return 0.0;
-        }
-    }
-
-    /**
-     * budgetAdherenceRate = weighted average of 100 * max(0, 1 - spentAmount/budgetAmount)
-     * Weight = metadata.healthWeight (default 1.0, clamped [0.0, 2.0]).
-     * Budgets with budgetAmount=0 or healthWeight=0 are excluded.
-     * Returns 0 when no qualifying budgets.
-     */
-    private double computeBudgetAdherenceRate(Long userId, LocalDateTime start, LocalDateTime end) {
-        try {
-            List<Object[]> rows = healthRepository.queryBudgetData(userId, start, end);
-            double weightedSum   = 0.0;
-            double totalWeight   = 0.0;
-
-            for (Object[] row : rows) {
-                double budgetAmount = row[0] != null ? ((Number) row[0]).doubleValue() : 0.0;
-                double spentAmount  = row[1] != null ? ((Number) row[1]).doubleValue() : 0.0;
-                double healthWeight = parseHealthWeight(row[2]);
-
-                if (budgetAmount == 0.0 || healthWeight == 0.0) continue;
-
-                double adherence = 100.0 * Math.max(0.0, 1.0 - (spentAmount / budgetAmount));
-                weightedSum += adherence * healthWeight;
-                totalWeight += healthWeight;
-            }
-
-            if (totalWeight == 0.0) return 0.0;
-            return clamp(weightedSum / totalWeight);
-        } catch (Exception e) {
-            log.warn("S5-F10 budgetAdherenceRate query failed: {}", e.getMessage());
-            return 0.0;
-        }
+    private double computeSavingsRate(NetIncomeDTO txn) {
+        double totalIncome = txn.totalIncome() != null ? txn.totalIncome() : 0.0;
+        double totalExpenses = txn.totalExpenses() != null ? txn.totalExpenses() : 0.0;
+        if (totalIncome <= 0.0) return 0.0;
+        double rate = 100.0 * (totalIncome - totalExpenses) / totalIncome;
+        return clamp(rate);
     }
 
     /**
@@ -192,23 +202,25 @@ public class FinancialHealthService {
      * across non-completed goals (deadline >= today, currentAmount < targetAmount).
      * Returns 0 when no qualifying goals.
      */
-    private double computeGoalProgressRate(Long userId) {
-        try {
-            List<Object[]> rows = healthRepository.queryGoalData(userId);
-            if (rows.isEmpty()) return 0.0;
+    private double computeGoalProgressRate(List<FinancialGoalDTO> goals) {
+        if (goals == null || goals.isEmpty()) return 0.0;
 
-            double sum = 0.0;
-            for (Object[] row : rows) {
-                double current = row[0] != null ? ((Number) row[0]).doubleValue() : 0.0;
-                double target  = row[1] != null ? ((Number) row[1]).doubleValue() : 0.0;
+        double sum = 0.0;
+        int activeCount = 0;
+        LocalDate today = LocalDate.now();
+
+        for (FinancialGoalDTO goal : goals) {
+            if (goal.getDeadline() != null && !goal.getDeadline().isBefore(today) && goal.getCurrentAmount() < goal.getTargetAmount()) {
+                activeCount++;
+                double target = goal.getTargetAmount() != null ? goal.getTargetAmount() : 0.0;
+                double current = goal.getCurrentAmount() != null ? goal.getCurrentAmount() : 0.0;
                 if (target <= 0.0) continue;
                 sum += 100.0 * Math.min(1.0, current / target);
             }
-            return clamp(sum / rows.size());
-        } catch (Exception e) {
-            log.warn("S5-F10 goalProgressRate query failed: {}", e.getMessage());
-            return 0.0;
         }
+        
+        if (activeCount == 0) return 0.0;
+        return clamp(sum / activeCount);
     }
 
     /**
@@ -217,59 +229,30 @@ public class FinancialHealthService {
      * daysInRange = ChronoUnit.DAYS.between(startDate, endDate) + 1
      * Returns 100 if no COMPLETED EXPENSE transactions in range (fully liquid by default).
      */
-    private double computeAccountLiquidityRate(Long userId,
+    private double computeAccountLiquidityRate(Double activeBalance,
+                                                Double expenses,
                                                 LocalDate startDate,
-                                                LocalDate endDate,
-                                                LocalDateTime windowStart,
-                                                LocalDateTime windowEnd) {
-        try {
-            double totalExpense = healthRepository.queryTotalExpenseInRange(userId, windowStart, windowEnd);
-            if (totalExpense == 0.0) return 100.0;
+                                                LocalDate endDate) {
+        double totalExpense = expenses != null ? expenses : 0.0;
+        if (totalExpense <= 0.0) return 100.0;
 
-            long daysInRange    = ChronoUnit.DAYS.between(startDate, endDate) + 1;
-            double monthlyAvg   = totalExpense * 30.0 / daysInRange;
-            double threeMthAvg  = 3.0 * monthlyAvg;
+        long daysInRange    = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        double monthlyAvg   = totalExpense * 30.0 / daysInRange;
+        double threeMthAvg  = 3.0 * monthlyAvg;
 
-            double totalBalance = healthRepository.queryTotalActiveBalance(userId);
-            double rate = 100.0 * Math.min(1.0, totalBalance / threeMthAvg);
-            return clamp(rate);
-        } catch (Exception e) {
-            log.warn("S5-F10 accountLiquidityRate query failed: {}", e.getMessage());
-            return 100.0;
-        }
+        double totalBalance = activeBalance != null ? activeBalance : 0.0;
+        double rate = 100.0 * Math.min(1.0, totalBalance / threeMthAvg);
+        return clamp(rate);
     }
 
-    /**
-     * Parses the healthWeight value extracted from JSONB (may be String, Number, or null).
-     * Defaults to 1.0 when missing or unparseable. Clamped to [0.0, 2.0].
-     */
-    private double parseHealthWeight(Object raw) {
-        if (raw == null) return 1.0;
-        double val;
-        if (raw instanceof Number n) {
-            val = n.doubleValue();
-        } else {
-            try {
-                val = Double.parseDouble(raw.toString());
-            } catch (Exception e) {
-                return 1.0;
-            }
-        }
-        return Math.min(2.0, Math.max(0.0, val));
-    }
-
-    /**
-     * Clamps a rate to [0.0, 100.0].
-     */
     private double clamp(double rate) {
         return Math.min(100.0, Math.max(0.0, rate));
     }
 
-    /**
-     * Builds the recommendations list.
-     * One canned message per component below 50.
-     * Returns a single positive string if all components are >= 50.
-     */
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private List<String> buildRecommendations(double savingsRate,
                                               double budgetAdherenceRate,
                                               double goalProgressRate,

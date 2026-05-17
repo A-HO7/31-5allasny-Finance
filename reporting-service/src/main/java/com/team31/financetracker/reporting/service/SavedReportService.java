@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import com.team31.financetracker.reporting.dto.UserReportSummaryDTO;
 import com.team31.financetracker.reporting.dto.GenerateReportRequestDTO;
 import com.team31.financetracker.reporting.dto.ReportAnalyticsDTO;
+import com.team31.financetracker.reporting.exception.ServiceUnavailableException;
 
 import com.team31.financetracker.reporting.model.ReportType;
 import com.team31.financetracker.reporting.model.ReportStatus;
@@ -236,6 +237,10 @@ public class SavedReportService {
                 .generatedCount(generatedCount)
                 .typeBreakdown(typeBreakdown)
                 .build();
+    }
+
+    public long getSnapshotCount(Long userId) {
+        return repository.countSagaSnapshots(userId);
     }
 
     @Transactional
@@ -498,9 +503,7 @@ public class SavedReportService {
             );
         } catch (feign.FeignException e) {
             log.warn("user-service unavailable: {}", e.getMessage());
-            throw new org.springframework.web.server.ResponseStatusException(
-                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "user-service unavailable"
-            );
+            throw new ServiceUnavailableException("user-service unavailable");
         }
     }
     private void evictWildcardCaches(Long entityId) {

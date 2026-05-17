@@ -58,8 +58,6 @@ public class SagaE2ETest {
         registry.add("spring.rabbitmq.port", rabbitMQ::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitMQ::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbitMQ::getAdminPassword);
-
-        registry.add("spring.data.mongodb.uri", mongoDB::getReplicaSetUrl);
     }
 
     @Autowired

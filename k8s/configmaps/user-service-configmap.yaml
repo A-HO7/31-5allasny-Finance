@@ -8,3 +8,4 @@ data:
   SPRING_RABBITMQ_HOST: "rabbitmq"
   FEIGN_TRANSACTION_SERVICE_URL: "http://transaction-service:8080"
   FEIGN_BUDGET_SERVICE_URL: "http://budget-service:8080"
+  LOKI_URL: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"

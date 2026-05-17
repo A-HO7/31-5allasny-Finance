@@ -537,3 +537,92 @@ data:
       "version": 2,
       "weekStart": ""
     }
+  user-dashboard.json: |
+    {
+      "title": "User Service — Observability",
+      "uid": "user-service-obs",
+      "schemaVersion": 38,
+      "tags": ["Finance Tracker", "user-service", "observability", "S1-EVENTS"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "User Service Error Rate per Minute",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            {
+              "expr": "sum(count_over_time({app=\"financetracker\", service=\"user-service\", level=\"ERROR\"}[1m]))",
+              "legendFormat": "errors/min"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Service Load (Requests per Second)",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (method, uri, status) (rate(http_server_requests_seconds_count{job=\"user-service\"}[5m]))",
+              "legendFormat": "{{method}} {{uri}} {{status}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Event Processing Rate (RabbitMQ)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(rabbitmq_consumed_total{service=\"user-service\"}[5m])",
+              "legendFormat": "consumed"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "P95 Response Time",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, uri, method) (rate(http_server_requests_seconds_bucket{job=\"user-service\"}[5m])))",
+              "legendFormat": "{{method}} {{uri}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Memory Usage (Heap)",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_memory_used_bytes{job=\"user-service\", area=\"heap\"}",
+              "legendFormat": "{{id}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Transaction Saga Consumer Logs",
+          "type": "logs",
+          "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            {
+              "expr": "{service=\"user-service\"} | json | routingKey=~\"transaction\\\\.(completed|voided)\""
+            }
+          ]
+        }
+      ]
+    }

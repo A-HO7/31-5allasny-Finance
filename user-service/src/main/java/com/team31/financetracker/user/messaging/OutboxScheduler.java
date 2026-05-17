@@ -33,11 +33,11 @@ public class OutboxScheduler {
         }
         for (OutboxEvent event : pending) {
             try {
-                objectMapper.readTree(event.getPayload());
+                Object body = objectMapper.readValue(event.getPayload(), Object.class);
                 rabbitTemplate.convertAndSend(
                         UserEventConfig.USER_EVENTS_EXCHANGE,
                         event.getRoutingKey(),
-                        event.getPayload()
+                        body
                 );
                 event.setStatus(OutboxEvent.Status.SENT);
                 outboxEventRepository.save(event);

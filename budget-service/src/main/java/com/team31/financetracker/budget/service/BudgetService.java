@@ -1,5 +1,6 @@
 package com.team31.financetracker.budget.service;
 
+import com.team31.financetracker.contracts.dto.BudgetSummaryDTO;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import com.team31.financetracker.budget.dto.BudgetPerformanceDTO;
 import com.team31.financetracker.budget.dto.BudgetUsageDTO;
@@ -380,6 +381,27 @@ public class BudgetService {
                 "percentUsed", percentUsed,
                 "category", categoryName != null ? categoryName : ""
         ));
+    }
+
+    // ──────────────────── Budget Summary ────────────────────
+
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::summary::' + #userId + '::' + #startDate + '::' + #endDate",
+            unless = "#result == null")
+    public BudgetSummaryDTO getBudgetSummary(Long userId, LocalDate startDate, LocalDate endDate) {
+        com.team31.financetracker.budget.dto.BudgetSummaryProjection proj =
+                budgetRepository.getBudgetSummary(userId, startDate, endDate);
+        return new BudgetSummaryDTO(
+                proj.getTotalBudgeted() != null ? proj.getTotalBudgeted() : 0.0,
+                proj.getTotalSpent() != null ? proj.getTotalSpent() : 0.0,
+                proj.getWeightedAdherenceRate() != null ? proj.getWeightedAdherenceRate() : 0.0
+        );
+    }
+
+    // ──────────────────── Active Budget Count (deactivation pre-check) ────────────────────
+
+    public int countActiveBudgetsByUser(Long userId) {
+        return budgetRepository.countActiveBudgetsByUserId(userId);
     }
 
     // ──────────────────── S4-F12: Budget Usage Timeline ────────────────────

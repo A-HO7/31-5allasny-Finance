@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+        <http>
+            <url>http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push</url>
+        </http>
+        <format>
+            <label>
+                <pattern>app=financetracker,service=budget-service,level=%level,env=k8s</pattern>
+            </label>
+            <message>
+                <pattern>{"timestamp":"%d{ISO8601}","level":"%level","service":"budget-service","thread":"%thread","logger":"%logger{36}","userId":"%X{userId:-}","budgetId":"%X{budgetId:-}","message":"%msg"}</pattern>
+            </message>
+            <sortByTime>true</sortByTime>
+        </format>
+        <batchMaxItems>1000</batchMaxItems>
+        <batchTimeoutMs>1000</batchTimeoutMs>
+        <sendQueueMaxBytes>41943040</sendQueueMaxBytes>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="LOKI"/>
+    </root>
+
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="org.hibernate"       level="WARN"/>
+    <logger name="com.team31.financetracker.budget" level="DEBUG"/>
+    <logger name="feign"                            level="DEBUG"/>
+</configuration>

@@ -23,22 +23,22 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Modifying
     @Transactional
     @Query(value = "UPDATE accounts SET balance = balance + :amount WHERE id = :id", nativeQuery = true)
-    void updateBalance(@Param("id") Long id, @Param("amount") Double amount);
+    int updateBalance(@Param("id") Long id, @Param("amount") Double amount);
 
     @Modifying
     @Transactional
     @Query(value = "UPDATE accounts SET total_transactions = total_transactions + 1 WHERE id = :id", nativeQuery = true)
-    void incrementTotalTransactions(@Param("id") Long id);
+    int incrementTotalTransactions(@Param("id") Long id);
 
     @Modifying
     @Transactional
-    @Query(value = "UPDATE accounts SET total_transactions = total_transactions - 1 WHERE id = :id", nativeQuery = true)
-    void decrementTotalTransactions(@Param("id") Long id);
+    @Query(value = "UPDATE accounts SET total_transactions = GREATEST(total_transactions - 1, 0) WHERE id = :id", nativeQuery = true)
+    int decrementTotalTransactions(@Param("id") Long id);
 
     @Modifying
     @Transactional
     @Query(value = "UPDATE accounts SET last_transaction_date = :timestamp WHERE id = :id", nativeQuery = true)
-    void updateLastTransactionDate(@Param("id") Long id, @Param("timestamp") LocalDateTime timestamp);
+    int updateLastTransactionDate(@Param("id") Long id, @Param("timestamp") LocalDateTime timestamp);
 
     @Modifying
     @Transactional
@@ -48,23 +48,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     WHERE id = :id
     """, nativeQuery = true)
     int updateStatusById(@Param("id") Long id, @Param("status") String status);
-
-
-    @Query(value = """
-        SELECT a.*
-        FROM accounts a
-        JOIN users u ON u.id = a.user_id
-        WHERE u.email = :email
-    """, nativeQuery = true)
-    List<Account> findByUserEmail(@Param("email") String email);
-
-    @Query(value = """
-    SELECT COUNT(*) > 0 
-    FROM information_schema.tables 
-    WHERE table_schema = 'public' 
-      AND table_name = 'transactions'
-    """, nativeQuery = true)
-    boolean doesTransactionsTableExist();
 
     @Query(value = """
             SELECT * FROM accounts
@@ -95,26 +78,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
             @Param("status") String status
     );
 
-    @Query(value = "SELECT a.id, a.name, a.balance, COUNT(t.id) as totalTransactions " +
+    @Query(value = "SELECT a.id, a.name, a.balance, a.total_transactions as totalTransactions " +
             "FROM accounts a " +
-            "LEFT JOIN transactions t ON a.id = t.account_id " +
-            "GROUP BY a.id, a.name, a.balance " +
             "ORDER BY a.balance DESC LIMIT :limit", nativeQuery = true)
     List<Object[]> getTopBalanceAccountsNative(@Param("limit") int limit);
-
-    @Query(value = """
-    SELECT COUNT(*) 
-    FROM users 
-    WHERE id = :userId AND role = 'ADMIN'
-    """, nativeQuery = true)
-    int isAdminUser(@Param("userId") Long userId);
-
-    @Query(value = """
-    SELECT role 
-    FROM users 
-    WHERE id = :userId
-    """, nativeQuery = true)
-    String getUserRoleNative(@Param("userId") Long userId);
 
     @Query("SELECT a FROM Account a LEFT JOIN FETCH a.accountStatements WHERE a.id = :id")
     Optional<Account> findByIdWithStatements(@Param("id") Long id);

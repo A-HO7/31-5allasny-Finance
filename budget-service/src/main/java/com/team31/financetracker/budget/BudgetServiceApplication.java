@@ -5,7 +5,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
 @SpringBootApplication
-@EnableFeignClients
+@EnableFeignClients(clients = {
+        com.team31.financetracker.contracts.feign.UserServiceClient.class
+})
 public class BudgetServiceApplication {
 
     public static void main(String[] args) {

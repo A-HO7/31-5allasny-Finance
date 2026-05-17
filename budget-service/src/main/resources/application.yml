@@ -35,8 +35,8 @@ spring:
     keyspace-name: financeks
     schema-action: CREATE_IF_NOT_EXISTS
     connection:
-      connect-timeout: 50ms
-      init-query-timeout: 50ms
+      connect-timeout: 5s
+      init-query-timeout: 5s
     request:
       timeout: 50ms
 

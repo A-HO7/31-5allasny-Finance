@@ -82,6 +82,7 @@ public class SagaE2ETest {
     }
 
     @Test
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void scenarioA_HappyPath() {
         // Scenario A: Happy path — transaction.completed → PENDING → GENERATED →
         // report.completed published
@@ -97,17 +98,20 @@ public class SagaE2ETest {
 
         consumer.onTransactionCompleted(event);
 
-        // Re-fetch fresh to get the final status
-        entityManager.clear(); // force fresh read from DB
+        // Transaction has now committed — query directly via native SQL to bypass JPA cache
+        String status = (String) entityManager.createNativeQuery(
+            "SELECT status FROM saved_reports WHERE report_config->>'transactionId' = :txnId")
+            .setParameter("txnId", transactionId.toString())
+            .getSingleResult();
+
+        assertThat(status).isEqualTo("GENERATED");
+
+        // Also verify publisher calls
         Optional<SavedReport> reportOpt = reportRepository.findSagaReportByTransactionId(transactionId);
         assertThat(reportOpt).isPresent();
         SavedReport report = reportOpt.get();
-        assertThat(report.getStatus()).isEqualTo(ReportStatus.GENERATED);
-
-        // Verify publisher calls
         verify(reportEventPublisher).publishReportInitiated(report.getId(), transactionId, userId);
-        verify(reportEventPublisher).publishReportCompleted(eq(report.getId()), eq(transactionId), eq(userId), any(),
-                any());
+        verify(reportEventPublisher).publishReportCompleted(eq(report.getId()), eq(transactionId), eq(userId), any(), any());
     }
 
     @Test

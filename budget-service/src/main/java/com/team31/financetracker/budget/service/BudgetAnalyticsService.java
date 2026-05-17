@@ -26,15 +26,18 @@ public class BudgetAnalyticsService implements BudgetSubject {
     private final BudgetRepository budgetRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final UserServiceClient userServiceClient;
+    private final BudgetService budgetService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
     public BudgetAnalyticsService(BudgetRepository budgetRepository,
                                   RedisTemplate<String, Object> redisTemplate,
                                   MongoEventLogger mongoEventLogger,
-                                  UserServiceClient userServiceClient) {
+                                  UserServiceClient userServiceClient,
+                                  BudgetService budgetService) {
         this.budgetRepository = budgetRepository;
         this.redisTemplate = redisTemplate;
         this.userServiceClient = userServiceClient;
+        this.budgetService = budgetService;
         registerObserver(mongoEventLogger);
     }
 
@@ -77,6 +80,8 @@ public class BudgetAnalyticsService implements BudgetSubject {
         } catch (FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service unavailable");
         }
+        // M3: verify the user exists via BudgetService (all Feign calls centralised there)
+        budgetService.verifyUserExists(userId);
 
         String cacheKey = "budget-service::S4-F10::" + userId + "::" + startDate + "::" + endDate;
 

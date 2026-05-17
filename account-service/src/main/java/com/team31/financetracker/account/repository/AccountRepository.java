@@ -120,16 +120,6 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     Optional<Account> findByIdWithStatements(@Param("id") Long id);
 
     @Query(value = """
-    SELECT role 
-    FROM users 
-    WHERE id = :userId
-    """, nativeQuery = true)
-    String getUserRoleNative(@Param("userId") Long userId);
-
-    @Query("SELECT a FROM Account a LEFT JOIN FETCH a.accountStatements WHERE a.id = :id")
-    Optional<Account> findByIdWithStatements(@Param("id") Long id);
-
-    @Query(value = """
     SELECT COUNT(s.id)
     FROM account_statements s
     WHERE s.account_id = :accountId

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  logback-spring.xml — transaction-service (S3-READ-DB, M3)
+  Sends structured JSON logs to Loki via the Loki4J appender.
+  Console appender retained for local dev / kubectl logs.
+-->
+<configuration>
+
+    <!-- ── Properties ───────────────────────────────────────────────────── -->
+    <springProperty scope="context" name="appName"
+                    source="spring.application.name"
+                    defaultValue="transaction-service"/>
+
+    <!-- ── Console appender (local dev + kubectl logs) ─────────────────── -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ── Loki4J appender — pushes to Loki inside Kubernetes ──────────── -->
+    <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+        <http>
+            <url>http://loki:3100/loki/api/v1/push</url>
+        </http>
+        <format>
+            <label>
+                <!--
+                  Static labels — indexed by Loki for fast stream selection.
+                  LogQL example: {app="transaction-service", env="k8s"}
+                -->
+                <pattern>app=${appName},env=k8s,level=%level</pattern>
+                <readMarkers>true</readMarkers>
+            </label>
+            <message>
+                <!-- JSON structured log line for each event -->
+                <pattern>
+                    {
+                      "timestamp": "%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}",
+                      "level":     "%level",
+                      "thread":    "%thread",
+                      "logger":    "%logger{36}",
+                      "traceId":   "%X{traceId:-}",
+                      "spanId":    "%X{spanId:-}",
+                      "correlationId": "%X{correlationId:-}",
+                      "message":   "%message",
+                      "exception": "%exception{10}"
+                    }
+                </pattern>
+            </message>
+            <!-- Use Protobuf encoding for Loki (more efficient than JSON push) -->
+            <sortByTime>true</sortByTime>
+        </format>
+        <!-- Tune batch size to avoid overwhelming Loki under burst load -->
+        <batchMaxItems>1000</batchMaxItems>
+        <batchTimeoutMs>5000</batchTimeoutMs>
+    </appender>
+
+    <!-- ── Async wrapper around Loki — avoids blocking request threads ─── -->
+    <appender name="LOKI_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="LOKI"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <!-- ── Noisy framework loggers — reduce to WARN in production ───────── -->
+    <logger name="org.springframework"           level="WARN"/>
+    <logger name="org.hibernate"                 level="WARN"/>
+    <logger name="org.apache.kafka"              level="WARN"/>
+    <logger name="com.rabbitmq"                  level="WARN"/>
+    <logger name="org.neo4j"                     level="WARN"/>
+    <logger name="feign"                         level="INFO"/>
+
+    <!-- ── Business logger — DEBUG in dev, INFO in prod ────────────────── -->
+    <logger name="com.team31.financetracker.transaction" level="DEBUG"/>
+
+    <!-- ── Root — INFO minimum, both appenders active ───────────────────── -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="LOKI_ASYNC"/>
+    </root>
+
+</configuration>

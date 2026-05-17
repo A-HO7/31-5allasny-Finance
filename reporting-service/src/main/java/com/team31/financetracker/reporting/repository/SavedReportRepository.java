@@ -57,6 +57,9 @@ public interface SavedReportRepository extends JpaRepository<SavedReport, Long> 
                                              @Param("periodStart") java.time.LocalDate periodStart,
                                              @Param("periodEnd") java.time.LocalDate periodEnd);
 
+    @Query(value = "SELECT COUNT(*) FROM saved_reports WHERE user_id = :userId AND status = 'GENERATED' AND report_config ->> 'snapshotKind' = 'audit'", nativeQuery = true)
+    long countSagaSnapshots(@Param("userId") Long userId);
+
     @Query(value =
         "SELECT " +
         "  COUNT(*) AS totalReports, " +

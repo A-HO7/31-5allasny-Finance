@@ -11,6 +11,7 @@ import com.team31.financetracker.account.repository.AccountRepository;
 import com.team31.financetracker.account.repository.AccountSearchRepository;
 import com.team31.financetracker.account.repository.AccountStatementRepository;
 import com.team31.financetracker.account.util.CacheInvalidator;
+import com.team31.financetracker.contracts.events.AccountRatedEvent;
 import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
 import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import jakarta.transaction.Transactional;
@@ -45,6 +46,8 @@ import java.util.stream.Collectors;
 @Service
 public class AccountService {
     private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+    private static final String DEFAULT_SUMMARY_START_DATE = "1970-01-01";
+    private static final String DEFAULT_SUMMARY_END_DATE = "2099-12-31";
 
     private final AccountRepository accountRepository;
     private final AccountStatementRepository accountStatementRepository;
@@ -191,7 +194,16 @@ public class AccountService {
     }
 
     public List<Account> getByUserEmail(String email) {
-        return accountRepository.findByUserEmail(email);
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email is required");
+        }
+        try {
+            return userServiceClient.searchUsers(null, email.trim(), null).stream()
+                    .flatMap(user -> accountRepository.findByUserId(user.getId()).stream())
+                    .toList();
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Error looking up user via user-service");
+        }
     }
 
     public int updateStatusById(Long id, AccountStatus status) {
@@ -249,6 +261,11 @@ public class AccountService {
         account.setTotalRatings(nextTotal);
         Account saved = accountRepository.save(account);
         indexAccount(saved);
+        rabbitTemplate.convertAndSend(
+                "account.events",
+                "account.rated",
+                new AccountRatedEvent(accountId, statementId, rating)
+        );
         notifyAccountEvent(AccountEventActions.RATED, saved, Map.of(
                 "statementId", statementId,
                 "rating", ratingInt,
@@ -505,24 +522,10 @@ public class AccountService {
                 
                 log.info("Successfully retrieved transaction summary from transaction-service for account: {}", accountId);
 
-                return AccountSummaryDTO.builder()
-                        .accountId(account.getId())
-                        .name(account.getName())
-                        .totalDeposits(dto.getTotalDeposits() != null ? dto.getTotalDeposits() : 0.0)
-                        .totalWithdrawals(dto.getTotalWithdrawals() != null ? dto.getTotalWithdrawals() : 0.0)
-                        .netChange(dto.getNetChange() != null ? dto.getNetChange() : 0.0)
-                        .totalTransactions(dto.getTransactionCount() != null ? dto.getTransactionCount() : 0L)
-                        .build();
+                return toAccountSummary(account, dto);
             } catch (FeignException.NotFound e) {
                 log.warn("transaction-service returned 404 for account {}, providing zeroed summary.", accountId);
-                return AccountSummaryDTO.builder()
-                        .accountId(account.getId())
-                        .name(account.getName())
-                        .totalDeposits(0.0)
-                        .totalWithdrawals(0.0)
-                        .netChange(0.0)
-                        .totalTransactions(0L)
-                        .build();
+                return zeroAccountSummary(account);
             } catch (FeignException e) {
                 log.warn("transaction-service unavailable for account {}: {}", accountId, e.getMessage());
                 throw new ServiceUnavailableException("Transaction service temporarily unavailable");
@@ -574,7 +577,11 @@ public class AccountService {
     public AccountPerformanceDashboardDTO getDashboardCached(Long accountId, String name, String type, Double balance) {
         AccountTransactionSummaryDTO summary;
         try {
-            summary = transactionServiceClient.getAccountTransactionSummary(accountId, null, null);
+            summary = transactionServiceClient.getAccountTransactionSummary(
+                    accountId,
+                    DEFAULT_SUMMARY_START_DATE,
+                    DEFAULT_SUMMARY_END_DATE
+            );
         } catch (feign.FeignException.NotFound e) {
             summary = AccountTransactionSummaryDTO.builder()
                 .totalDeposits(0.0)
@@ -664,13 +671,13 @@ public class AccountService {
         List<Account> activeAccounts = accountRepository.findByUserIdAndStatus(userId, AccountStatus.ACTIVE);
 
         double totalActiveBalance = activeAccounts.stream()
-                .mapToDouble(Account::getBalance)
+                .mapToDouble(account -> account.getBalance() != null ? account.getBalance() : 0.0)
                 .sum();
 
         Map<String, Double> currencyBreakdown = activeAccounts.stream()
                 .collect(Collectors.groupingBy(
-                        Account::getCurrency,
-                        Collectors.summingDouble(Account::getBalance)
+                        account -> account.getCurrency() != null ? account.getCurrency() : "UNKNOWN",
+                        Collectors.summingDouble(account -> account.getBalance() != null ? account.getBalance() : 0.0)
                 ));
 
         return new AccountBalanceSummaryDTO(
@@ -699,9 +706,34 @@ public class AccountService {
 
     public boolean doAllAccountsExist(List<Long> ids) {
         long foundCount = accountRepository.countByIdIn(ids);
-        boolean allExist = foundCount == ids.size();
-        return allExist;
+        return foundCount == ids.size();
     }
+
+    private AccountSummaryDTO zeroAccountSummary(Account account) {
+        return AccountSummaryDTO.builder()
+                .accountId(account.getId())
+                .name(account.getName())
+                .totalDeposits(0.0)
+                .totalWithdrawals(0.0)
+                .netChange(0.0)
+                .totalTransactions(0L)
+                .build();
+    }
+
+    private AccountSummaryDTO toAccountSummary(Account account, AccountTransactionSummaryDTO dto) {
+        if (dto == null) {
+            return zeroAccountSummary(account);
+        }
+        return AccountSummaryDTO.builder()
+                .accountId(account.getId())
+                .name(account.getName())
+                .totalDeposits(dto.getTotalDeposits() != null ? dto.getTotalDeposits() : 0.0)
+                .totalWithdrawals(dto.getTotalWithdrawals() != null ? dto.getTotalWithdrawals() : 0.0)
+                .netChange(dto.getNetChange() != null ? dto.getNetChange() : 0.0)
+                .totalTransactions(dto.getTransactionCount() != null ? dto.getTransactionCount() : 0L)
+                .build();
+    }
+
     public OwnerDTO getAccountOwner(Long accountId) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));

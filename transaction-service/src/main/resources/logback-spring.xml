@@ -21,29 +21,28 @@
     <!-- ── Loki4J appender — pushes to Loki inside Kubernetes ──────────── -->
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
         <http>
-            <url>http://loki:3100/loki/api/v1/push</url>
+            <url>http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push</url>
         </http>
         <format>
             <label>
-                <!--
-                  Static labels — indexed by Loki for fast stream selection.
-                  LogQL example: {app="transaction-service", env="k8s"}
-                -->
-                <pattern>app=${appName},env=k8s,level=%level</pattern>
-                <readMarkers>true</readMarkers>
+                <pattern>app=financetracker,service=${appName},level=%level,env=k8s</pattern>
             </label>
             <message>
-                <!-- JSON structured log line for each event -->
                 <pattern>
                     {
-                      "timestamp": "%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}",
-                      "level":     "%level",
-                      "thread":    "%thread",
-                      "logger":    "%logger{36}",
-                      "traceId":   "%X{traceId:-}",
-                      "spanId":    "%X{spanId:-}",
+                      "timestamp": "%d{ISO8601}",
+                      "level": "%level",
+                      "service": "${appName}",
+                      "thread": "%thread",
+                      "logger": "%logger{36}",
                       "correlationId": "%X{correlationId:-}",
-                      "message":   "%message",
+                      "userId": "%X{userId:-}",
+                      "accountId": "%X{accountId:-}",
+                      "transactionId": "%X{transactionId:-}",
+                      "budgetId": "%X{budgetId:-}",
+                      "reportId": "%X{reportId:-}",
+                      "routingKey": "%X{routingKey:-}",
+                      "message": "%msg",
                       "exception": "%exception{10}"
                     }
                 </pattern>

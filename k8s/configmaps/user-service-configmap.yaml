@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-configmap
+  namespace: financetracker
+data:
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://user-postgres:5432/financedb-users"
+  SPRING_RABBITMQ_HOST: "rabbitmq"
+  FEIGN_TRANSACTION_SERVICE_URL: "http://transaction-service:8080"
+  FEIGN_BUDGET_SERVICE_URL: "http://budget-service:8080"

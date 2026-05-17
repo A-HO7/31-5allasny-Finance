@@ -17,4 +17,8 @@ data:
       - job_name: budget-service
         static_configs:
           - targets: ["budget-service.finance-tracker.svc.cluster.local:8080"]
+      # S3-INFRA scrape job
+      - job_name: transaction-service
+        static_configs:
+          - targets: ["transaction-service.finance-tracker.svc.cluster.local:8080"]
         metrics_path: /actuator/prometheus

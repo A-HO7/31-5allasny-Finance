@@ -35,6 +35,7 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     @Query(value = "SELECT " +
             "b.id AS budgetId, " +
+            "b.user_id AS userId, " +
             "CAST(b.user_id AS varchar) AS userName, " +
             "b.category AS category, " +
             "b.budget_amount AS budgetAmount, " +
@@ -141,6 +142,35 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     @Query(value = "SELECT period, COUNT(*) FROM budgets WHERE user_id = :userId GROUP BY period", nativeQuery = true)
     List<Object[]> countBudgetsByPeriod(@Param("userId") Long userId);
+
+    @Query(value = "SELECT CAST(COUNT(*) AS integer) FROM budgets WHERE user_id = :userId AND status = 'ACTIVE'", nativeQuery = true)
+    int countActiveBudgetsByUserId(@Param("userId") Long userId);
+
+    @Query(value = """
+    SELECT
+        CAST(COALESCE(SUM(budget_amount), 0.0) AS double precision) AS totalBudgeted,
+        CAST(COALESCE(SUM(spent_amount), 0.0) AS double precision) AS totalSpent,
+        CASE
+            WHEN SUM(COALESCE(CAST(metadata->>'healthWeight' AS double precision), 1.0)) = 0 THEN 0.0
+            ELSE SUM(
+                CASE
+                    WHEN spent_amount IS NULL OR spent_amount <= 0 THEN 1.0
+                    WHEN spent_amount <= budget_amount THEN 1.0
+                    ELSE CAST(budget_amount AS double precision) / spent_amount
+                END
+                * COALESCE(CAST(metadata->>'healthWeight' AS double precision), 1.0)
+            ) / SUM(COALESCE(CAST(metadata->>'healthWeight' AS double precision), 1.0))
+        END AS weightedAdherenceRate
+    FROM budgets
+    WHERE user_id = :userId
+      AND (:startDate IS NULL OR start_date >= :startDate)
+      AND (:endDate IS NULL OR end_date <= :endDate)
+    """, nativeQuery = true)
+    com.team31.financetracker.budget.dto.BudgetSummaryProjection getBudgetSummary(
+            @Param("userId") Long userId,
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate
+    );
 }
 
 

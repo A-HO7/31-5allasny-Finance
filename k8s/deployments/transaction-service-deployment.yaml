@@ -2,9 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: transaction-service
-  namespace: finance-tracker
-  labels:
-    app: transaction-service
+  namespace: financetracker
 spec:
   replicas: 1
   selector:
@@ -18,21 +16,28 @@ spec:
       containers:
         - name: transaction-service
           image: transaction-service:latest
-          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
           envFrom:
             - configMapRef:
                 name: transaction-service-configmap
-          ports:
-            - containerPort: 8080
+            - secretRef:
+                name: transaction-postgres-secret
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: jwt-secret
           readinessProbe:
             httpGet:
-              path: /actuator/health/readiness
+              path: /actuator/health
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: /actuator/health
               port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 20
+            initialDelaySeconds: 60
+            periodSeconds: 30

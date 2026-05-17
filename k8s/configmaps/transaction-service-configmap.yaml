@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transaction-service-configmap
+  namespace: finance-tracker
+  labels:
+    app: transaction-service
+data:
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://transaction-postgres:5432/financedb-transactions"
+  SPRING_DATASOURCE_USERNAME: "postgres"
+  SPRING_DATASOURCE_PASSWORD: "postgres"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  JWT_SECRET: "localdevsecretnotsecure"
+  SPRING_DATA_MONGODB_URI: "mongodb://root:rootpass@mongodb:27017/financemongo?authSource=admin"
+  SPRING_REDIS_HOST: "redis"
+  SPRING_REDIS_PORT: "6379"

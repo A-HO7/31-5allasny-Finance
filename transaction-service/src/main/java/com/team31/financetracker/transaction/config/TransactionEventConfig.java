@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-public class RabbitMQConfig {
+public class TransactionEventConfig {
 
     // Exchanges (source services)
     @Bean

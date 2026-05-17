@@ -20,7 +20,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -45,19 +44,19 @@ public class SagaE2ETest {
     @Container
     static RabbitMQContainer rabbitMQ = new RabbitMQContainer("rabbitmq:3-management-alpine");
 
-    @Container
-    static MongoDBContainer mongoDB = new MongoDBContainer("mongo:6.0");
-
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-
         registry.add("spring.rabbitmq.host", rabbitMQ::getHost);
         registry.add("spring.rabbitmq.port", rabbitMQ::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitMQ::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbitMQ::getAdminPassword);
+        // MongoDB: point to a non-existent host with 500ms timeout
+        // Observer is soft-fail so this is fine per spec
+        registry.add("spring.data.mongodb.uri", 
+            () -> "mongodb://localhost:27017/test?serverSelectionTimeoutMS=500&connectTimeoutMS=500");
     }
 
     @Autowired

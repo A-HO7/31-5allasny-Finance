@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: budget-service-configmap
+  namespace: financetracker
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://budget-postgres:5432/financedb-budgets
+  SPRING_DATASOURCE_USERNAME: postgres
+  SPRING_RABBITMQ_HOST: rabbitmq
+  REDIS_HOST: redis
+  CASSANDRA_HOST: cassandra
+  MONGO_HOST: mongo
+  FEIGN_USER_SERVICE_URL: http://user-service:8080

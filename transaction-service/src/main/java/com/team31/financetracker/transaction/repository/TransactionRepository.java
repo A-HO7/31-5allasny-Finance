@@ -100,9 +100,104 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
        List<Object[]> countTransactionsByStatus(@Param("start") LocalDateTime start,
                      @Param("endExclusive") LocalDateTime endExclusive);
 
-       // ── S3-F11: get userId for transaction via accounts join ───────────────────
 
-       @Query(value = "SELECT a.user_id FROM transactions t JOIN accounts a ON t.account_id = a.id WHERE t.id = :transactionId", nativeQuery = true)
-       Optional<Long> findUserIdByTransactionId(@Param("transactionId") Long transactionId);
+
+       // ── M3 Internal endpoints (called by other services via Feign) ───────────
+
+       /** GET /api/transactions/user/{userId}/summary */
+       @Query(value = "SELECT " +
+               "  COUNT(*)                                                                  AS totalTransactions, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END)                         AS completedTransactions, " +
+               "  COUNT(CASE WHEN status = 'VOIDED'    THEN 1 END)                         AS voidedTransactions, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalIncome, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalExpenses " +
+               "FROM transactions WHERE user_id = :userId",
+               nativeQuery = true)
+       Map<String, Object> getUserTransactionSummary(@Param("userId") Long userId);
+
+       /** GET /api/transactions/user/{userId}/net-income?startDate=&endDate= */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netSavings, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions " +
+               "WHERE user_id = :userId " +
+               "  AND transaction_date >= :start AND transaction_date < :endExclusive",
+               nativeQuery = true)
+       Map<String, Object> getUserNetIncome(@Param("userId") Long userId,
+                                            @Param("start") LocalDateTime start,
+                                            @Param("endExclusive") LocalDateTime endExclusive);
+
+       /** GET /api/transactions/user/{userId}/completed-count */
+       @Query(value = "SELECT COUNT(*) FROM transactions " +
+               "WHERE user_id = :userId AND status = 'COMPLETED'",
+               nativeQuery = true)
+       long countCompletedTransactionsByUserId(@Param("userId") Long userId);
+
+       /** GET /api/transactions/account/{accountId}/summary?startDate=&endDate= */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalDeposits, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalWithdrawals, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netChange, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions " +
+               "WHERE account_id = :accountId " +
+               "  AND transaction_date >= :start AND transaction_date < :endExclusive",
+               nativeQuery = true)
+       Map<String, Object> getAccountTransactionSummary(@Param("accountId") Long accountId,
+                                                        @Param("start") LocalDateTime start,
+                                                        @Param("endExclusive") LocalDateTime endExclusive);
+
+       /** GET /api/transactions/account/{accountId}/summary (all time) */
+       @Query(value = "SELECT " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalDeposits, " +
+               "  COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS totalWithdrawals, " +
+               "  COALESCE(SUM(CASE WHEN type = 'INCOME'  AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) " +
+               "  - COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND status = 'COMPLETED' THEN amount ELSE 0 END), 0) AS netChange, " +
+               "  COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS transactionCount " +
+               "FROM transactions WHERE account_id = :accountId",
+               nativeQuery = true)
+       Map<String, Object> getAccountTransactionSummaryAllTime(@Param("accountId") Long accountId);
+
+       /** GET /api/transactions/account/{accountId}/pending-count */
+       @Query(value = "SELECT COUNT(*) FROM transactions " +
+               "WHERE account_id = :accountId AND status = 'PENDING'",
+               nativeQuery = true)
+       long countPendingTransactionsByAccountId(@Param("accountId") Long accountId);
+
+       // Void all PENDING transactions for a user (used by user.deactivated consumer)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE user_id = :userId AND status = 'PENDING'", nativeQuery = true)
+       int voidPendingByUserId(@Param("userId") Long userId);
+
+       // Void all PENDING transactions for an account (used by account.status-changed
+       // consumer)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE account_id = :accountId AND status = 'PENDING'", nativeQuery = true)
+       int voidPendingByAccountId(@Param("accountId") Long accountId);
+
+       // Saga feedback state transitions (idempotent)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORT_PENDING' WHERE id = :id AND status = 'COMPLETING'", nativeQuery = true)
+       int markReportPendingIfCompleting(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORTED' WHERE id = :id AND status = 'REPORT_PENDING'", nativeQuery = true)
+       int markReportedIfReportPending(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORT_FAILED' WHERE id = :id AND status = 'REPORT_PENDING'", nativeQuery = true)
+       int markReportFailedIfReportPending(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REVERTED' WHERE id = :id AND status = 'REPORT_FAILED'", nativeQuery = true)
+       int markRevertedIfReportFailed(@Param("id") Long id);
 
 }

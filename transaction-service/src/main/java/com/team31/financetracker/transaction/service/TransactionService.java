@@ -10,6 +10,7 @@ import com.team31.financetracker.transaction.dto.TransferEstimateDTO;
 import com.team31.financetracker.transaction.dto.TransferEstimateRequest;
 import com.team31.financetracker.transaction.dto.CategoryRecommendationDTO;
 import com.team31.financetracker.contracts.dto.AccountsExistDTO;
+import com.team31.financetracker.contracts.dto.OwnerDTO;
 import com.team31.financetracker.contracts.dto.AccountDTO;
 import com.team31.financetracker.contracts.dto.BudgetDTO;
 import com.team31.financetracker.contracts.events.TransactionCompletedEvent;
@@ -17,7 +18,6 @@ import com.team31.financetracker.contracts.dto.UserDTO;
 import com.team31.financetracker.contracts.events.TransactionApprovedEvent;
 import com.team31.financetracker.contracts.events.TransactionVoidedEvent;
 import com.team31.financetracker.contracts.feign.BudgetServiceClient;
-import com.team31.financetracker.contracts.dto.OwnerDTO;
 import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.contracts.feign.AccountServiceClient;
 import com.team31.financetracker.transaction.model.Transaction;
@@ -711,6 +711,34 @@ public class TransactionService {
                 .filter(dto -> categoryType == null
                         || categoryType.equals(dto.categoryType()))
                 .collect(Collectors.toList());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // M3 Internal Endpoints
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public Map<String, Object> getUserTransactionSummary(Long userId) {
+        return transactionRepository.getUserTransactionSummary(userId);
+    }
+
+    public Map<String, Object> getUserNetIncome(Long userId, LocalDateTime start, LocalDateTime endExclusive) {
+        return transactionRepository.getUserNetIncome(userId, start, endExclusive);
+    }
+
+    public long countCompletedTransactionsByUserId(Long userId) {
+        return transactionRepository.countCompletedTransactionsByUserId(userId);
+    }
+
+    public Map<String, Object> getAccountTransactionSummaryAllTime(Long accountId) {
+        return transactionRepository.getAccountTransactionSummaryAllTime(accountId);
+    }
+
+    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start, LocalDateTime endExclusive) {
+        return transactionRepository.getAccountTransactionSummary(accountId, start, endExclusive);
+    }
+
+    public long countPendingTransactionsByAccountId(Long accountId) {
+        return transactionRepository.countPendingTransactionsByAccountId(accountId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

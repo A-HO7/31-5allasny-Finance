@@ -1,4 +1,4 @@
-package com.team31.financetracker.transaction.listener;
+package com.team31.financetracker.transaction.saga;
 
 import com.team31.financetracker.contracts.events.UserDeactivatedEvent;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -11,16 +11,16 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
-public class TransactionUserListener {
+public class UserEventConsumer {
 
-    private static final Logger log = LoggerFactory.getLogger(TransactionUserListener.class);
+    private static final Logger log = LoggerFactory.getLogger(UserEventConsumer.class);
 
     private final TransactionRepository transactionRepository;
     private final CacheInvalidationService cacheInvalidationService;
 
     private final ObjectMapper objectMapper;
 
-    public TransactionUserListener(TransactionRepository transactionRepository,
+    public UserEventConsumer(TransactionRepository transactionRepository,
             CacheInvalidationService cacheInvalidationService,
             ObjectMapper objectMapper) {
         this.transactionRepository = transactionRepository;
@@ -32,9 +32,10 @@ public class TransactionUserListener {
     @Transactional
     public void onUserEvent(org.springframework.amqp.core.Message message,
             @org.springframework.messaging.handler.annotation.Header(org.springframework.amqp.support.AmqpHeaders.RECEIVED_ROUTING_KEY) String routingKey) {
-        
+
         byte[] body = message.getBody();
-        if (body == null || body.length == 0) return;
+        if (body == null || body.length == 0)
+            return;
         String text = new String(body, java.nio.charset.StandardCharsets.UTF_8).trim();
 
         try {
@@ -54,7 +55,8 @@ public class TransactionUserListener {
                 cacheInvalidationService.evictF5();
                 cacheInvalidationService.evictF6();
             } else if ("user.registered".equals(routingKey)) {
-                com.team31.financetracker.contracts.events.UserRegisteredEvent event = objectMapper.readValue(text, com.team31.financetracker.contracts.events.UserRegisteredEvent.class);
+                com.team31.financetracker.contracts.events.UserRegisteredEvent event = objectMapper.readValue(text,
+                        com.team31.financetracker.contracts.events.UserRegisteredEvent.class);
                 log.info("Received user.registered for userId={}", event.userId());
                 // No specific action required for transaction-service on user registration
             } else {

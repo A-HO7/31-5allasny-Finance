@@ -30,9 +30,11 @@ import com.team31.financetracker.transaction.outbox.OutboxRepository;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
+import com.team31.financetracker.transaction.saga.SagaTriggerService;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
 import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
+import com.team31.financetracker.transaction.messaging.publishers.EventPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import feign.FeignException;
@@ -64,6 +66,7 @@ public class TransactionService {
     private final OutboxRepository outboxRepository;
     private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final SagaTriggerService sagaTriggerService;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
     private final List<EntityObserver> observers = new ArrayList<>();
@@ -78,7 +81,8 @@ public class TransactionService {
             EventPublisher eventPublisher,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SagaTriggerService sagaTriggerService) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
@@ -89,6 +93,7 @@ public class TransactionService {
         this.eventPublisher = eventPublisher;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
+        this.sagaTriggerService = sagaTriggerService;
         registerObserver(mongoEventLogger);
     }
 
@@ -307,84 +312,7 @@ public class TransactionService {
 
     @Transactional
     public Transaction completeTransaction(Long id) {
-        Transaction transaction = getTransactionById(id);
-
-        if (transaction.getStatus() != TransactionStatus.APPROVED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only APPROVED transactions can be completed");
-        }
-
-        Long userId = transaction.getUserId();
-
-        try {
-            UserDTO user = userServiceClient.getUser(userId);
-            if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "User must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "User must be ACTIVE");
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not verify user");
-        }
-
-        try {
-            AccountDTO account = accountServiceClient.getAccount(transaction.getAccountId());
-            if (!"ACTIVE".equalsIgnoreCase(account.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Account must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Account must be ACTIVE");
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not verify account");
-        }
-
-        String category = transaction.getCategory() != null ? transaction.getCategory().name() : null;
-        try {
-            BudgetDTO budget = budgetServiceClient.getActiveBudgetForUser(userId, category);
-            if (budget != null && budget.getStatus() != null
-                    && !"ACTIVE".equalsIgnoreCase(budget.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Budget must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            // No active budget is acceptable; continue with completion.
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Could not verify budget");
-        }
-
-        transaction.setStatus(TransactionStatus.COMPLETING);
-        transaction.setCompletedAt(LocalDateTime.now());
-        transaction = transactionRepository.save(transaction);
-
-        try {
-            String payload = objectMapper.writeValueAsString(
-                    new TransactionCompletedEvent(
-                            transaction.getId(),
-                            transaction.getUserId(),
-                            transaction.getAccountId(),
-                            transaction.getCategory() != null ? transaction.getCategory().name() : null,
-                            transaction.getType().name(),
-                            transaction.getAmount(),
-                            transaction.getCompletedAt()));
-            outboxRepository.save(new OutboxEvent(
-                    "transaction.events",
-                    "transaction.completed",
-                    payload));
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not queue completion event");
-        }
-
-        notifyObservers("COMPLETING", transaction);
-        cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
-        return transaction;
+        return sagaTriggerService.completeTransaction(id);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -733,7 +661,8 @@ public class TransactionService {
         return transactionRepository.getAccountTransactionSummaryAllTime(accountId);
     }
 
-    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start, LocalDateTime endExclusive) {
+    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start,
+            LocalDateTime endExclusive) {
         return transactionRepository.getAccountTransactionSummary(accountId, start, endExclusive);
     }
 

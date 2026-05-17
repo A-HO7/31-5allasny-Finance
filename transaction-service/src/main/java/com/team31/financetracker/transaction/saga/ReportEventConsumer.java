@@ -1,4 +1,4 @@
-package com.team31.financetracker.transaction.listener;
+package com.team31.financetracker.transaction.saga;
 
 import com.team31.financetracker.contracts.events.ReportCompletedEvent;
 import com.team31.financetracker.contracts.events.ReportFailedEvent;
@@ -11,8 +11,7 @@ import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import com.team31.financetracker.transaction.model.Transaction;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
-import com.team31.financetracker.transaction.service.EventPublisher;
-import com.team31.financetracker.transaction.service.TransactionService;
+import com.team31.financetracker.transaction.messaging.publishers.EventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -20,15 +19,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-public class TransactionSagaFeedbackListener {
+public class ReportEventConsumer {
 
-    private static final Logger log = LoggerFactory.getLogger(TransactionSagaFeedbackListener.class);
+    private static final Logger log = LoggerFactory.getLogger(ReportEventConsumer.class);
 
     private final TransactionRepository transactionRepository;
     private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
-    public TransactionSagaFeedbackListener(TransactionRepository transactionRepository,
+    public ReportEventConsumer(TransactionRepository transactionRepository,
             EventPublisher eventPublisher,
             ObjectMapper objectMapper) {
         this.transactionRepository = transactionRepository;

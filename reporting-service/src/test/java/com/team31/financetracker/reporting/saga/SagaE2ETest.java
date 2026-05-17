@@ -56,6 +56,7 @@ public class SagaE2ETest {
         // Observer is soft-fail so this is fine per spec
         registry.add("spring.data.mongodb.uri", 
             () -> "mongodb://localhost:27017/test?serverSelectionTimeoutMS=500&connectTimeoutMS=500");
+        registry.add("spring.jpa.properties.hibernate.enable_lazy_load_no_trans", () -> "true");
     }
 
     @Autowired

@@ -21,15 +21,18 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
 
     private static final Logger log = LoggerFactory.getLogger(AccountController.class);
+    private static final int MAX_ACCOUNT_EXISTS_IDS = 100;
 
     private final AccountService accountService;
     private final AccountStatementService accountStatementService;
@@ -244,17 +247,23 @@ public class AccountController {
     @GetMapping("/user/{userId}/balance-summary")
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public ResponseEntity<AccountBalanceSummaryDTO> getBalanceSummary(@PathVariable Long userId) {
+        Caller caller = callerFromContext();
+        if (!caller.isAdmin() && !Objects.equals(caller.userId, userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot access another user's balance summary");
+        }
+
         AccountBalanceSummaryDTO summaryDTO = accountService.getBalanceSummary(userId);
         if (summaryDTO == null) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(summaryDTO);
     }
-    // Add a tiny holder inside AccountController
+
     private static final class Caller {
         final Long userId;
         final String role;
         Caller(Long userId, String role) { this.userId = userId; this.role = role; }
+        boolean isAdmin() { return "ADMIN".equals(role); }
     }
 
     /** Extract calling user's id + role, throw 401 if not authenticated. */
@@ -264,7 +273,7 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
 
-        // details may be Long, Integer, or String depending on filter — be permissive
+        // details may be Long, Integer, or String depending on filter.
         Object details = auth.getDetails();
         Long uid = null;
         if (details instanceof Long l) {
@@ -275,7 +284,6 @@ public class AccountController {
             try { uid = Long.parseLong(s); } catch (NumberFormatException ignored) { /* keep null */ }
         }
 
-        // Role extraction: find any authority and strip ROLE_ prefix
         String role = auth.getAuthorities().stream()
                 .findFirst()
                 .map(a -> a.getAuthority())
@@ -289,8 +297,29 @@ public class AccountController {
     @GetMapping("/exists")
     @PreAuthorize("hasAnyRole('PERSONAL','BUSINESS','ADMIN')")
     public ResponseEntity<AccountsExistDTO> accountsExist(@RequestParam List<Long> ids) {
-        boolean allExist = accountService.doAllAccountsExist(ids);
+        List<Long> normalizedIds = normalizeAccountIds(ids);
+        boolean allExist = accountService.doAllAccountsExist(normalizedIds);
         return ResponseEntity.ok(new AccountsExistDTO(allExist));
+    }
+
+    private static List<Long> normalizeAccountIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one account id is required");
+        }
+        if (ids.size() > MAX_ACCOUNT_EXISTS_IDS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot check more than 100 account ids at once");
+        }
+
+        Set<Long> uniqueIds = new LinkedHashSet<>();
+        for (Long id : ids) {
+            if (id == null || id <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account ids must be positive numbers");
+            }
+            if (!uniqueIds.add(id)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate account ids are not allowed");
+            }
+        }
+        return List.copyOf(uniqueIds);
     }
 
 }

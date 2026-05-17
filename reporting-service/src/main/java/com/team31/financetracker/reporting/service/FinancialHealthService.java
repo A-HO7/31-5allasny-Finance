@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.slf4j.MDC;
 
 /**
  * Service for S5-F10: Get Financial Health Score.
@@ -71,45 +72,66 @@ public class FinancialHealthService {
                                                       LocalDate startDate,
                                                       LocalDate endDate) {
         // Step c — user existence & goals
+        MDC.put("userId", userId.toString());
+        long fanOutStart = System.currentTimeMillis();
+
         UserProfileDTO profile;
         try {
+            log.info("Calling UserServiceClient.getUserProfile with args={}", userId);
             profile = userServiceClient.getUserProfile(userId);
+            log.info("UserServiceClient.getUserProfile returned successfully");
         } catch (FeignException.NotFound e) {
+            MDC.remove("userId");
             throw new RuntimeException("User not found with id: " + userId);
         } catch (FeignException e) {
-            log.warn("user-service unavailable for user {}: {}", userId, e.getMessage());
+            log.warn("Feign call to user-service failed: {}", e.getMessage());
+            MDC.remove("userId");
             throw new ServiceUnavailableException("User service temporarily unavailable");
         }
-        
+
         AccountBalanceSummaryDTO accounts;
         try {
+            log.info("Calling AccountServiceClient.getBalanceSummary with args={}", userId);
             accounts = accountServiceClient.getBalanceSummary(userId);
+            log.info("AccountServiceClient.getBalanceSummary returned successfully");
         } catch (FeignException.NotFound e) {
             accounts = new AccountBalanceSummaryDTO(0, 0.0, null);
         } catch (FeignException e) {
-            log.warn("account-service unavailable for user {}: {}", userId, e.getMessage());
+            log.warn("Feign call to account-service failed: {}", e.getMessage());
             throw new ServiceUnavailableException("Account service temporarily unavailable");
         }
-        
+
         NetIncomeDTO txn;
         try {
+            log.info("Calling TransactionServiceClient.getUserNetIncome with args={},{},{}", userId, startDate, endDate);
             txn = transactionServiceClient.getUserNetIncome(userId, startDate.toString(), endDate.toString());
+            log.info("TransactionServiceClient.getUserNetIncome returned successfully");
         } catch (FeignException.NotFound e) {
             txn = new NetIncomeDTO(0.0, 0, 0.0, 0.0);
         } catch (FeignException e) {
-            log.warn("transaction-service unavailable for user {}: {}", userId, e.getMessage());
+            log.warn("Feign call to transaction-service failed: {}", e.getMessage());
             throw new ServiceUnavailableException("Transaction service temporarily unavailable");
         }
-        
+
         BudgetSummaryDTO budgets;
         try {
+            log.info("Calling BudgetServiceClient.getUserBudgetSummary with args={},{},{}", userId, startDate, endDate);
             budgets = budgetServiceClient.getUserBudgetSummary(userId, startDate.toString(), endDate.toString());
+            log.info("BudgetServiceClient.getUserBudgetSummary returned successfully");
         } catch (FeignException.NotFound e) {
             budgets = new BudgetSummaryDTO(0.0, 0.0, 0.0);
         } catch (FeignException e) {
-            log.warn("budget-service unavailable for user {}: {}", userId, e.getMessage());
+            log.warn("Feign call to budget-service failed: {}", e.getMessage());
             throw new ServiceUnavailableException("Budget service temporarily unavailable");
         }
+
+        // Slow operation detection — emit WARN if four-way fan-out exceeds 1000ms
+        long fanOutElapsed = System.currentTimeMillis() - fanOutStart;
+        if (fanOutElapsed > 1000) {
+            log.warn("Slow S5-F10 four-way Feign fan-out took {}ms", fanOutElapsed);
+        }
+
+        MDC.remove("userId");
 
         // Step e — compute component rates
         double savingsRate          = computeSavingsRate(txn);

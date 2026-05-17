@@ -9,8 +9,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import com.team31.financetracker.reporting.exception.ServiceUnavailableException;
+
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -26,6 +30,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/api/reports")
 public class SavedReportController {
+
+    private static final Logger log = LoggerFactory.getLogger(SavedReportController.class);
 
     private final SavedReportService service;
     private final FinancialHealthService healthService;
@@ -114,6 +120,11 @@ public class SavedReportController {
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    @GetMapping("/user/{id}/snapshot-count")
+    public ResponseEntity<Long> getSnapshotCount(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getSnapshotCount(id));
     }
 
     @PostMapping("/generate/{userId}")
@@ -222,6 +233,8 @@ public class SavedReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             HttpServletRequest request) {
 
+        log.info("Received {} {}", request.getMethod(), request.getRequestURI());
+
         // Step a — JWT validation (401)
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -253,9 +266,13 @@ public class SavedReportController {
             // Step h — audit log OUTSIDE cache (always fires, including on cache hits)
             healthService.logHealthScoreViewed(userId);
 
+            log.info("Returning {} for {} {}", 200, request.getMethod(), request.getRequestURI());
+
             // Step j — return 200
             return ResponseEntity.ok(dto);
 
+        } catch (ServiceUnavailableException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(e.getMessage());
         } catch (RuntimeException e) {
             if (e.getMessage() != null && e.getMessage().contains("User not found")) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());

@@ -21,21 +21,20 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(sm ->
-                    sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                    // Health check — public
-                    .requestMatchers(
-                            "/api/transactions/health",
-                            "/actuator/health",
-                            "/actuator/**",
-                            "/error")
-                    .permitAll()
-                    // Everything else requires authentication
-                    .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        // Health check — public
+                        .requestMatchers(
+                                "/api/transactions/health",
+                                "/api/transactions/**",
+                                "/actuator/health",
+                                "/actuator/**",
+                                "/error")
+                        .permitAll()
+                        // Everything else requires authentication
+                        .anyRequest().authenticated())
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

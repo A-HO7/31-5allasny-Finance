@@ -8,14 +8,14 @@ public class AccountTransactionSummaryDTO implements Serializable {
     private Double totalDeposits;
     private Double totalWithdrawals;
     private Double netChange;
-    private Integer transactionCount;
+    private Long transactionCount;
     private String startDate;
     private String endDate;
 
     public AccountTransactionSummaryDTO() {}
 
     public AccountTransactionSummaryDTO(Double totalDeposits, Double totalWithdrawals, 
-                                     Double netChange, Integer transactionCount,
+                                     Double netChange, Long transactionCount,
                                      String startDate, String endDate) {
         this.totalDeposits = totalDeposits;
         this.totalWithdrawals = totalWithdrawals;
@@ -34,8 +34,8 @@ public class AccountTransactionSummaryDTO implements Serializable {
     public Double getNetChange() { return netChange; }
     public void setNetChange(Double netChange) { this.netChange = netChange; }
 
-    public Integer getTransactionCount() { return transactionCount; }
-    public void setTransactionCount(Integer transactionCount) { this.transactionCount = transactionCount; }
+    public Long getTransactionCount() { return transactionCount; }
+    public void setTransactionCount(Long transactionCount) { this.transactionCount = transactionCount; }
 
     public String getStartDate() { return startDate; }
     public void setStartDate(String startDate) { this.startDate = startDate; }
@@ -51,14 +51,14 @@ public class AccountTransactionSummaryDTO implements Serializable {
         private Double totalDeposits;
         private Double totalWithdrawals;
         private Double netChange;
-        private Integer transactionCount;
+        private Long transactionCount;
         private String startDate;
         private String endDate;
 
         public Builder totalDeposits(Double totalDeposits) { this.totalDeposits = totalDeposits; return this; }
         public Builder totalWithdrawals(Double totalWithdrawals) { this.totalWithdrawals = totalWithdrawals; return this; }
         public Builder netChange(Double netChange) { this.netChange = netChange; return this; }
-        public Builder transactionCount(Integer transactionCount) { this.transactionCount = transactionCount; return this; }
+        public Builder transactionCount(Long transactionCount) { this.transactionCount = transactionCount; return this; }
         public Builder startDate(String startDate) { this.startDate = startDate; return this; }
         public Builder endDate(String endDate) { this.endDate = endDate; return this; }
 

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transaction-service-configmap
+  namespace: financetracker
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
+  SPRING_DATASOURCE_USERNAME: user
+  SPRING_RABBITMQ_HOST: rabbitmq
+  FEIGN_USER_SERVICE_URL: http://user-service:8080
+  FEIGN_ACCOUNT_SERVICE_URL: http://account-service:8080
+  FEIGN_BUDGET_SERVICE_URL: http://budget-service:8080
+  FEIGN_REPORTING_SERVICE_URL: http://reporting-service:8080

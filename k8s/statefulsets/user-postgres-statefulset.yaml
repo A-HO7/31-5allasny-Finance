@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: user-postgres
-  namespace: finance-tracker
+  namespace: financetracker
   labels:
     app: user-postgres
 spec:

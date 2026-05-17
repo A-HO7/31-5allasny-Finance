@@ -115,6 +115,7 @@ public class SavedReportService {
 
     public SavedReport createSavedReport(SavedReport savedReport) {
         SavedReport saved = repository.save(savedReport);
+        log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
         notifyReportEvent("REPORT_CREATED", saved, null);
         evictWildcardCaches(saved.getId());
         return saved;
@@ -171,6 +172,7 @@ public class SavedReportService {
         if (updatedReport.getReportConfig() != null) existing.setReportConfig(updatedReport.getReportConfig());
         
         SavedReport saved = repository.save(existing);
+        log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
         notifyReportEvent("REPORT_UPDATED", saved, null);
         evictWildcardCaches(saved.getId());
         return saved;
@@ -202,6 +204,7 @@ public class SavedReportService {
         report.setReportConfig(config);
         
         SavedReport saved = repository.save(report);
+        log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
         notifyReportEvent("ARCHIVED", saved, Map.of("reason", reason));
         evictWildcardCaches(saved.getId());
         return saved;
@@ -277,12 +280,14 @@ public class SavedReportService {
             config.put("generationStatus", "failed");
             config.put("failureReason", "Simulated failure");
             SavedReport saved = repository.save(newReport);
+            log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
             notifyReportEvent("FAILED", saved, null);
             evictWildcardCaches(saved.getId());
             return saved;
         }
 
         SavedReport saved = repository.save(newReport);
+        log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
         notifyReportEvent("GENERATED", saved, null);
         evictWildcardCaches(saved.getId());
         return saved;
@@ -352,6 +357,7 @@ public class SavedReportService {
         report.setReportConfig(config);
 
         SavedReport saved = repository.save(report);
+        log.info("SavedReport {} saved with status={}", saved.getId(), saved.getStatus());
         notifyReportEvent("REGENERATED", saved, null);
         evictWildcardCaches(saved.getId());
         return saved;

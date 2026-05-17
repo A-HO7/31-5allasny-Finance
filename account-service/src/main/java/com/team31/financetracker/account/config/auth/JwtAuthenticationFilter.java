@@ -11,7 +11,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.IOException;
 import java.util.List;
 
@@ -19,11 +18,9 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final JdbcTemplate jdbcTemplate;
 
-    public JwtAuthenticationFilter(JwtService jwtService, JdbcTemplate jdbcTemplate) {
+    public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
-        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
@@ -45,7 +42,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         AuthHandler chain = new TokenExtractionHandler();
         chain.setNext(new SignatureValidationHandler(jwtService))
-                .setNext(new UserLoaderHandler(jwtService, jdbcTemplate))
+                .setNext(new UserLoaderHandler(jwtService))
                 .setNext(new RoleAuthorizationHandler());
 
         boolean success = chain.handle(context);

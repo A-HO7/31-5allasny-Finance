@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboards
-  namespace: finance-tracker
+  namespace: financetracker
 data:
   provider.yaml: |
     apiVersion: 1
@@ -20,15 +20,17 @@ data:
       "title": "Account Service Dashboard",
       "uid": "account-service",
       "schemaVersion": 38,
+      "tags": ["Finance Tracker", "account-service", "observability"],
+      "timezone": "browser",
       "panels": [
         {
           "id": 1,
           "title": "Error Rate — Account Service",
           "type": "timeseries",
           "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "datasource": { "type": "loki", "uid": "loki" },
           "targets": [
             {
-              "datasource": { "type": "loki", "uid": "loki" },
               "expr": "sum(count_over_time({app=\"financetracker\", service=\"account-service\", level=\"ERROR\"}[1m]))",
               "legendFormat": "errors/min"
             }
@@ -39,9 +41,9 @@ data:
           "title": "Feign Call Outcomes — Account Service",
           "type": "timeseries",
           "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+          "datasource": { "type": "loki", "uid": "loki" },
           "targets": [
             {
-              "datasource": { "type": "loki", "uid": "loki" },
               "expr": "sum by (level) (count_over_time({app=\"financetracker\", service=\"account-service\"} |= \"Feign\" [5m]))",
               "legendFormat": "{{level}}"
             }
@@ -51,12 +53,51 @@ data:
           "id": 3,
           "title": "RabbitMQ Event Audit — Account Service",
           "type": "timeseries",
-          "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+          "datasource": { "type": "loki", "uid": "loki" },
           "targets": [
             {
-              "datasource": { "type": "loki", "uid": "loki" },
-              "expr": "count_over_time({app=\"financetracker\", service=\"account-service\"} |= \"Published\" or |= \"Consuming\" or |= \"Processed\" [5m])",
+              "expr": "sum(count_over_time({app=\"financetracker\", service=\"account-service\"} |~ \"Published|Consuming|Processed|transaction\\\\.(approved|completed|voided)|account\\\\.(status-changed|rated|stats-updated)\" [5m]))",
               "legendFormat": "events/5m"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "HTTP Request Rate",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (method, uri, status) (rate(http_server_requests_seconds_count{job=\"account-service\"}[5m]))",
+              "legendFormat": "{{method}} {{uri}} {{status}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "P95 Response Time",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, uri, method) (rate(http_server_requests_seconds_bucket{job=\"account-service\"}[5m])))",
+              "legendFormat": "{{method}} {{uri}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "JVM Heap Used",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_memory_used_bytes{job=\"account-service\", area=\"heap\"}",
+              "legendFormat": "{{id}}"
             }
           ]
         }

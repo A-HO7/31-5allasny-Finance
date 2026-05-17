@@ -64,6 +64,18 @@ logging:
     org.springframework.cache: TRACE
     org.springframework.data.redis: TRACE
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: budget-service
+
 feign:
   user-service:
     url: http://user-service:8080

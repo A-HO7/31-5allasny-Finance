@@ -16,4 +16,9 @@ public interface UserServiceClient {
 
     @GetMapping("/api/users/by-ids")
     List<UserDTO> getUsersByIds(@RequestParam("ids") List<Long> ids);
+
+    @GetMapping("/api/users/search")
+    List<UserDTO> searchUsers(@RequestParam(value = "name", required = false) String name,
+                              @RequestParam(value = "email", required = false) String email,
+                              @RequestParam(value = "role", required = false) String role);
 }

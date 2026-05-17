@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: reporting-service-configmap
-  namespace: finance-tracker
+  namespace: financetracker
 data:
   SPRING_DATASOURCE_URL: "jdbc:postgresql://reporting-postgres:5432/financedb-reporting"
   SPRING_RABBITMQ_HOST: "rabbitmq"

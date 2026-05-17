@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: reporting-service
-  namespace: finance-tracker
+  namespace: financetracker
   labels:
     app: reporting-service
 spec:

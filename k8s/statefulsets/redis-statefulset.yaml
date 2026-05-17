@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis
-  namespace: finance-tracker
+  namespace: financetracker
 spec:
   serviceName: redis
   replicas: 1

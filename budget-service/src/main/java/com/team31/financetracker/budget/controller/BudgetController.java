@@ -1,5 +1,6 @@
 package com.team31.financetracker.budget.controller;
 
+import com.team31.financetracker.contracts.dto.BudgetSummaryDTO;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import com.team31.financetracker.budget.dto.BudgetUsageDTO;
 import com.team31.financetracker.budget.model.Budget;
@@ -215,7 +216,7 @@ public class BudgetController {
     }
 
     @GetMapping("/user/{userId}/summary")
-    public com.team31.financetracker.budget.dto.BudgetSummaryDTO getBudgetSummary(
+    public BudgetSummaryDTO getBudgetSummary(
             @PathVariable Long userId,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate

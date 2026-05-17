@@ -47,7 +47,7 @@ public class Transaction {
     @Column(nullable = false)
     private Double amount;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'EGP'")
     private String currency;
 
     @Enumerated(EnumType.STRING)
@@ -85,65 +85,147 @@ public class Transaction {
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     @PrePersist
     public void prePersist() {
-        if (transactionDate == null) transactionDate = LocalDateTime.now();
-        if (status == null)          status          = TransactionStatus.PENDING;
-        if (metadata == null)        metadata        = new HashMap<>();
-        if (currency == null)        currency        = "EGP";
-        if (type == null)            type            = TransactionType.EXPENSE;
-        if (category == null)        category        = TransactionCategory.TRANSFER;
-        if (accountId == null)       accountId       = 0L;
-        if (userId == null)          userId          = 0L;
-        if (amount == null)          amount          = 0.0;
+        if (transactionDate == null)
+            transactionDate = LocalDateTime.now();
+        if (status == null)
+            status = TransactionStatus.PENDING;
+        if (metadata == null)
+            metadata = new HashMap<>();
+        if (currency == null)
+            currency = "EGP";
+        if (type == null)
+            type = TransactionType.EXPENSE;
+        if (category == null)
+            category = TransactionCategory.TRANSFER;
+        if (accountId == null)
+            accountId = 0L;
+        if (userId == null)
+            userId = 0L;
+        if (amount == null)
+            amount = 0.0;
     }
 
     // ── Getters & Setters ─────────────────────────────────────────────────────
-    public Long getId()                          { return id; }
-    public void setId(Long id)                   { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public Long getAccountId()                   { return accountId; }
-    public void setAccountId(Long accountId)     { this.accountId = accountId; }
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-    public Long getToAccountId()                 { return toAccountId; }
-    public void setToAccountId(Long toAccountId) { this.toAccountId = toAccountId; }
+    public Long getAccountId() {
+        return accountId;
+    }
 
-    public Long getUserId()                      { return userId; }
-    public void setUserId(Long userId)           { this.userId = userId; }
+    public void setAccountId(Long accountId) {
+        this.accountId = accountId;
+    }
 
-    public Long getApproverId()                  { return approverId; }
-    public void setApproverId(Long approverId)   { this.approverId = approverId; }
+    public Long getToAccountId() {
+        return toAccountId;
+    }
 
-    public TransactionType getType()             { return type; }
-    public void setType(TransactionType type)    { this.type = type; }
+    public void setToAccountId(Long toAccountId) {
+        this.toAccountId = toAccountId;
+    }
 
-    public Double getAmount()                    { return amount; }
-    public void setAmount(Double amount)         { this.amount = amount; }
+    public Long getUserId() {
+        return userId;
+    }
 
-    public String getCurrency()                  { return currency; }
-    public void setCurrency(String currency)     { this.currency = currency; }
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 
-    public TransactionCategory getCategory()              { return category; }
-    public void setCategory(TransactionCategory category) { this.category = category; }
+    public Long getApproverId() {
+        return approverId;
+    }
 
-    public String getDescription()                 { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public void setApproverId(Long approverId) {
+        this.approverId = approverId;
+    }
 
-    public TransactionStatus getStatus()           { return status; }
-    public void setStatus(TransactionStatus status){ this.status = status; }
+    public TransactionType getType() {
+        return type;
+    }
 
-    public Map<String, Object> getMetadata()              { return metadata; }
-    public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
+    public void setType(TransactionType type) {
+        this.type = type;
+    }
 
-    public LocalDateTime getTransactionDate()                      { return transactionDate; }
-    public void setTransactionDate(LocalDateTime transactionDate)  { this.transactionDate = transactionDate; }
+    public Double getAmount() {
+        return amount;
+    }
 
-    public LocalDateTime getCompletedAt()                  { return completedAt; }
-    public void setCompletedAt(LocalDateTime completedAt)  { this.completedAt = completedAt; }
+    public void setAmount(Double amount) {
+        this.amount = amount;
+    }
 
-    public List<TransactionSplit> getTransactionSplits()   { return transactionSplits; }
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public TransactionCategory getCategory() {
+        return category;
+    }
+
+    public void setCategory(TransactionCategory category) {
+        this.category = category;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public TransactionStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(TransactionStatus status) {
+        this.status = status;
+    }
+
+    public Map<String, Object> getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(Map<String, Object> metadata) {
+        this.metadata = metadata;
+    }
+
+    public LocalDateTime getTransactionDate() {
+        return transactionDate;
+    }
+
+    public void setTransactionDate(LocalDateTime transactionDate) {
+        this.transactionDate = transactionDate;
+    }
+
+    public LocalDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(LocalDateTime completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public List<TransactionSplit> getTransactionSplits() {
+        return transactionSplits;
+    }
 
     public void setTransactionSplits(List<TransactionSplit> transactionSplits) {
         this.transactionSplits.clear();
-        if (transactionSplits == null) return;
+        if (transactionSplits == null)
+            return;
         for (TransactionSplit split : transactionSplits) {
             split.setTransaction(this);
             this.transactionSplits.add(split);
@@ -152,7 +234,8 @@ public class Transaction {
 
     /** Helper used by the service to add a split and keep back-reference intact. */
     public void addTransactionSplit(TransactionSplit split) {
-        if (split == null) return;
+        if (split == null)
+            return;
         split.setTransaction(this);
         this.transactionSplits.add(split);
     }

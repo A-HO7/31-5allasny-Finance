@@ -166,4 +166,38 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                nativeQuery = true)
        long countPendingTransactionsByAccountId(@Param("accountId") Long accountId);
 
+       // Void all PENDING transactions for a user (used by user.deactivated consumer)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE user_id = :userId AND status = 'PENDING'", nativeQuery = true)
+       int voidPendingByUserId(@Param("userId") Long userId);
+
+       // Void all PENDING transactions for an account (used by account.status-changed
+       // consumer)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'VOIDED' WHERE account_id = :accountId AND status = 'PENDING'", nativeQuery = true)
+       int voidPendingByAccountId(@Param("accountId") Long accountId);
+
+       // Saga feedback state transitions (idempotent)
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORT_PENDING' WHERE id = :id AND status = 'COMPLETING'", nativeQuery = true)
+       int markReportPendingIfCompleting(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORTED' WHERE id = :id AND status = 'REPORT_PENDING'", nativeQuery = true)
+       int markReportedIfReportPending(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REPORT_FAILED' WHERE id = :id AND status = 'REPORT_PENDING'", nativeQuery = true)
+       int markReportFailedIfReportPending(@Param("id") Long id);
+
+       @Transactional
+       @Modifying
+       @Query(value = "UPDATE transactions SET status = 'REVERTED' WHERE id = :id AND status = 'REPORT_FAILED'", nativeQuery = true)
+       int markRevertedIfReportFailed(@Param("id") Long id);
+
 }

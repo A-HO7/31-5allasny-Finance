@@ -4,6 +4,7 @@ import com.team31.financetracker.account.adapter.AccountSummaryProjectionAdapter
 import com.team31.financetracker.account.adapter.TopAccountProjectionAdapter;
 import com.team31.financetracker.account.dto.*;
 import com.team31.financetracker.account.exception.ServiceUnavailableException;
+import com.team31.financetracker.account.messaging.publishers.AccountEventPublisher;
 import com.team31.financetracker.account.mongo.AccountEventActions;
 import com.team31.financetracker.account.model.*;
 import com.team31.financetracker.account.observer.EntityObserver;
@@ -60,6 +61,7 @@ public class AccountService {
     private final RabbitTemplate rabbitTemplate;
     private final UserServiceClient userServiceClient;
     private final TransactionServiceClient transactionServiceClient;
+    private final AccountEventPublisher accountEventPublisher;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -71,7 +73,8 @@ public class AccountService {
             RedisTemplate<String, Object> redisTemplate,
             RabbitTemplate rabbitTemplate,
             UserServiceClient userServiceClient,
-            TransactionServiceClient transactionServiceClient
+            TransactionServiceClient transactionServiceClient,
+            AccountEventPublisher accountEventPublisher
     ) {
         this.accountRepository = accountRepository;
         this.accountStatementRepository = accountStatementRepository;
@@ -83,6 +86,7 @@ public class AccountService {
         this.rabbitTemplate = rabbitTemplate;
         this.userServiceClient = userServiceClient;
         this.transactionServiceClient = transactionServiceClient;
+        this.accountEventPublisher = accountEventPublisher;
     }
 
     public void register(EntityObserver observer){
@@ -261,9 +265,7 @@ public class AccountService {
         account.setTotalRatings(nextTotal);
         Account saved = accountRepository.save(account);
         indexAccount(saved);
-        rabbitTemplate.convertAndSend(
-                "account.events",
-                "account.rated",
+        accountEventPublisher.publishAccountRatedEvent(
                 new AccountRatedEvent(accountId, statementId, rating)
         );
         notifyAccountEvent(AccountEventActions.RATED, saved, Map.of(
@@ -308,14 +310,7 @@ public class AccountService {
                     saved.getStatus().name()
             );
 
-            rabbitTemplate.convertAndSend("account.events", "account.status-changed", event, message -> {
-                if (correlationId != null) {
-                    message.getMessageProperties().setHeader("X-Correlation-ID", correlationId);
-                }
-                return message;
-            });
-
-            log.info("Published account.status-changed for account= {}", id);
+            accountEventPublisher.publishAccountStatusChangedEvent(event);
 
             indexAccount(saved);
             AccountEventActions action = newStatus == AccountStatus.FROZEN

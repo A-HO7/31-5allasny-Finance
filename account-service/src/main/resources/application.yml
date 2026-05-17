@@ -77,12 +77,8 @@ rabbitmq:
     account: account.events
     transaction: transaction.events
   queues:
-    transaction-approved-listener: account.transaction.approved-listener
-    transaction-approved-listener-dlq: account.transaction.approved-listener.dlq
-    transaction-completed-listener: account.transaction.completed-listener
-    transaction-completed-listener-dlq: account.transaction.completed-listener.dlq
-    transaction-voided-listener: account.transaction.voided-listener
-    transaction-voided-listener-dlq: account.transaction.voided-listener.dlq
+    transaction-saga-listener: account.transaction.saga-listener
+    transaction-saga-listener-dlq: account.transaction.saga-listener.dlq
   routing-keys:
     transaction-approved: transaction.approved
     transaction-completed: transaction.completed

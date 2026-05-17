@@ -1,5 +1,6 @@
-package com.team31.financetracker.account.service;
+package com.team31.financetracker.account.messaging.consumers;
 
+import com.team31.financetracker.account.messaging.publishers.AccountEventPublisher;
 import com.team31.financetracker.account.model.Account;
 import com.team31.financetracker.account.model.ProcessedEvent;
 import com.team31.financetracker.account.repository.AccountRepository;
@@ -41,9 +42,7 @@ public class TransactionSagaListener {
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
 
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-approved-listener}")
-    @Transactional
-    public void onTransactionApproved(TransactionApprovedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
+    private void onTransactionApproved(TransactionApprovedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
         String eventId = eventId(event.transactionId(), "APPROVED");
         try {
             putMdc(routingKey, correlationId, event.accountId());
@@ -75,9 +74,7 @@ public class TransactionSagaListener {
         }
     }
 
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-completed-listener}")
-    @Transactional
-    public void onTransactionCompleted(TransactionCompletedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
+    private void onTransactionCompleted(TransactionCompletedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
         String eventId = eventId(event.transactionId(), "COMPLETED");
         try {
             putMdc(routingKey, correlationId, event.accountId());
@@ -87,9 +84,8 @@ public class TransactionSagaListener {
             }
 
             LOGGER.info("Processing transaction.completed event for account {}", event.accountId());
-            ensureAccountUpdated(accountRepository.incrementTotalTransactions(event.accountId()), event.accountId(), eventId);
             ensureAccountUpdated(
-                    accountRepository.updateLastTransactionDate(
+                    accountRepository.incrementTransactionStats(
                             event.accountId(),
                             event.completedAt() != null ? event.completedAt() : LocalDateTime.now()
                     ),
@@ -111,9 +107,7 @@ public class TransactionSagaListener {
         }
     }
 
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-voided-listener}")
-    @Transactional
-    public void onTransactionVoided(TransactionVoidedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
+    private void onTransactionVoided(TransactionVoidedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
         String eventId = eventId(event.transactionId(), "VOIDED");
         try {
             putMdc(routingKey, correlationId, event.accountId());
@@ -148,6 +142,19 @@ public class TransactionSagaListener {
             markEventAsProcessed(eventId);
         } finally {
             MDC.clear();
+        }
+    }
+
+    @RabbitListener(queues = "${rabbitmq.queues.transaction-saga-listener}")
+    @Transactional
+    public void dispatch(Object payload,
+                         @Header("amqp_receivedRoutingKey") String routingKey,
+                         @Header(value = "x-correlation-id", required = false) String correlationId) {
+        switch (routingKey) {
+            case "transaction.approved" -> onTransactionApproved((TransactionApprovedEvent) payload, routingKey, correlationId);
+            case "transaction.completed" -> onTransactionCompleted((TransactionCompletedEvent) payload, routingKey, correlationId);
+            case "transaction.voided" -> onTransactionVoided((TransactionVoidedEvent) payload, routingKey, correlationId);
+            default -> LOGGER.warn("Unhandled routing key: {}", routingKey);
         }
     }
 

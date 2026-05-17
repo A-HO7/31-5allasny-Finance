@@ -1,12 +1,12 @@
 package com.team31.financetracker.user.service;
 
 import com.team31.financetracker.contracts.dto.NetIncomeDTO;
-import com.team31.financetracker.contracts.dto.TopSaverDTO;
 import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.contracts.events.UserDeactivatedEvent;
 import com.team31.financetracker.user.dto.ActivityEventDTO;
 import com.team31.financetracker.user.dto.FinancialGoalDTO;
 import com.team31.financetracker.user.dto.RegisterRequest;
+import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.dto.UserProfileDTO;
 import com.team31.financetracker.user.entity.OutboxEvent;
@@ -138,26 +138,6 @@ public class UserService {
         validateOwnershipOrAdmin(id); // <--- Add this
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-    }
-
-    // Helper: get the currently authenticated user from SecurityContextHolder
-    private User getAuthenticatedUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null)
-            return null;
-        return userRepository.findByEmail(auth.getName()).orElse(null);
-    }
-
-    // Helper: enforce that caller is the owner OR an ADMIN
-    private void enforceOwnership(Long targetId) {
-        User caller = getAuthenticatedUser();
-        if (caller == null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authenticated");
-        }
-        boolean isAdmin = caller.getRole().name().equals("ADMIN");
-        if (!isAdmin && !caller.getId().equals(targetId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
     }
 
     // Update
@@ -447,12 +427,16 @@ public class UserService {
     private NetIncomeDTO fetchUserNetIncomeOrZero(Long userId, String startDateStr, String endDateStr) {
         try {
             NetIncomeDTO dto = transactionServiceClient.getUserNetIncome(userId, startDateStr, endDateStr);
-            return dto != null ? dto : new NetIncomeDTO(0.0, 0);
+            return dto != null ? dto : emptyNetIncome();
         } catch (FeignException.NotFound e) {
-            return new NetIncomeDTO(0.0, 0);
+            return emptyNetIncome();
         } catch (FeignException e) {
-            return new NetIncomeDTO(0.0, 0);
+            return emptyNetIncome();
         }
+    }
+
+    private static NetIncomeDTO emptyNetIncome() {
+        return new NetIncomeDTO(0.0, 0, 0.0, 0.0);
     }
 
     private long fetchCompletedTransactionCountOrZero(Long userId) {

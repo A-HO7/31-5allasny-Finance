@@ -98,7 +98,8 @@ public class SagaE2ETest {
 
         consumer.onTransactionCompleted(event);
 
-        // Verify DB State
+        // Re-fetch fresh to get the final status
+        entityManager.clear(); // force fresh read from DB
         Optional<SavedReport> reportOpt = reportRepository.findSagaReportByTransactionId(transactionId);
         assertThat(reportOpt).isPresent();
         SavedReport report = reportOpt.get();

@@ -50,8 +50,13 @@ public class SecurityConfig {
 
                 // 3. Configure endpoint security rules
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/users/health", "/error").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/prometheus", "/actuator/info").permitAll()
+                        .requestMatchers(
+                                "/api/auth/register",
+                                "/api/auth/login",
+                                "/api/users/health",
+                                "/actuator/**",
+                                "/error"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
 

@@ -16,6 +16,8 @@ import com.team31.financetracker.budget.observer.MongoEventLogger;
 import com.team31.financetracker.budget.repository.BudgetRepository;
 import com.team31.financetracker.budget.repository.BudgetUsageEventRepository;
 import com.team31.financetracker.budget.adapter.CassandraRowAdapter;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
@@ -42,14 +44,28 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final BudgetUsageEventRepository budgetUsageEventRepository;
     private final MongoEventLogger mongoEventLogger;
+    private final UserServiceClient userServiceClient;
     private final CassandraRowAdapter cassandraRowAdapter = new CassandraRowAdapter();
 
     public BudgetService(BudgetRepository budgetRepository,
                          BudgetUsageEventRepository budgetUsageEventRepository,
-                         MongoEventLogger mongoEventLogger) {
+                         MongoEventLogger mongoEventLogger,
+                         UserServiceClient userServiceClient) {
         this.budgetRepository = budgetRepository;
         this.budgetUsageEventRepository = budgetUsageEventRepository;
         this.mongoEventLogger = mongoEventLogger;
+        this.userServiceClient = userServiceClient;
+    }
+
+    // ──────────────────── M3: Cross-service user verification ────────────────────
+    public void verifyUserExists(Long userId) {
+        try {
+            userServiceClient.getUser(userId);
+        } catch (FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userId);
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service unavailable");
+        }
     }
 
     // ──────────────────── Observer helper ────────────────────

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: account-service
-  namespace: financetracker
+  namespace: finance-tracker
 spec:
   replicas: 1
   selector:
@@ -20,17 +20,17 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
-          envFrom:
-            - configMapRef:
-                name: account-service-configmap
-            - secretRef:
-                name: account-postgres-secret
           env:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: jwt-secret
                   key: jwt-secret
+          envFrom:
+            - configMapRef:
+                name: account-service-configmap
+            - secretRef:
+                name: account-postgres-secret
           readinessProbe:
             httpGet:
               path: /actuator/health

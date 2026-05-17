@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: transaction-postgres
-  namespace: financetracker
+  namespace: finance-tracker
 spec:
   serviceName: transaction-postgres
   replicas: 1

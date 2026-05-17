@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: transaction-service
-  namespace: financetracker
+  namespace: finance-tracker
 spec:
   type: ClusterIP
   selector:

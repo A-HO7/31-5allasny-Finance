@@ -174,7 +174,7 @@ public class BudgetService {
                 .build();
     }
 
-    // ──────────────────── S4-F5: Overspent ────────────────────
+    // ──────────────────── S4-F9: Overspent ────────────────────
 
     @Cacheable(value = "budget-service",
             key = "'budget-service::S4-F5::' + #minOverspend + '::' + #warningNotSent",
@@ -184,19 +184,49 @@ public class BudgetService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minOverspend cannot be negative");
         }
         try {
+            // Step 1 — local DB query (budget-postgres only, no user JOIN)
             List<OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
-            return projections.stream().map(p -> new OverspentBudgetDTO.Builder()
-                    .budgetId(p.getBudgetId())
-                    .userName(p.getUserName())
-                    .category(p.getCategory())
-                    .budgetAmount(p.getBudgetAmount())
-                    .spentAmount(p.getSpentAmount())
-                    .overspendPercentage(p.getOverspendPercentage())
-                    .warningSent(p.getWarningSent())
-                    .build()
-            ).toList();
+
+            // M3: Step 2 — collect distinct userIds
+            // getUserName() currently holds CAST(user_id AS varchar) — the userId as a string
+            List<Long> distinctUserIds = projections.stream()
+                    .map(p -> Long.parseLong(p.getUserName()))
+                    .distinct()
+                    .toList();
+
+            // M3: Step 3 — one batch Feign call to user-service
+            Map<Long, String> userNameMap = new HashMap<>();
+            try {
+                List<UserDTO> users = userServiceClient.getUsersByIds(distinctUserIds);
+                for (UserDTO u : users) {
+                    userNameMap.put(u.getId(), u.getName());
+                }
+            } catch (FeignException e) {
+                // Soft dependency: fall back to userId string if user-service is unavailable
+                log.warn("Batch user lookup failed for overspent budgets: {}", e.getMessage());
+                for (Long uid : distinctUserIds) {
+                    userNameMap.put(uid, String.valueOf(uid));
+                }
+            }
+
+            // M3: Step 4 — build DTOs with real names from the map
+            return projections.stream().map(p -> {
+                Long userId = Long.parseLong(p.getUserName());
+                String userName = userNameMap.getOrDefault(userId, String.valueOf(userId));
+                return new OverspentBudgetDTO.Builder()
+                        .budgetId(p.getBudgetId())
+                        .userName(userName)
+                        .category(p.getCategory())
+                        .budgetAmount(p.getBudgetAmount())
+                        .spentAmount(p.getSpentAmount())
+                        .overspendPercentage(p.getOverspendPercentage())
+                        .warningSent(p.getWarningSent())
+                        .build();
+            }).toList();
+
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
-            if (e instanceof ResponseStatusException) throw e;
             log.warn("getOverspentBudgets failed: {}", e.getMessage());
             return new ArrayList<>();
         }

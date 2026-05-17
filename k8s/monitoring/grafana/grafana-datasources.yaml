@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-datasources
-  namespace: finance-tracker
+  namespace: financetracker
 data:
   datasources.yaml: |
     apiVersion: 1

@@ -34,8 +34,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: "prometheus,health,info"
   endpoint:
     health:
       probes:
         enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+

@@ -8,7 +8,6 @@ import com.team31.financetracker.reporting.messaging.publishers.ReportEventPubli
 import com.team31.financetracker.reporting.model.ReportStatus;
 import com.team31.financetracker.reporting.model.SavedReport;
 import com.team31.financetracker.reporting.repository.SavedReportRepository;
-import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -73,6 +72,9 @@ public class SagaE2ETest {
 
     @MockitoBean
     private UserServiceClient userServiceClient;
+
+    @MockitoBean
+    private com.team31.financetracker.reporting.observer.MongoEventLogger mongoEventLogger;
 
     @BeforeEach
     void setUp() {

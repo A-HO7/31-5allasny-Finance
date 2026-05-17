@@ -21,7 +21,10 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Primary controller for the Transaction Service.
@@ -257,6 +260,57 @@ public class TransactionController {
                     "Access denied: you can only view your own recommendations");
         }
         return transactionService.getCategoryRecommendations(userId, limit, categoryType);
+    }
+
+    // ── M3 Internal endpoints (called by other services via Feign) ───────────
+
+    /** GET /api/transactions/user/{userId}/summary */
+    @GetMapping("/user/{userId}/summary")
+    public Map<String, Object> getUserTransactionSummary(@PathVariable Long userId) {
+        Map<String, Object> raw = transactionService.getUserTransactionSummary(userId);
+        Map<String, Object> result = new HashMap<>(raw);
+        return result;
+    }
+
+    /** GET /api/transactions/user/{userId}/net-income?startDate=&endDate= */
+    @GetMapping("/user/{userId}/net-income")
+    public Map<String, Object> getUserNetIncome(
+            @PathVariable Long userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
+        LocalDate end   = (endDate   != null) ? endDate   : LocalDate.of(2099, 12, 31);
+        LocalDateTime rangeStart        = start.atStartOfDay();
+        LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
+        return new HashMap<>(transactionService.getUserNetIncome(userId, rangeStart, rangeEndExclusive));
+    }
+
+    /** GET /api/transactions/user/{userId}/completed-count */
+    @GetMapping("/user/{userId}/completed-count")
+    public long getUserCompletedCount(@PathVariable Long userId) {
+        return transactionService.countCompletedTransactionsByUserId(userId);
+    }
+
+    /** GET /api/transactions/account/{accountId}/summary?startDate=&endDate= */
+    @GetMapping("/account/{accountId}/summary")
+    public Map<String, Object> getAccountTransactionSummary(
+            @PathVariable Long accountId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        if (startDate == null && endDate == null) {
+            return new HashMap<>(transactionService.getAccountTransactionSummaryAllTime(accountId));
+        }
+        LocalDate start = (startDate != null) ? startDate : LocalDate.of(1970, 1, 1);
+        LocalDate end   = (endDate   != null) ? endDate   : LocalDate.of(2099, 12, 31);
+        LocalDateTime rangeStart        = start.atStartOfDay();
+        LocalDateTime rangeEndExclusive = end.plusDays(1).atStartOfDay();
+        return new HashMap<>(transactionService.getAccountTransactionSummary(accountId, rangeStart, rangeEndExclusive));
+    }
+
+    /** GET /api/transactions/account/{accountId}/pending-count */
+    @GetMapping("/account/{accountId}/pending-count")
+    public long getAccountPendingCount(@PathVariable Long accountId) {
+        return transactionService.countPendingTransactionsByAccountId(accountId);
     }
 
     // ── Private helper ────────────────────────────────────────────────────────

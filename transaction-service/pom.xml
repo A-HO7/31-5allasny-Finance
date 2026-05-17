@@ -169,6 +169,13 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
 
+        <!-- M3 S3-READ-DB: Loki4J appender for logback-spring.xml -->
+        <dependency>
+            <groupId>com.github.loki4j</groupId>
+            <artifactId>loki-logback-appender</artifactId>
+            <version>1.5.2</version>
+        </dependency>
+
     </dependencies>
 
     <build>

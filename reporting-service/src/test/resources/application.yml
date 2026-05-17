@@ -1,0 +1,46 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/financedb-reporting
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redispass
+  mongodb:
+    uri: mongodb://localhost:27017/financemongo
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+jwt:
+  secret: TestSecretKeyThatIsAtLeast32BytesLongForJWT
+  expiration: 86400000
+
+feign:
+  user-service:
+    url: http://localhost:8081
+  account-service:
+    url: http://localhost:8082
+  budget-service:
+    url: http://localhost:8083
+  transaction-service:
+    url: http://localhost:8084
+  reporting-service:
+    url: http://localhost:8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "prometheus,health,info"

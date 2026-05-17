@@ -35,6 +35,7 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     @Query(value = "SELECT " +
             "b.id AS budgetId, " +
+            "b.user_id AS userId, " +
             "CAST(b.user_id AS varchar) AS userName, " +
             "b.category AS category, " +
             "b.budget_amount AS budgetAmount, " +

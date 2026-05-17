@@ -1,6 +1,8 @@
 package com.team31.financetracker.budget.service;
 
 import com.team31.financetracker.contracts.dto.BudgetSummaryDTO;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import com.team31.financetracker.budget.dto.BudgetPerformanceDTO;
 import com.team31.financetracker.budget.dto.BudgetUsageDTO;
@@ -34,6 +36,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class BudgetService {
@@ -43,14 +47,17 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final BudgetUsageEventRepository budgetUsageEventRepository;
     private final MongoEventLogger mongoEventLogger;
+    private final UserServiceClient userServiceClient;
     private final CassandraRowAdapter cassandraRowAdapter = new CassandraRowAdapter();
 
     public BudgetService(BudgetRepository budgetRepository,
                          BudgetUsageEventRepository budgetUsageEventRepository,
-                         MongoEventLogger mongoEventLogger) {
+                         MongoEventLogger mongoEventLogger,
+                         UserServiceClient userServiceClient) {
         this.budgetRepository = budgetRepository;
         this.budgetUsageEventRepository = budgetUsageEventRepository;
         this.mongoEventLogger = mongoEventLogger;
+        this.userServiceClient = userServiceClient;
     }
 
     // ──────────────────── Observer helper ────────────────────
@@ -172,7 +179,7 @@ public class BudgetService {
     // ──────────────────── S4-F5: Overspent ────────────────────
 
     @Cacheable(value = "budget-service",
-            key = "'budget-service::S4-F5::' + #minOverspend + '::' + #warningNotSent",
+            key = "'budget-service::S4-F9::' + #minOverspend + '::' + #warningNotSent",
             unless = "#result == null")
     public List<OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
         if (minOverspend != null && minOverspend < 0) {
@@ -180,16 +187,39 @@ public class BudgetService {
         }
         try {
             List<OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
-            return projections.stream().map(p -> new OverspentBudgetDTO.Builder()
-                    .budgetId(p.getBudgetId())
-                    .userName(p.getUserName())
-                    .category(p.getCategory())
-                    .budgetAmount(p.getBudgetAmount())
-                    .spentAmount(p.getSpentAmount())
-                    .overspendPercentage(p.getOverspendPercentage())
-                    .warningSent(p.getWarningSent())
-                    .build()
-            ).toList();
+
+            // Collect distinct userIds for a single batch Feign call
+            List<Long> userIds = projections.stream()
+                    .map(OverspentBudgetProjection::getUserId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            Map<Long, String> userNameMap = new HashMap<>();
+            if (!userIds.isEmpty()) {
+                try {
+                    List<UserDTO> users = userServiceClient.getUsersByIds(userIds);
+                    userNameMap = users.stream()
+                            .filter(u -> u.getId() != null)
+                            .collect(Collectors.toMap(UserDTO::getId, UserDTO::getName));
+                } catch (Exception e) {
+                    log.warn("Feign call to user-service/by-ids failed, falling back to userId: {}", e.getMessage());
+                }
+            }
+
+            final Map<Long, String> resolvedNames = userNameMap;
+            return projections.stream().map(p -> {
+                String userName = resolvedNames.getOrDefault(p.getUserId(), p.getUserName());
+                return new OverspentBudgetDTO.Builder()
+                        .budgetId(p.getBudgetId())
+                        .userName(userName)
+                        .category(p.getCategory())
+                        .budgetAmount(p.getBudgetAmount())
+                        .spentAmount(p.getSpentAmount())
+                        .overspendPercentage(p.getOverspendPercentage())
+                        .warningSent(p.getWarningSent())
+                        .build();
+            }).toList();
         } catch (Exception e) {
             if (e instanceof ResponseStatusException) throw e;
             log.warn("getOverspentBudgets failed: {}", e.getMessage());

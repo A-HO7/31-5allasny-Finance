@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: cassandra
-  namespace: finance-tracker
+  namespace: financetracker
   labels:
     app: cassandra
 spec:

@@ -21,13 +21,16 @@ public class BudgetAnalyticsService implements BudgetSubject {
 
     private final BudgetRepository budgetRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final BudgetService budgetService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
     public BudgetAnalyticsService(BudgetRepository budgetRepository,
                                   RedisTemplate<String, Object> redisTemplate,
-                                  MongoEventLogger mongoEventLogger) {
+                                  MongoEventLogger mongoEventLogger,
+                                  BudgetService budgetService) {
         this.budgetRepository = budgetRepository;
         this.redisTemplate = redisTemplate;
+        this.budgetService = budgetService;
         registerObserver(mongoEventLogger);
     }
 
@@ -62,6 +65,9 @@ public class BudgetAnalyticsService implements BudgetSubject {
     }
 
     public BudgetAnalyticsDTO getBudgetAnalytics(Long userId, LocalDate startDate, LocalDate endDate) {
+        // M3: verify the user exists via BudgetService (all Feign calls centralised there)
+        budgetService.verifyUserExists(userId);
+
         String cacheKey = "budget-service::S4-F10::" + userId + "::" + startDate + "::" + endDate;
 
         try {

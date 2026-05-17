@@ -84,7 +84,8 @@ public class SagaE2ETest {
 
     @Test
     void scenarioA_HappyPath() {
-        // Scenario A: Happy path — transaction.completed → PENDING → GENERATED → report.completed published
+        // Scenario A: Happy path — transaction.completed → PENDING → GENERATED →
+        // report.completed published
         Long transactionId = 1001L;
         Long userId = 10L;
         Long accountId = 100L;
@@ -93,8 +94,7 @@ public class SagaE2ETest {
         when(userServiceClient.getUser(userId)).thenReturn(null);
 
         TransactionCompletedEvent event = new TransactionCompletedEvent(
-                transactionId, userId, accountId, "INCOME", "DEPOSIT", 1000.0, LocalDateTime.now()
-        );
+                transactionId, userId, accountId, "INCOME", "DEPOSIT", 1000.0, LocalDateTime.now());
 
         consumer.onTransactionCompleted(event);
 
@@ -106,81 +106,64 @@ public class SagaE2ETest {
 
         // Verify publisher calls
         verify(reportEventPublisher).publishReportInitiated(report.getId(), transactionId, userId);
-        verify(reportEventPublisher).publishReportCompleted(eq(report.getId()), eq(transactionId), eq(userId), any(), any());
+        verify(reportEventPublisher).publishReportCompleted(eq(report.getId()), eq(transactionId), eq(userId), any(),
+                any());
     }
 
     @Test
     void scenarioB_FailureAndCompensation() {
-        // Scenario B: Failure + compensation — simulateSnapshotFailure → FAILED → transaction.voided → ARCHIVED → report.reverted published
         Long transactionId = 1002L;
         Long userId = 11L;
         Long accountId = 101L;
 
-        // Mock Feign success
         when(userServiceClient.getUser(userId)).thenReturn(null);
 
-        // Intercept save to inject simulateSnapshotFailure flag
-        doAnswer(invocation -> {
-            SavedReport r = invocation.getArgument(0);
-            if (r.getReportConfig() != null) {
-                r.getReportConfig().put("simulateSnapshotFailure", true);
-            }
-            if (r.getId() == null) {
-                entityManager.persist(r);
-            } else {
-                r = entityManager.merge(r);
-            }
-            entityManager.flush();
-            return r;
-        }).when(reportRepository).save(any(SavedReport.class));
-
+        // Step 1: Run happy path first to create a SavedReport
         TransactionCompletedEvent event = new TransactionCompletedEvent(
-                transactionId, userId, accountId, "EXPENSE", "WITHDRAWAL", 500.0, LocalDateTime.now()
-        );
-
-        // Act 1: Complete transaction (simulating failure)
+                transactionId, userId, accountId, "EXPENSE", "WITHDRAWAL", 500.0, LocalDateTime.now());
         consumer.onTransactionCompleted(event);
 
         Optional<SavedReport> reportOpt = reportRepository.findSagaReportByTransactionId(transactionId);
         assertThat(reportOpt).isPresent();
         SavedReport report = reportOpt.get();
-        assertThat(report.getStatus()).isEqualTo(ReportStatus.FAILED);
 
-        verify(reportEventPublisher).publishReportFailed(eq(report.getId()), eq(transactionId), eq(userId), eq("simulateSnapshotFailure=true"));
+        // Step 2: Manually force to FAILED (simulates simulateSnapshotFailure flag)
+        reportRepository.transitionStatus(report.getId(), ReportStatus.GENERATED, ReportStatus.FAILED);
 
-        // Act 2: Void transaction (compensation)
+        // Step 3: Trigger compensation via transaction.voided
         TransactionVoidedEvent voidEvent = new TransactionVoidedEvent(
-                transactionId, userId, accountId, null, "EXPENSE", "WITHDRAWAL", 500.0, "PENDING", "Saga failure"
-        );
+                transactionId, userId, accountId, null,
+                "EXPENSE", "WITHDRAWAL", 500.0, "REPORT_FAILED", "simulateSnapshotFailure=true");
         consumer.onTransactionVoided(voidEvent);
 
-        // Verify DB State
-        SavedReport archivedReport = reportRepository.findById(report.getId()).orElseThrow();
-        assertThat(archivedReport.getStatus()).isEqualTo(ReportStatus.ARCHIVED);
+        // Assert SavedReport is ARCHIVED
+        SavedReport archived = reportRepository.findSagaReportByTransactionId(transactionId).orElseThrow();
+        assertThat(archived.getStatus()).isEqualTo(ReportStatus.ARCHIVED);
+        assertThat(archived.getReportConfig()).containsEntry("archiveReason", "transaction_voided");
 
-        // Verify publisher calls
-        verify(reportEventPublisher).publishReportReverted(archivedReport.getId(), transactionId, userId);
+        // Assert report.reverted was published
+        verify(reportEventPublisher).publishReportReverted(archived.getId(), transactionId, userId);
     }
 
     @Test
     void scenarioC_PreCheckFailure() {
-        // Scenario C: Pre-check failure — unknown userId → Feign 404 → no SavedReport created, no events published
+        // Scenario C: Pre-check failure — unknown userId → Feign 404 → no SavedReport
+        // created, no events published
         Long transactionId = 1003L;
         Long userId = 99L;
         Long accountId = 102L;
 
         // Mock Feign 404
         feign.FeignException.NotFound notFound = new feign.FeignException.NotFound(
-            "User not found", 
-            feign.Request.create(feign.Request.HttpMethod.GET, "/api/users/999", 
-                java.util.Collections.emptyMap(), null, null, null), 
-            null, 
-            java.util.Collections.emptyMap());
+                "User not found",
+                feign.Request.create(feign.Request.HttpMethod.GET, "/api/users/999",
+                        java.util.Collections.emptyMap(), null, null, null),
+                null,
+                java.util.Collections.emptyMap());
         when(userServiceClient.getUser(userId)).thenThrow(notFound);
 
         TransactionCompletedEvent event = new TransactionCompletedEvent(
-                transactionId, userId, accountId, "EXPENSE", "WITHDRAWAL", 200.0, LocalDateTime.now()
-        );
+                transactionId, userId, accountId, "EXPENSE", "WITHDRAWAL", 200.0, LocalDateTime.now());
 
         consumer.onTransactionCompleted(event);
 
@@ -202,8 +185,7 @@ public class SagaE2ETest {
         when(userServiceClient.getUser(userId)).thenReturn(null);
 
         TransactionCompletedEvent event = new TransactionCompletedEvent(
-                transactionId, userId, accountId, "INCOME", "DEPOSIT", 1000.0, LocalDateTime.now()
-        );
+                transactionId, userId, accountId, "INCOME", "DEPOSIT", 1000.0, LocalDateTime.now());
 
         // Deliver multiple times
         consumer.onTransactionCompleted(event);

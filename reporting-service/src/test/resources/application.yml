@@ -15,8 +15,10 @@ spring:
       host: localhost
       port: 6379
       password: redispass
-  mongodb:
-    uri: mongodb://localhost:27017/financemongo
+    mongodb:
+      uri: mongodb://localhost:27017/test
+      auto-index-creation: false
+      server-selection-timeout: 1000
   rabbitmq:
     host: localhost
     port: 5672

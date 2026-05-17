@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import jakarta.persistence.EntityManager;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.ActiveProfiles;
@@ -63,6 +64,9 @@ public class SagaE2ETest {
 
     @Autowired
     private TransactionEventConsumer consumer;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @MockitoSpyBean
     private SavedReportRepository reportRepository;
@@ -121,7 +125,13 @@ public class SagaE2ETest {
             if (r.getReportConfig() != null) {
                 r.getReportConfig().put("simulateSnapshotFailure", true);
             }
-            return invocation.callRealMethod();
+            if (r.getId() == null) {
+                entityManager.persist(r);
+            } else {
+                r = entityManager.merge(r);
+            }
+            entityManager.flush();
+            return r;
         }).when(reportRepository).save(any(SavedReport.class));
 
         TransactionCompletedEvent event = new TransactionCompletedEvent(
@@ -160,7 +170,12 @@ public class SagaE2ETest {
         Long accountId = 102L;
 
         // Mock Feign 404
-        FeignException.NotFound notFound = Mockito.mock(FeignException.NotFound.class);
+        feign.FeignException.NotFound notFound = new feign.FeignException.NotFound(
+            "User not found", 
+            feign.Request.create(feign.Request.HttpMethod.GET, "/api/users/999", 
+                java.util.Collections.emptyMap(), null, null, null), 
+            null, 
+            java.util.Collections.emptyMap());
         when(userServiceClient.getUser(userId)).thenThrow(notFound);
 
         TransactionCompletedEvent event = new TransactionCompletedEvent(

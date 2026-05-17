@@ -171,6 +171,16 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
             @Param("startDate") java.time.LocalDate startDate,
             @Param("endDate") java.time.LocalDate endDate
     );
+    @Modifying
+    @Query(value = "UPDATE budgets SET spent_amount = spent_amount + :amount, status = (CASE WHEN spent_amount + :amount > budget_amount THEN 'EXCEEDED' ELSE status END) WHERE user_id = :userId AND category = :category AND status = 'ACTIVE'", nativeQuery = true)
+    int applyTransactionCompleted(@Param("userId") Long userId, @Param("category") String category, @Param("amount") Double amount);
+
+    @Modifying
+    @Query(value = "UPDATE budgets SET spent_amount = GREATEST(spent_amount - :amount, 0), status = (CASE WHEN spent_amount - :amount <= budget_amount THEN 'ACTIVE' ELSE status END) WHERE user_id = :userId AND category = :category", nativeQuery = true)
+    int applyTransactionVoided(@Param("userId") Long userId, @Param("category") String category, @Param("amount") Double amount);
+
+    @Query(value = "SELECT * FROM budgets WHERE user_id = :userId AND category = :category ORDER BY id DESC LIMIT 1", nativeQuery = true)
+    Optional<Budget> findLatestBudgetForUserNative(@Param("userId") Long userId, @Param("category") String category);
 }
 
 

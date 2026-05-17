@@ -1,4 +1,4 @@
-﻿apiVersion: v1
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
@@ -32,4 +32,13 @@ data:
       - job_name: reporting-service
         static_configs:
           - targets: ["reporting-service.finance-tracker.svc.cluster.local:8080"]
+        metrics_path: /actuator/prometheus
+      # S4-INFRA scrape job
+      - job_name: budget-service
+        static_configs:
+          - targets: ["budget-service.finance-tracker.svc.cluster.local:8080"]
+      # S3-INFRA scrape job
+      - job_name: transaction-service
+        static_configs:
+          - targets: ["transaction-service.finance-tracker.svc.cluster.local:8080"]
         metrics_path: /actuator/prometheus

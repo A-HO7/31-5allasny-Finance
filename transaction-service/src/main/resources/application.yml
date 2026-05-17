@@ -54,6 +54,13 @@ neo4j:
   max-retry-time: 30s
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
   health:
     neo4j:
       enabled: false
@@ -66,3 +73,12 @@ feign:
 
   account-service:
     url: http://account-service:8080
+
+  budget-service:
+    url: http://budget-service:8080
+
+  reporting-service:
+    url: http://reporting-service:8080
+
+  transaction-service:
+    url: http://transaction-service:8080

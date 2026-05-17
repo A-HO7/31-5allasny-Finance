@@ -1,5 +1,8 @@
 package com.team31.financetracker.budget.service;
 
+import com.team31.financetracker.contracts.dto.BudgetSummaryDTO;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
 import com.team31.financetracker.budget.dto.BudgetAlertDTO;
 import com.team31.financetracker.budget.dto.BudgetPerformanceDTO;
 import com.team31.financetracker.budget.dto.BudgetUsageDTO;
@@ -15,7 +18,12 @@ import com.team31.financetracker.budget.model.Category;
 import com.team31.financetracker.budget.observer.MongoEventLogger;
 import com.team31.financetracker.budget.repository.BudgetRepository;
 import com.team31.financetracker.budget.repository.BudgetUsageEventRepository;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import com.team31.financetracker.budget.adapter.CassandraRowAdapter;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
@@ -33,6 +41,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class BudgetService {
@@ -42,14 +52,28 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final BudgetUsageEventRepository budgetUsageEventRepository;
     private final MongoEventLogger mongoEventLogger;
+    private final UserServiceClient userServiceClient;
     private final CassandraRowAdapter cassandraRowAdapter = new CassandraRowAdapter();
 
     public BudgetService(BudgetRepository budgetRepository,
                          BudgetUsageEventRepository budgetUsageEventRepository,
-                         MongoEventLogger mongoEventLogger) {
+                         MongoEventLogger mongoEventLogger,
+                         UserServiceClient userServiceClient) {
         this.budgetRepository = budgetRepository;
         this.budgetUsageEventRepository = budgetUsageEventRepository;
         this.mongoEventLogger = mongoEventLogger;
+        this.userServiceClient = userServiceClient;
+    }
+
+    // ──────────────────── M3: Cross-service user verification ────────────────────
+    public void verifyUserExists(Long userId) {
+        try {
+            userServiceClient.getUser(userId);
+        } catch (FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userId);
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service unavailable");
+        }
     }
 
     // ──────────────────── Observer helper ────────────────────
@@ -171,7 +195,7 @@ public class BudgetService {
     // ──────────────────── S4-F5: Overspent ────────────────────
 
     @Cacheable(value = "budget-service",
-            key = "'budget-service::S4-F5::' + #minOverspend + '::' + #warningNotSent",
+            key = "'budget-service::S4-F9::' + #minOverspend + '::' + #warningNotSent",
             unless = "#result == null")
     public List<OverspentBudgetDTO> getOverspentBudgets(Double minOverspend, Boolean warningNotSent) {
         if (minOverspend != null && minOverspend < 0) {
@@ -179,22 +203,46 @@ public class BudgetService {
         }
         try {
             List<OverspentBudgetProjection> projections = budgetRepository.findOverspentBudgets(minOverspend, warningNotSent);
-            return projections.stream().map(p -> new OverspentBudgetDTO.Builder()
-                    .budgetId(p.getBudgetId())
-                    .userName(p.getUserName())
-                    .category(p.getCategory())
-                    .budgetAmount(p.getBudgetAmount())
-                    .spentAmount(p.getSpentAmount())
-                    .overspendPercentage(p.getOverspendPercentage())
-                    .warningSent(p.getWarningSent())
-                    .build()
-            ).toList();
+
+            // Collect distinct userIds for a single batch Feign call
+            List<Long> userIds = projections.stream()
+                    .map(OverspentBudgetProjection::getUserId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            Map<Long, String> userNameMap = new HashMap<>();
+            if (!userIds.isEmpty()) {
+                try {
+                    List<UserDTO> users = userServiceClient.getUsersByIds(userIds);
+                    userNameMap = users.stream()
+                            .filter(u -> u.getId() != null)
+                            .collect(Collectors.toMap(UserDTO::getId, UserDTO::getName));
+                } catch (Exception e) {
+                    log.warn("Feign call to user-service/by-ids failed, falling back to userId: {}", e.getMessage());
+                }
+            }
+
+            final Map<Long, String> resolvedNames = userNameMap;
+            return projections.stream().map(p -> {
+                String userName = resolvedNames.getOrDefault(p.getUserId(), p.getUserName());
+                return new OverspentBudgetDTO.Builder()
+                        .budgetId(p.getBudgetId())
+                        .userName(userName)
+                        .category(p.getCategory())
+                        .budgetAmount(p.getBudgetAmount())
+                        .spentAmount(p.getSpentAmount())
+                        .overspendPercentage(p.getOverspendPercentage())
+                        .warningSent(p.getWarningSent())
+                        .build();
+            }).toList();
         } catch (Exception e) {
             if (e instanceof ResponseStatusException) throw e;
             log.warn("getOverspentBudgets failed: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
+
 
     // ──────────────────── S4-F1: Active Budget ────────────────────
 
@@ -329,11 +377,37 @@ public class BudgetService {
                     status != null ? status.name() : null
             );
 
+            // M3: Step 1 — collect distinct userIds from the DB results
+            // row[1] is CAST(b.user_id AS varchar), so we parse it as Long
+            List<Long> distinctUserIds = rows.stream()
+                    .map(row -> Long.parseLong((String) row[1]))
+                    .distinct()
+                    .toList();
+
+            // M3: Step 2 — one batch Feign call to user-service
+            Map<Long, String> userNameMap = new HashMap<>();
+            try {
+                List<UserDTO> users = userServiceClient.getUsersByIds(distinctUserIds);
+                for (UserDTO u : users) {
+                    userNameMap.put(u.getId(), u.getName());
+                }
+            } catch (FeignException e) {
+                // Soft dependency: if user-service is down, fall back to userId as name
+                log.warn("Batch user lookup failed for near-limit budgets: {}", e.getMessage());
+                for (Long uid : distinctUserIds) {
+                    userNameMap.put(uid, String.valueOf(uid));
+                }
+            }
+
+            // M3: Step 3 — build DTOs using the name map
             List<BudgetAlertDTO> result = new ArrayList<>();
             for (Object[] row : rows) {
+                Long userId = Long.parseLong((String) row[1]);
+                String userName = userNameMap.getOrDefault(userId, String.valueOf(userId));
+
                 BudgetAlertDTO dto = new BudgetAlertDTO.Builder()
                         .budgetId(((Number) row[0]).longValue())
-                        .userName((String) row[1])
+                        .userName(userName)
                         .category(Category.valueOf((String) row[2]))
                         .budgetAmount(((Number) row[3]).doubleValue())
                         .spentAmount(((Number) row[4]).doubleValue())
@@ -343,11 +417,14 @@ public class BudgetService {
                 result.add(dto);
             }
             return result;
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("getBudgetsNearLimit failed: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
+
 
     // ──────────────────── Usage Recording (Cassandra) ────────────────────
 
@@ -380,6 +457,27 @@ public class BudgetService {
                 "percentUsed", percentUsed,
                 "category", categoryName != null ? categoryName : ""
         ));
+    }
+
+    // ──────────────────── Budget Summary ────────────────────
+
+    @Cacheable(value = "budget-service",
+            key = "'budget-service::summary::' + #userId + '::' + #startDate + '::' + #endDate",
+            unless = "#result == null")
+    public BudgetSummaryDTO getBudgetSummary(Long userId, LocalDate startDate, LocalDate endDate) {
+        com.team31.financetracker.budget.dto.BudgetSummaryProjection proj =
+                budgetRepository.getBudgetSummary(userId, startDate, endDate);
+        return new BudgetSummaryDTO(
+                proj.getTotalBudgeted() != null ? proj.getTotalBudgeted() : 0.0,
+                proj.getTotalSpent() != null ? proj.getTotalSpent() : 0.0,
+                proj.getWeightedAdherenceRate() != null ? proj.getWeightedAdherenceRate() : 0.0
+        );
+    }
+
+    // ──────────────────── Active Budget Count (deactivation pre-check) ────────────────────
+
+    public int countActiveBudgetsByUser(Long userId) {
+        return budgetRepository.countActiveBudgetsByUserId(userId);
     }
 
     // ──────────────────── S4-F12: Budget Usage Timeline ────────────────────

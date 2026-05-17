@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: account-postgres
+  namespace: financetracker
+spec:
+  clusterIP: None   # headless — required for StatefulSet DNS
+  selector:
+    app: account-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

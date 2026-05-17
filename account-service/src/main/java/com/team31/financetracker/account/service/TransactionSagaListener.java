@@ -16,6 +16,8 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Service
 public class TransactionSagaListener {
 
@@ -39,104 +41,155 @@ public class TransactionSagaListener {
         processedEventRepository.save(new ProcessedEvent(eventId));
     }
 
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-saga-listener}")
+    @RabbitListener(queues = "${rabbitmq.queues.transaction-approved-listener}")
     @Transactional
     public void onTransactionApproved(TransactionApprovedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
-        String eventId = event.transactionId() + "-APPROVED";
-        if (isEventProcessed(eventId)) {
-            LOGGER.warn("Event {} already processed.", eventId);
-            return;
-        }
-
-        if (correlationId != null) MDC.put("correlationId", correlationId);
-        MDC.put("routingKey", routingKey);
-        MDC.put("accountId", String.valueOf(event.accountId()));
-
-        LOGGER.info("Processing transaction.approved event for account {}", event.accountId());
-
-        String type = event.type();
-        Double amount = event.amount();
-
-        if ("EXPENSE".equalsIgnoreCase(type)) {
-            accountRepository.updateBalance(event.accountId(), -amount);
-        } else if ("INCOME".equalsIgnoreCase(type)) {
-            accountRepository.updateBalance(event.accountId(), amount);
-        } else if ("TRANSFER".equalsIgnoreCase(type)) {
-            accountRepository.updateBalance(event.accountId(), -amount);
-            if (event.toAccountId() != null) {
-                accountRepository.updateBalance(event.toAccountId(), amount);
+        String eventId = eventId(event.transactionId(), "APPROVED");
+        try {
+            putMdc(routingKey, correlationId, event.accountId());
+            if (isEventProcessed(eventId)) {
+                LOGGER.warn("Event {} already processed.", eventId);
+                return;
             }
-        }
 
-        LOGGER.info("Updated balance for account {}", event.accountId());
-        markEventAsProcessed(eventId);
-        MDC.clear();
-    }
+            LOGGER.info("Processing transaction.approved event for account {}", event.accountId());
 
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-saga-listener}")
-    @Transactional
-    public void onTransactionCompleted(TransactionCompletedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
-        String eventId = event.transactionId() + "-COMPLETED";
-        if (isEventProcessed(eventId)) {
-            LOGGER.warn("Event {} already processed.", eventId);
-            return;
-        }
-
-        if (correlationId != null) MDC.put("correlationId", correlationId);
-        MDC.put("routingKey", routingKey);
-        MDC.put("accountId", String.valueOf(event.accountId()));
-
-        LOGGER.info("Processing transaction.completed event for account {}", event.accountId());
-        accountRepository.incrementTotalTransactions(event.accountId());
-        accountRepository.updateLastTransactionDate(event.accountId(), event.completedAt());
-        LOGGER.info("Updated transaction stats for account {}", event.accountId());
-
-        Account account = accountRepository.findById(event.accountId()).orElseThrow();
-        accountEventPublisher.publishAccountStatsUpdatedEvent(
-                new AccountStatsUpdatedEvent(account.getId(), 1, 0.0)
-        );
-
-        markEventAsProcessed(eventId);
-        MDC.clear();
-    }
-
-    @RabbitListener(queues = "${rabbitmq.queues.transaction-saga-listener}")
-    @Transactional
-    public void onTransactionVoided(TransactionVoidedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
-        String eventId = event.transactionId() + "-VOIDED";
-        if (isEventProcessed(eventId)) {
-            LOGGER.warn("Event {} already processed.", eventId);
-            return;
-        }
-
-        if (correlationId != null) MDC.put("correlationId", correlationId);
-        MDC.put("routingKey", routingKey);
-        MDC.put("accountId", String.valueOf(event.accountId()));
-
-        LOGGER.info("Processing transaction.voided event for account {}", event.accountId());
-
-        String previousStatus = event.previousStatus();
-        if ("APPROVED".equalsIgnoreCase(previousStatus) || "COMPLETING".equalsIgnoreCase(previousStatus) || "REPORT_PENDING".equalsIgnoreCase(previousStatus) || "REPORT_FAILED".equalsIgnoreCase(previousStatus)) {
-            String type = event.type();
-            Double amount = event.amount();
+            String type = requireType(event.type(), eventId);
+            Double amount = requireAmount(event.amount(), eventId);
 
             if ("EXPENSE".equalsIgnoreCase(type)) {
-                accountRepository.updateBalance(event.accountId(), amount);
+                updateBalance(event.accountId(), -amount, eventId);
             } else if ("INCOME".equalsIgnoreCase(type)) {
-                accountRepository.updateBalance(event.accountId(), -amount);
+                updateBalance(event.accountId(), amount, eventId);
             } else if ("TRANSFER".equalsIgnoreCase(type)) {
-                accountRepository.updateBalance(event.accountId(), amount);
-                if (event.toAccountId() != null) {
-                    accountRepository.updateBalance(event.toAccountId(), -amount);
-                }
+                updateBalance(event.accountId(), -amount, eventId);
+                updateBalance(event.toAccountId(), amount, eventId);
+            } else {
+                throw new IllegalArgumentException("Unsupported transaction type for event " + eventId + ": " + type);
             }
-            LOGGER.info("Reversed balance change for account {}", event.accountId());
+
+            LOGGER.info("Updated balance for account {}", event.accountId());
+            markEventAsProcessed(eventId);
+        } finally {
+            MDC.clear();
         }
+    }
 
-        accountRepository.decrementTotalTransactions(event.accountId());
-        LOGGER.info("Reversed transaction stats for account {}", event.accountId());
+    @RabbitListener(queues = "${rabbitmq.queues.transaction-completed-listener}")
+    @Transactional
+    public void onTransactionCompleted(TransactionCompletedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
+        String eventId = eventId(event.transactionId(), "COMPLETED");
+        try {
+            putMdc(routingKey, correlationId, event.accountId());
+            if (isEventProcessed(eventId)) {
+                LOGGER.warn("Event {} already processed.", eventId);
+                return;
+            }
 
-        markEventAsProcessed(eventId);
-        MDC.clear();
+            LOGGER.info("Processing transaction.completed event for account {}", event.accountId());
+            ensureAccountUpdated(accountRepository.incrementTotalTransactions(event.accountId()), event.accountId(), eventId);
+            ensureAccountUpdated(
+                    accountRepository.updateLastTransactionDate(
+                            event.accountId(),
+                            event.completedAt() != null ? event.completedAt() : LocalDateTime.now()
+                    ),
+                    event.accountId(),
+                    eventId
+            );
+            LOGGER.info("Updated transaction stats for account {}", event.accountId());
+
+            Account account = accountRepository.findById(event.accountId()).orElseThrow(
+                    () -> new IllegalStateException("Account not found for event " + eventId)
+            );
+            accountEventPublisher.publishAccountStatsUpdatedEvent(
+                    new AccountStatsUpdatedEvent(account.getId(), 1, 0.0)
+            );
+
+            markEventAsProcessed(eventId);
+        } finally {
+            MDC.clear();
+        }
+    }
+
+    @RabbitListener(queues = "${rabbitmq.queues.transaction-voided-listener}")
+    @Transactional
+    public void onTransactionVoided(TransactionVoidedEvent event, @Header("amqp_receivedRoutingKey") String routingKey, @Header(value = "x-correlation-id", required = false) String correlationId) {
+        String eventId = eventId(event.transactionId(), "VOIDED");
+        try {
+            putMdc(routingKey, correlationId, event.accountId());
+            if (isEventProcessed(eventId)) {
+                LOGGER.warn("Event {} already processed.", eventId);
+                return;
+            }
+
+            LOGGER.info("Processing transaction.voided event for account {}", event.accountId());
+
+            String previousStatus = event.previousStatus();
+            if ("APPROVED".equalsIgnoreCase(previousStatus) || "COMPLETING".equalsIgnoreCase(previousStatus) || "REPORT_PENDING".equalsIgnoreCase(previousStatus) || "REPORT_FAILED".equalsIgnoreCase(previousStatus)) {
+                String type = requireType(event.type(), eventId);
+                Double amount = requireAmount(event.amount(), eventId);
+
+                if ("EXPENSE".equalsIgnoreCase(type)) {
+                    updateBalance(event.accountId(), amount, eventId);
+                } else if ("INCOME".equalsIgnoreCase(type)) {
+                    updateBalance(event.accountId(), -amount, eventId);
+                } else if ("TRANSFER".equalsIgnoreCase(type)) {
+                    updateBalance(event.accountId(), amount, eventId);
+                    updateBalance(event.toAccountId(), -amount, eventId);
+                } else {
+                    throw new IllegalArgumentException("Unsupported transaction type for event " + eventId + ": " + type);
+                }
+                LOGGER.info("Reversed balance change for account {}", event.accountId());
+            }
+
+            ensureAccountUpdated(accountRepository.decrementTotalTransactions(event.accountId()), event.accountId(), eventId);
+            LOGGER.info("Reversed transaction stats for account {}", event.accountId());
+
+            markEventAsProcessed(eventId);
+        } finally {
+            MDC.clear();
+        }
+    }
+
+    private static String eventId(Long transactionId, String suffix) {
+        if (transactionId == null) {
+            throw new IllegalArgumentException("Transaction event is missing transactionId");
+        }
+        return transactionId + "-" + suffix;
+    }
+
+    private static String requireType(String type, String eventId) {
+        if (type == null || type.isBlank()) {
+            throw new IllegalArgumentException("Transaction event " + eventId + " is missing type");
+        }
+        return type;
+    }
+
+    private static Double requireAmount(Double amount, String eventId) {
+        if (amount == null || amount < 0) {
+            throw new IllegalArgumentException("Transaction event " + eventId + " has invalid amount");
+        }
+        return amount;
+    }
+
+    private void updateBalance(Long accountId, double amount, String eventId) {
+        if (accountId == null) {
+            throw new IllegalArgumentException("Transaction event " + eventId + " is missing accountId");
+        }
+        ensureAccountUpdated(accountRepository.updateBalance(accountId, amount), accountId, eventId);
+    }
+
+    private static void ensureAccountUpdated(int updatedRows, Long accountId, String eventId) {
+        if (updatedRows == 0) {
+            throw new IllegalStateException("Account " + accountId + " was not updated for event " + eventId);
+        }
+    }
+
+    private static void putMdc(String routingKey, String correlationId, Long accountId) {
+        if (correlationId != null) {
+            MDC.put("correlationId", correlationId);
+        }
+        MDC.put("routingKey", routingKey);
+        MDC.put("accountId", String.valueOf(accountId));
     }
 }

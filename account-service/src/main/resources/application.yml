@@ -47,6 +47,15 @@ jwt:
   expiration: 86400000 # 24 hours in ms
 
 feign:
+  account-service:
+    url: http://account-service:8080
+
+  budget-service:
+    url: http://budget-service:8080
+
+  reporting-service:
+    url: http://reporting-service:8080
+
   user-service:
     url: http://user-service:8080
 
@@ -68,8 +77,12 @@ rabbitmq:
     account: account.events
     transaction: transaction.events
   queues:
-    transaction-saga-listener: account.transaction.saga-listener
-    transaction-saga-listener-dlq: account.transaction.saga-listener.dlq
+    transaction-approved-listener: account.transaction.approved-listener
+    transaction-approved-listener-dlq: account.transaction.approved-listener.dlq
+    transaction-completed-listener: account.transaction.completed-listener
+    transaction-completed-listener-dlq: account.transaction.completed-listener.dlq
+    transaction-voided-listener: account.transaction.voided-listener
+    transaction-voided-listener-dlq: account.transaction.voided-listener.dlq
   routing-keys:
     transaction-approved: transaction.approved
     transaction-completed: transaction.completed

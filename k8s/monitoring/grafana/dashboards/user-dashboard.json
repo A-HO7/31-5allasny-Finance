@@ -168,7 +168,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(http_server_requests_seconds_count{service=\"user-service\"}[5m])",
+          "expr": "rate(http_server_requests_seconds_count{job=\"user-service\"}[5m])",
           "legendFormat": "{{method}} {{uri}} {{status}}"
         }
       ],
@@ -236,7 +236,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "jvm_memory_used_bytes{service=\"user-service\", area=\"heap\"}",
+          "expr": "jvm_memory_used_bytes{job=\"user-service\", area=\"heap\"}",
           "legendFormat": "{{id}}"
         }
       ],
@@ -269,7 +269,7 @@
   "refresh": "30s",
   "schemaVersion": 36,
   "style": "dark",
-  "tags": ["Finance Tracker", "user-service", "observability", "S1-INFRA"],
+  "tags": ["Finance Tracker", "user-service", "observability", "S1-EVENTS", "S1-INFRA"],
   "templating": {
     "list": []
   },

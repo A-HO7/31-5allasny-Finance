@@ -19,7 +19,7 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
   rabbitmq:
-    host: rabbitmq
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
     port: 5672
     username: guest
     password: guest
@@ -48,10 +48,10 @@ jwt:
 
 feign:
   transaction-service:
-    url: http://transaction-service:8080
+    url: ${FEIGN_TRANSACTION_SERVICE_URL:http://transaction-service:8080}
 
   budget-service:
-    url: http://budget-service:8080
+    url: ${FEIGN_BUDGET_SERVICE_URL:http://budget-service:8080}
 
 logging:
   loki:

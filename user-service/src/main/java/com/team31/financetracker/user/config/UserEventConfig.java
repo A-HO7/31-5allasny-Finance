@@ -1,10 +1,13 @@
 package com.team31.financetracker.user.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -17,6 +20,11 @@ public class UserEventConfig {
 
     public static final String USER_TRANSACTION_SAGA_LISTENER_QUEUE = "user.transaction.saga-listener";
     public static final String USER_TRANSACTION_SAGA_LISTENER_DLQ = "user.transaction.saga-listener.dlq";
+
+    public static final String RK_USER_REGISTERED = "user.registered";
+    public static final String RK_USER_DEACTIVATED = "user.deactivated";
+    public static final String RK_TRANSACTION_COMPLETED = "transaction.completed";
+    public static final String RK_TRANSACTION_VOIDED = "transaction.voided";
 
     @Bean
     public TopicExchange userEventsExchange() {
@@ -63,7 +71,7 @@ public class UserEventConfig {
     ) {
         return BindingBuilder.bind(userTransactionSagaListenerQueue)
                 .to(transactionEventsExchange)
-                .with("transaction.completed");
+                .with(RK_TRANSACTION_COMPLETED);
     }
 
     @Bean
@@ -73,6 +81,11 @@ public class UserEventConfig {
     ) {
         return BindingBuilder.bind(userTransactionSagaListenerQueue)
                 .to(transactionEventsExchange)
-                .with("transaction.voided");
+                .with(RK_TRANSACTION_VOIDED);
+    }
+
+    @Bean
+    public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
     }
 }

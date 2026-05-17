@@ -83,7 +83,7 @@ public class RabbitMQConfig {
     // Bindings
     @Bean
     public Binding bindUserListener(Queue transactionUserListenerQueue, TopicExchange userEventsExchange) {
-        return BindingBuilder.bind(transactionUserListenerQueue).to(userEventsExchange).with("user.deactivated");
+        return BindingBuilder.bind(transactionUserListenerQueue).to(userEventsExchange).with("user.#");
     }
 
     @Bean

@@ -6,8 +6,12 @@ import com.team31.financetracker.budget.observer.BudgetSubject;
 import com.team31.financetracker.budget.observer.EntityObserver;
 import com.team31.financetracker.budget.observer.MongoEventLogger;
 import com.team31.financetracker.budget.repository.BudgetRepository;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -21,15 +25,18 @@ public class BudgetAnalyticsService implements BudgetSubject {
 
     private final BudgetRepository budgetRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final UserServiceClient userServiceClient;
     private final BudgetService budgetService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
     public BudgetAnalyticsService(BudgetRepository budgetRepository,
                                   RedisTemplate<String, Object> redisTemplate,
                                   MongoEventLogger mongoEventLogger,
+                                  UserServiceClient userServiceClient,
                                   BudgetService budgetService) {
         this.budgetRepository = budgetRepository;
         this.redisTemplate = redisTemplate;
+        this.userServiceClient = userServiceClient;
         this.budgetService = budgetService;
         registerObserver(mongoEventLogger);
     }
@@ -65,6 +72,14 @@ public class BudgetAnalyticsService implements BudgetSubject {
     }
 
     public BudgetAnalyticsDTO getBudgetAnalytics(Long userId, LocalDate startDate, LocalDate endDate) {
+        // M3: verify the user exists via Feign before touching the local DB
+        try {
+            userServiceClient.getUser(userId);
+        } catch (FeignException.NotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userId);
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service unavailable");
+        }
         // M3: verify the user exists via BudgetService (all Feign calls centralised there)
         budgetService.verifyUserExists(userId);
 

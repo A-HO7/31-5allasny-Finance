@@ -15,6 +15,9 @@ import com.team31.financetracker.budget.model.Category;
 import com.team31.financetracker.budget.observer.MongoEventLogger;
 import com.team31.financetracker.budget.repository.BudgetRepository;
 import com.team31.financetracker.budget.repository.BudgetUsageEventRepository;
+import com.team31.financetracker.contracts.dto.UserDTO;
+import com.team31.financetracker.contracts.feign.UserServiceClient;
+import feign.FeignException;
 import com.team31.financetracker.budget.adapter.CassandraRowAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,14 +45,17 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final BudgetUsageEventRepository budgetUsageEventRepository;
     private final MongoEventLogger mongoEventLogger;
+    private final UserServiceClient userServiceClient;
     private final CassandraRowAdapter cassandraRowAdapter = new CassandraRowAdapter();
 
     public BudgetService(BudgetRepository budgetRepository,
                          BudgetUsageEventRepository budgetUsageEventRepository,
-                         MongoEventLogger mongoEventLogger) {
+                         MongoEventLogger mongoEventLogger,
+                         UserServiceClient userServiceClient) {
         this.budgetRepository = budgetRepository;
         this.budgetUsageEventRepository = budgetUsageEventRepository;
         this.mongoEventLogger = mongoEventLogger;
+        this.userServiceClient = userServiceClient;
     }
 
     // ──────────────────── Observer helper ────────────────────
@@ -196,6 +202,7 @@ public class BudgetService {
         }
     }
 
+
     // ──────────────────── S4-F1: Active Budget ────────────────────
 
     @Cacheable(value = "budget-service",
@@ -329,11 +336,37 @@ public class BudgetService {
                     status != null ? status.name() : null
             );
 
+            // M3: Step 1 — collect distinct userIds from the DB results
+            // row[1] is CAST(b.user_id AS varchar), so we parse it as Long
+            List<Long> distinctUserIds = rows.stream()
+                    .map(row -> Long.parseLong((String) row[1]))
+                    .distinct()
+                    .toList();
+
+            // M3: Step 2 — one batch Feign call to user-service
+            Map<Long, String> userNameMap = new HashMap<>();
+            try {
+                List<UserDTO> users = userServiceClient.getUsersByIds(distinctUserIds);
+                for (UserDTO u : users) {
+                    userNameMap.put(u.getId(), u.getName());
+                }
+            } catch (FeignException e) {
+                // Soft dependency: if user-service is down, fall back to userId as name
+                log.warn("Batch user lookup failed for near-limit budgets: {}", e.getMessage());
+                for (Long uid : distinctUserIds) {
+                    userNameMap.put(uid, String.valueOf(uid));
+                }
+            }
+
+            // M3: Step 3 — build DTOs using the name map
             List<BudgetAlertDTO> result = new ArrayList<>();
             for (Object[] row : rows) {
+                Long userId = Long.parseLong((String) row[1]);
+                String userName = userNameMap.getOrDefault(userId, String.valueOf(userId));
+
                 BudgetAlertDTO dto = new BudgetAlertDTO.Builder()
                         .budgetId(((Number) row[0]).longValue())
-                        .userName((String) row[1])
+                        .userName(userName)
                         .category(Category.valueOf((String) row[2]))
                         .budgetAmount(((Number) row[3]).doubleValue())
                         .spentAmount(((Number) row[4]).doubleValue())
@@ -343,11 +376,14 @@ public class BudgetService {
                 result.add(dto);
             }
             return result;
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("getBudgetsNearLimit failed: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
+
 
     // ──────────────────── Usage Recording (Cassandra) ────────────────────
 

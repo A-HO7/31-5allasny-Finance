@@ -1,4 +1,4 @@
-package com.team31.financetracker.transaction.listener;
+package com.team31.financetracker.transaction.messaging.consumers;
 
 import com.team31.financetracker.contracts.events.AccountStatusChangedEvent;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
@@ -10,14 +10,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-public class TransactionAccountListener {
+public class AccountStatusConsumer {
 
-    private static final Logger log = LoggerFactory.getLogger(TransactionAccountListener.class);
+    private static final Logger log = LoggerFactory.getLogger(AccountStatusConsumer.class);
 
     private final TransactionRepository transactionRepository;
     private final CacheInvalidationService cacheInvalidationService;
 
-    public TransactionAccountListener(TransactionRepository transactionRepository,
+    public AccountStatusConsumer(TransactionRepository transactionRepository,
             CacheInvalidationService cacheInvalidationService) {
         this.transactionRepository = transactionRepository;
         this.cacheInvalidationService = cacheInvalidationService;

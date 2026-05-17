@@ -1,4 +1,4 @@
-package com.team31.financetracker.transaction.service;
+package com.team31.financetracker.transaction.messaging.publishers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

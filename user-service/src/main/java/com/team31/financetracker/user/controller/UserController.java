@@ -1,7 +1,7 @@
 package com.team31.financetracker.user.controller;
 
-import com.team31.financetracker.contracts.dto.TopSaverDTO;
 import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;

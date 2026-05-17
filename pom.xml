@@ -27,8 +27,8 @@
         <module>account-service</module>
         <module>transaction-service</module>
         <module>budget-service</module>
-        <module>reporting-service</module>
         <module>api-gateway</module>
+        <module>reporting-service</module>
     </modules>
 
     <properties>

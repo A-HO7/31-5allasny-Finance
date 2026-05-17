@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api-gateway
-  namespace: finance-tracker
+  namespace: financetracker
   labels:
     app: api-gateway
 spec:
@@ -21,12 +21,15 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: api-gateway-configmap
           env:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: jwt-secret
-                  key: JWT_SECRET
+                  key: jwt-secret
                   optional: true
           readinessProbe:
             httpGet:

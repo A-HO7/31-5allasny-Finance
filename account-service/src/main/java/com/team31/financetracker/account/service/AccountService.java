@@ -54,6 +54,8 @@ public class AccountService {
     private final AccountSummaryProjectionAdapter accountSummaryProjectionAdapter;
     private final TopAccountProjectionAdapter topAccountProjectionAdapter;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final RabbitTemplate rabbitTemplate;
+    private final UserServiceClient userServiceClient;
     private final TransactionServiceClient transactionServiceClient;
 
     public AccountService(
@@ -64,7 +66,7 @@ public class AccountService {
             AccountSummaryProjectionAdapter accountSummaryProjectionAdapter,
             TopAccountProjectionAdapter topAccountProjectionAdapter,
             RedisTemplate<String, Object> redisTemplate,
-            RabbitTemplate rabbitTemplate
+            RabbitTemplate rabbitTemplate,
             UserServiceClient userServiceClient,
             TransactionServiceClient transactionServiceClient
     ) {

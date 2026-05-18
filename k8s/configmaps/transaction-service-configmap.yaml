@@ -5,7 +5,7 @@ metadata:
   namespace: financetracker
 data:
   SPRING_DATASOURCE_URL: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
-  SPRING_DATASOURCE_USERNAME: user
+  SPRING_DATASOURCE_USERNAME: postgres
   SPRING_RABBITMQ_HOST: rabbitmq
   FEIGN_USER_SERVICE_URL: http://user-service:8080
   FEIGN_ACCOUNT_SERVICE_URL: http://account-service:8080

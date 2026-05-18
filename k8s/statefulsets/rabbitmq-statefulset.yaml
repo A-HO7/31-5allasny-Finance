@@ -26,23 +26,30 @@ spec:
             - name: management
               containerPort: 15672
               protocol: TCP
-          volumeMounts:
-            - name: rabbitmq-data
-              mountPath: /var/lib/rabbitmq
-            - name: rabbitmq-config
-              mountPath: /etc/rabbitmq/rabbitmq.conf
-              subPath: rabbitmq.conf
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: guest
+            - name: RABBITMQ_DEFAULT_PASS
+              value: guest
+            - name: RABBITMQ_LOOPBACK_USERS
+              value: none
           resources:
             requests:
               memory: "256Mi"
-              cpu: "100m"
+              cpu: "250m"
             limits:
               memory: "512Mi"
               cpu: "500m"
-      volumes:
-        - name: rabbitmq-config
-          configMap:
-            name: rabbitmq-config
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "check_port_connectivity"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
   volumeClaimTemplates:
     - metadata:
         name: rabbitmq-data

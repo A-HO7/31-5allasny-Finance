@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: api-gateway
-          image: api-gateway:latest
+          image: api-gateway:1.0-SNAPSHOT
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -31,34 +31,28 @@ spec:
                   name: jwt-secret
                   key: jwt-secret
                   optional: true
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=25.0"
           startupProbe:
-            httpGet:
-              path: /actuator/health/liveness
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 60
-            periodSeconds: 10
-            failureThreshold: 15
-            timeoutSeconds: 5
+            periodSeconds: 15
+            failureThreshold: 80
           readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 0
             periodSeconds: 10
-            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 0
             periodSeconds: 20
-            timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

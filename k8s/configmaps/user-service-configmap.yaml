@@ -6,6 +6,10 @@ metadata:
 data:
   SPRING_DATASOURCE_URL: "jdbc:postgresql://user-postgres:5432/financedb-users"
   SPRING_RABBITMQ_HOST: "rabbitmq"
+  SPRING_DATA_MONGODB_URI: "mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_DATA_REDIS_PASSWORD: "redispass"
   FEIGN_TRANSACTION_SERVICE_URL: "http://transaction-service:8080"
   FEIGN_BUDGET_SERVICE_URL: "http://budget-service:8080"
   LOKI_URL: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"

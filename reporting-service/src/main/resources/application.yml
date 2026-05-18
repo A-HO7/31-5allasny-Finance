@@ -45,17 +45,16 @@ jwt:
   expiration: 86400000 # 24 hours in ms
 
 feign:
-  user-service:
-    url: http://user-service:8080
-
   account-service:
-    url: http://account-service:8080
-
+    url: ${FEIGN_ACCOUNT_SERVICE_URL:http://account-service:8080}
   budget-service:
-    url: http://budget-service:8080
-
+    url: ${FEIGN_BUDGET_SERVICE_URL:http://budget-service:8080}
+  reporting-service:
+    url: ${FEIGN_REPORTING_SERVICE_URL:http://reporting-service:8080}
+  user-service:
+    url: ${FEIGN_USER_SERVICE_URL:http://user-service:8080}
   transaction-service:
-    url: http://transaction-service:8080
+    url: ${FEIGN_TRANSACTION_SERVICE_URL:http://transaction-service:8080}
 
 management:
   endpoints:

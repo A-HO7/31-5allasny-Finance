@@ -26,19 +26,30 @@ spec:
             - "yes"
             - --requirepass
             - redispass
-          volumeMounts:
-            - name: redis-data
-              mountPath: /data
+            - --maxmemory
+            - 256mb
+            - --maxmemory-policy
+            - allkeys-lru
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
           readinessProbe:
-            tcpSocket:
-              port: 6379
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            exec:
+              command: ["redis-cli", "-a", "redispass", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
           livenessProbe:
             tcpSocket:
               port: 6379
             initialDelaySeconds: 20
             periodSeconds: 30
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
   volumeClaimTemplates:
     - metadata:
         name: redis-data

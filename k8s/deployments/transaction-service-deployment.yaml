@@ -30,27 +30,28 @@ spec:
                 secretKeyRef:
                   name: jwt-secret
                   key: jwt-secret
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=25.0"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
           startupProbe:
-            httpGet:
-              path: /actuator/health
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 30
-            timeoutSeconds: 5
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 80
           readinessProbe:
-            httpGet:
-              path: /actuator/health
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 0
             periodSeconds: 10
-            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
-            httpGet:
-              path: /actuator/health
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 0
-            periodSeconds: 30
-            timeoutSeconds: 5
+            periodSeconds: 20
             failureThreshold: 3

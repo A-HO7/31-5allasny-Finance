@@ -14,17 +14,37 @@ spec:
       labels:
         app: neo4j
     spec:
+      enableServiceLinks: false
       containers:
         - name: neo4j
           image: neo4j:5.18.0
           env:
             - name: NEO4J_AUTH
               value: "neo4j/neo4jpass"
+            - name: NEO4J_server_memory_heap_max__size
+              value: "512m"
+            - name: NEO4J_server_memory_heap_initial__size
+              value: "256m"
           ports:
             - containerPort: 7687
               name: bolt
             - containerPort: 7474
               name: http
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 7474
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
           volumeMounts:
             - name: neo4j-data
               mountPath: /data

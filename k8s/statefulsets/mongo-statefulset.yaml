@@ -26,9 +26,8 @@ spec:
               value: root
             - name: MONGO_INITDB_ROOT_PASSWORD
               value: rootpass
-          volumeMounts:
-            - name: data
-              mountPath: /data/db
+            - name: MONGO_INITDB_DATABASE
+              value: financemongo
           resources:
             requests:
               memory: "256Mi"
@@ -36,6 +35,26 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - -u
+                - root
+                - -p
+                - rootpass
+                - --authenticationDatabase
+                - admin
+                - --eval
+                - "db.adminCommand('ping').ok"
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
   volumeClaimTemplates:
     - metadata:
         name: data

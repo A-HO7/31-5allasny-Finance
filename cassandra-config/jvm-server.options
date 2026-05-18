@@ -1,0 +1,15 @@
+### Cassandra JVM Server Options — overrides auto-heap calculation
+# Force heap to 512m regardless of available system RAM
+-Xms512m
+-Xmx512m
+
+# Cap off-heap memory to prevent OOM kills in constrained environments
+-XX:MaxDirectMemorySize=256m
+-XX:MaxMetaspaceSize=128m
+-XX:CompressedClassSpaceSize=64m
+-XX:ReservedCodeCacheSize=64m
+
+# GC settings compatible with small heap
+-XX:+UseG1GC
+-XX:G1HeapRegionSize=8m
+-XX:MaxGCPauseMillis=500

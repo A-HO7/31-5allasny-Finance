@@ -220,11 +220,17 @@ services:
       CASSANDRA_CLUSTER_NAME: financecluster
       CASSANDRA_DC: datacenter1
       CASSANDRA_KEYSPACE: financeks
-      JVM_EXTRA_OPTS: "-Xms128m -Xmx128m"
-      MAX_HEAP_SIZE: 512M
-      HEAP_NEWSIZE: 128M
+      JVM_OPTS: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=128m"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        export JVM_OPTS="-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m -XX:MaxMetaspaceSize=128m ${JVM_OPTS}"
+        exec /usr/local/bin/docker-entrypoint.sh cassandra -f
     volumes:
       - cassandra-data:/var/lib/cassandra
+      - ./cassandra-config/jvm-server.options:/etc/cassandra/jvm-server.options
+      - ./cassandra-config/cassandra-env.sh:/etc/cassandra/cassandra-env.sh
 
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES'"]

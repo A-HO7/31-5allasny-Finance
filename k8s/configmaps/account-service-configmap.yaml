@@ -5,7 +5,7 @@ metadata:
   namespace: financetracker
 data:
   SPRING_DATASOURCE_URL: jdbc:postgresql://account-postgres:5432/financedb-accounts
-  SPRING_DATASOURCE_USERNAME: user
+  SPRING_DATASOURCE_USERNAME: postgres
   SPRING_RABBITMQ_HOST: rabbitmq
   SPRING_DATA_REDIS_HOST: redis
   SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200

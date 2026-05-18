@@ -30,19 +30,19 @@ spec:
             - name: CASSANDRA_RACK
               value: "rack1"
             - name: MAX_HEAP_SIZE
-              value: "2G"
-            - name: HEAP_NEWSIZE
               value: "512M"
+            - name: HEAP_NEWSIZE
+              value: "128M"
           volumeMounts:
             - name: cassandra-data
               mountPath: /var/lib/cassandra
           resources:
             requests:
-              memory: "2Gi"
-              cpu: "1000m"
+              memory: "768Mi"
+              cpu: "500m"
             limits:
-              memory: "4Gi"
-              cpu: "2000m"
+              memory: "1Gi"
+              cpu: "1000m"
   volumeClaimTemplates:
     - metadata:
         name: cassandra-data

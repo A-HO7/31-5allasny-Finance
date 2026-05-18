@@ -16,6 +16,7 @@ spec:
       containers:
         - name: transaction-service
           image: transaction-service:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           envFrom:
@@ -29,15 +30,27 @@ spec:
                 secretKeyRef:
                   name: jwt-secret
                   key: jwt-secret
-          readinessProbe:
+          startupProbe:
             httpGet:
               path: /actuator/health
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8080
-            initialDelaySeconds: 60
+            initialDelaySeconds: 0
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

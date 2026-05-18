@@ -24,13 +24,20 @@
         <sendQueueMaxBytes>41943040</sendQueueMaxBytes>
     </appender>
 
+    <appender name="LOKI_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="LOKI"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI"/>
+        <appender-ref ref="LOKI_ASYNC"/>
     </root>
 
     <logger name="org.springframework" level="WARN"/>
     <logger name="org.hibernate"       level="WARN"/>
     <logger name="com.team31.financetracker.budget" level="DEBUG"/>
-    <logger name="feign"                            level="DEBUG"/>
+    <logger name="feign"               level="DEBUG"/>
 </configuration>

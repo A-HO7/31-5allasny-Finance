@@ -70,6 +70,12 @@ management:
       enabled: false
     redis:
       enabled: false
+    mongo:
+      enabled: false
+    rabbit:
+      enabled: false
+    db:
+      enabled: false
 
 feign:
   user-service:

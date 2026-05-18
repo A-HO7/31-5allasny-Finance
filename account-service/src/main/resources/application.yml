@@ -71,6 +71,17 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+  health:
+    mongo:
+      enabled: false
+    redis:
+      enabled: false
+    elasticsearch:
+      enabled: false
+    rabbit:
+      enabled: false
+    db:
+      enabled: false
         
 rabbitmq:
   exchanges:

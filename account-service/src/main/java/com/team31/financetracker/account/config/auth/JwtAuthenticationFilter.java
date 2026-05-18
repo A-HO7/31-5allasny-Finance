@@ -32,7 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // Bypass the JWT chain for public endpoints
-        if (path.startsWith("/api/accounts/health") || path.equals("/error")) {
+        if (path.startsWith("/api/accounts/health") || path.startsWith("/actuator") || path.equals("/error")) {
             filterChain.doFilter(request, response);
             return;
         }

@@ -82,6 +82,11 @@ public class BudgetEventConfig {
     // ── Message converter ──────────────────────────────────────────────────────
 
     @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
+
+    @Bean
     public MessageConverter jacksonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
     }

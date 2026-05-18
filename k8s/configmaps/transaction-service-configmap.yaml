@@ -11,3 +11,6 @@ data:
   FEIGN_ACCOUNT_SERVICE_URL: http://account-service:8080
   FEIGN_BUDGET_SERVICE_URL: http://budget-service:8080
   FEIGN_REPORTING_SERVICE_URL: http://reporting-service:8080
+  SPRING_DATA_MONGODB_URI: "mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin"
+  SPRING_DATA_NEO4J_URI: "bolt://neo4j:7687"
+  SPRING_DATA_REDIS_HOST: "redis"

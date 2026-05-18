@@ -76,3 +76,12 @@ management:
         http:
           server:
             requests: true
+  health:
+    mongo:
+      enabled: false
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+    db:
+      enabled: false

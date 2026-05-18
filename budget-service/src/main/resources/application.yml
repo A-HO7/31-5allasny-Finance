@@ -27,7 +27,7 @@ spring:
 #      keyspace-name: financeks
 #      schema-action: CREATE_IF_NOT_EXISTS
   mongodb:
-    uri: mongodb://root:rootpass@${MONGO_HOST:localhost}:27017/financemongo?authSource=admin&serverSelectionTimeoutMS=50&connectTimeoutMS=50&socketTimeoutMS=50
+    uri: mongodb://root:rootpass@${MONGO_HOST:localhost}:27017/financemongo?authSource=admin&serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
   cassandra:
     contact-points: ${CASSANDRA_HOST:localhost}
     port: 9042
@@ -38,7 +38,7 @@ spring:
       connect-timeout: 5s
       init-query-timeout: 5s
     request:
-      timeout: 50ms
+      timeout: 10s
 
   rabbitmq:
     host: rabbitmq
@@ -75,6 +75,17 @@ management:
   metrics:
     tags:
       application: budget-service
+  health:
+    cassandra:
+      enabled: false
+    mongo:
+      enabled: false
+    redis:
+      enabled: false
+    rabbit:
+      enabled: false
+    db:
+      enabled: false
 
 feign:
   account-service:

@@ -10,7 +10,7 @@ import org.springframework.data.elasticsearch.annotations.FieldType;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Document(indexName = "accounts")
+@Document(indexName = "accounts", createIndex = false)
 public class AccountSearchDocument {
 
     @Id

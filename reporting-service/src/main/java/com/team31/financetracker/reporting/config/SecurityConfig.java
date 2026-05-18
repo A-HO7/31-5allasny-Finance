@@ -41,7 +41,7 @@ public class SecurityConfig {
 
             // 3. Public vs protected endpoints
             .authorizeHttpRequests(auth -> auth
-                    .requestMatchers("/api/reports/health").permitAll()
+                    .requestMatchers("/api/reports/health", "/actuator/**").permitAll()
                     .anyRequest().authenticated()
             )
 

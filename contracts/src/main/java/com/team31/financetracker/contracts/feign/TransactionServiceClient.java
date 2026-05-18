@@ -5,7 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "transaction-service", url = "${feign.transaction-service.url}")
+@FeignClient(name = "transaction-service", url = "${feign.transaction-service.url:http://transaction-service:8080}")
 public interface TransactionServiceClient {
     @GetMapping("/api/transactions/user/{userId}/summary")
     UserTransactionSummaryDTO getUserTransactionSummary(@PathVariable("userId") Long userId);

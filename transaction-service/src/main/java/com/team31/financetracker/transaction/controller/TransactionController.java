@@ -55,6 +55,18 @@ public class TransactionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Transaction createTransaction(@RequestBody Transaction transaction) {
+        if (transaction.getAccountId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accountId is required");
+        }
+        if (transaction.getUserId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId is required");
+        }
+        if (transaction.getAmount() == null || transaction.getAmount() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be positive");
+        }
+        if (transaction.getType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
+        }
         return transactionService.createTransaction(transaction);
     }
 
@@ -186,6 +198,18 @@ public class TransactionController {
             TransactionSplit single = objectMapper.convertValue(
                     splitsBody, TransactionSplit.class);
             splits = List.of(single);
+        }
+
+        if (splits == null || splits.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "splits list must not be empty");
+        }
+        for (TransactionSplit split : splits) {
+            if (split.getRecipientName() == null || split.getRecipientName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each split must have a recipientName");
+            }
+            if (split.getAmount() == null || split.getAmount() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each split amount must be positive");
+            }
         }
         return transactionService.addSplitsToTransaction(transactionId, splits);
     }

@@ -24,13 +24,19 @@ public class BudgetAnalyticsController {
     public ResponseEntity<BudgetAnalyticsDTO> getBudgetAnalyticsByQuery(
             @RequestParam String startDate,
             @RequestParam String endDate,
-            @RequestParam Long userId,
+            @RequestParam(required = false) Long userId,
             jakarta.servlet.http.HttpServletRequest request
     ) {
         Long jwtUid = (Long) request.getAttribute("jwt.uid");
         String jwtRole = (String) request.getAttribute("jwt.role");
+        if (userId == null) {
+            if (jwtUid == null) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+            }
+            userId = jwtUid;
+        }
 
-        if (!"ADMIN".equals(jwtRole) && !userId.equals(jwtUid)) {
+        if (!"ADMIN".equals(jwtRole) && (!userId.equals(jwtUid))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
 

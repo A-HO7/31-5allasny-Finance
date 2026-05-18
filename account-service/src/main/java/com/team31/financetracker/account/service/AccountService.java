@@ -341,7 +341,7 @@ public class AccountService {
                             .expiredCount(expired.size())
                             .build();
                 })
-                .filter(dto -> dto.expiredCount() > 0)
+                .filter(dto -> dto.getExpiredCount() > 0)
                 .toList();
     }
 

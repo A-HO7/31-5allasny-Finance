@@ -6,6 +6,8 @@ metadata:
 data:
   SPRING_DATASOURCE_URL: "jdbc:postgresql://reporting-postgres:5432/financedb-reporting"
   SPRING_RABBITMQ_HOST: "rabbitmq"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_MONGODB_URI: "mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin"
   FEIGN_USER_SERVICE_URL: "http://user-service:8080"
   FEIGN_ACCOUNT_SERVICE_URL: "http://account-service:8080"
   FEIGN_TRANSACTION_SERVICE_URL: "http://transaction-service:8080"

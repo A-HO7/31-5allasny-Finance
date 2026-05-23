@@ -1,5 +1,6 @@
 package com.team31.financetracker.user.controller;
 
+import com.team31.financetracker.contracts.dto.UserDTO;
 import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
 import com.team31.financetracker.user.dto.TopSaverDTO;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
@@ -8,6 +9,8 @@ import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.service.UserService;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.team31.financetracker.user.dto.UserProfileDTO;
 
@@ -43,6 +46,18 @@ public class UserController {
         return userService.getUserById(id);
     }
 
+    // Returns List<UserDTO> (safe public contract). Max 100 IDs per call (HTTP 414
+    // if exceeded).
+    @GetMapping("/by-ids")
+    public ResponseEntity<?> getUsersByIds(@RequestParam("ids") List<Long> ids) {
+        if (ids.size() > 100) {
+            return ResponseEntity
+                    .status(HttpStatus.URI_TOO_LONG)
+                    .body("Too many IDs: max 100 allowed, got " + ids.size());
+        }
+        return ResponseEntity.ok(userService.getUsersByIds(ids));
+    }
+
     // UPDATE
     @PutMapping("/{id}")
     public User updateUser(@PathVariable Long id, @RequestBody User user) {
@@ -54,7 +69,8 @@ public class UserController {
     public void deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
     }
-    //Search with Filter (S1-F1)
+
+    // Search with Filter (S1-F1)
     @GetMapping("/search")
     public List<User> searchUsers(
             @RequestParam(required = false) String name,
@@ -63,12 +79,14 @@ public class UserController {
 
         return userService.searchUsers(name, email, role);
     }
-    //Update Preferences (S1-F2)
+
+    // Update Preferences (S1-F2)
     @PutMapping("/{id}/preferences")
     public User updatePreferences(@PathVariable Long id, @RequestBody Map<String, Object> preferences) {
         return userService.updatePreferences(id, preferences);
     }
-    //Filter Users by Preference (S1-F5)
+
+    // Filter Users by Preference (S1-F5)
     @GetMapping("/preferences/search")
     public List<User> filterByPreference(
             @RequestParam String key,
@@ -94,14 +112,13 @@ public class UserController {
         return userService.getUserProfileWithGoals(id);
     }
 
-     // Get User Transaction Summary (S1-F3)
-     @GetMapping("/{id}/transaction-summary")
-     public UserTransactionSummaryDTO getUserTransactionSummary(@PathVariable Long id) {
-         return userService.getUserTransactionSummary(id);
-     }
+    // Get User Transaction Summary (S1-F3)
+    @GetMapping("/{id}/transaction-summary")
+    public UserTransactionSummaryDTO getUserTransactionSummary(@PathVariable Long id) {
+        return userService.getUserTransactionSummary(id);
+    }
 
-
-     // Top Savers by Net Income (S1-F6)
+    // Top Savers by Net Income (S1-F6)
     @GetMapping("/reports/top-savers")
     public List<TopSaverDTO> getTopSaversByNetIncome(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -118,7 +135,7 @@ public class UserController {
         return userService.findUsersByCurrencyPreference(currency, minTransactions);
     }
 
-    //CC-2 Role Management
+    // CC-2 Role Management
     @PutMapping("/{id}/role")
     public User updateUserRole(@PathVariable Long id, @RequestBody Map<String, String> body) {
         String newRole = body.get("role");
@@ -127,24 +144,22 @@ public class UserController {
 
     // Get User Activity Feed (S1-F12)
     @GetMapping("/{id}/activity")
-    public org.springframework.http.ResponseEntity<?> getUserActivityFeed(
+    public ResponseEntity<?> getUserActivityFeed(
             @PathVariable Long id,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        
+
         if (page != null && page < 0) {
-            return org.springframework.http.ResponseEntity.badRequest().body("Page index must not be less than zero");
+            return ResponseEntity.badRequest().body("Page index must not be less than zero");
         }
         if (size != null && size < 0) {
-            return org.springframework.http.ResponseEntity.badRequest().body("Page size must not be less than zero");
+            return ResponseEntity.badRequest().body("Page size must not be less than zero");
         }
-        
+
         try {
-            return org.springframework.http.ResponseEntity.ok(userService.getUserActivityFeed(id, page, size));
+            return ResponseEntity.ok(userService.getUserActivityFeed(id, page, size));
         } catch (IllegalArgumentException e) {
-            return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 }
-
-

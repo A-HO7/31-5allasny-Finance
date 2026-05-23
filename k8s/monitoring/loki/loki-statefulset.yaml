@@ -27,6 +27,13 @@ spec:
               mountPath: /etc/loki
             - name: loki-storage
               mountPath: /loki
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
           readinessProbe:
             httpGet:
               path: /ready

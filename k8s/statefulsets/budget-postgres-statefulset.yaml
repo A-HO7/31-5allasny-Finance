@@ -35,6 +35,13 @@ spec:
                 secretKeyRef:
                   name: budget-postgres-secret
                   key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data

@@ -19,6 +19,8 @@ spec:
           args:
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time=3d"
+            - "--storage.tsdb.retention.size=400MB"
           ports:
             - containerPort: 9090
           volumeMounts:
@@ -26,6 +28,13 @@ spec:
               mountPath: /etc/prometheus
             - name: storage
               mountPath: /prometheus
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           readinessProbe:
             httpGet:
               path: /-/ready

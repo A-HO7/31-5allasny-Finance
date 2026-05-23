@@ -25,6 +25,13 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboards
               mountPath: /etc/grafana/provisioning/dashboards
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
           readinessProbe:
             httpGet:
               path: /api/health

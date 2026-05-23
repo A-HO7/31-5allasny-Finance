@@ -16,30 +16,42 @@ spec:
       containers:
         - name: account-service
           image: account-service:latest
-          # use the locally available image instead of trying to pull from a registry.
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
-          envFrom:
-            - configMapRef:
-                name: account-service-configmap
-            - secretRef:
-                name: account-postgres-secret
           env:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: jwt-secret
                   key: jwt-secret
-          readinessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /actuator/health
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=25.0"
+          envFrom:
+            - configMapRef:
+                name: account-service-configmap
+            - secretRef:
+                name: account-postgres-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          startupProbe:
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 60
-            periodSeconds: 30
+            periodSeconds: 15
+            failureThreshold: 80
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 20
+            failureThreshold: 3

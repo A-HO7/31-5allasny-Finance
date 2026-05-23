@@ -1,5 +1,8 @@
 package com.team31.financetracker.budget.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.Serializable;
 
 public class BudgetAnalyticsDTO implements Serializable {
@@ -42,11 +45,23 @@ public class BudgetAnalyticsDTO implements Serializable {
         return totalBudgets;
     }
 
+    @JsonIgnore
     public Double getTotalBudgetAmount() {
         return totalBudgetAmount;
     }
 
+    @JsonProperty("totalBudgeted")
+    public Double getTotalBudgeted() {
+        return totalBudgetAmount;
+    }
+
+    @JsonIgnore
     public Double getTotalSpentAmount() {
+        return totalSpentAmount;
+    }
+
+    @JsonProperty("totalSpent")
+    public Double getTotalSpent() {
         return totalSpentAmount;
     }
 

@@ -5,8 +5,11 @@ metadata:
   namespace: financetracker
 data:
   SPRING_DATASOURCE_URL: jdbc:postgresql://transaction-postgres:5432/financedb-transactions
-  SPRING_DATASOURCE_USERNAME: user
+  SPRING_DATASOURCE_USERNAME: postgres
   SPRING_RABBITMQ_HOST: rabbitmq
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_MONGODB_URI: mongodb://root:rootpass@mongo:27017/financemongo?authSource=admin
+  SPRING_DATA_NEO4J_URI: bolt://neo4j:7687
   FEIGN_USER_SERVICE_URL: http://user-service:8080
   FEIGN_ACCOUNT_SERVICE_URL: http://account-service:8080
   FEIGN_BUDGET_SERVICE_URL: http://budget-service:8080

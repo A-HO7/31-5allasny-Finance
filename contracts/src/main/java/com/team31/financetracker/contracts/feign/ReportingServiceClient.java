@@ -4,7 +4,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
-@FeignClient(name = "reporting-service", url = "${feign.reporting-service.url}")
+@FeignClient(name = "reporting-service", url = "${feign.reporting-service.url:http://reporting-service:8080}")
 public interface ReportingServiceClient {
     
     // S5 self-health checks: Count of GENERATED reports created via the saga snapshot path

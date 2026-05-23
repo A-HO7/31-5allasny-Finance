@@ -139,13 +139,23 @@ public class BudgetController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createBudgetsBatch(@RequestBody Map<String, Object> body) {
         Long userId = toLong(body.get("userId"));
+        if (userId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId is required");
+        }
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rawBudgets = (List<Map<String, Object>>) body.get("budgets");
+        if (rawBudgets == null || rawBudgets.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "budgets list must not be empty");
+        }
         List<Budget> budgets = new ArrayList<>();
-        if (rawBudgets != null) {
-            for (Map<String, Object> raw : rawBudgets) {
-                budgets.add(mapToBudget(raw));
+        for (Map<String, Object> raw : rawBudgets) {
+            if (raw.get("category") == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each budget must have a category");
             }
+            if (toDouble(raw.get("amount") != null ? raw.get("amount") : raw.get("budgetAmount")) == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each budget must have an amount");
+            }
+            budgets.add(mapToBudget(raw));
         }
         List<Budget> saved = budgetService.createBudgetsBatch(userId, budgets);
         return Map.of("count", saved.size());
@@ -242,6 +252,17 @@ public class BudgetController {
             @RequestParam String operator,
             @RequestParam String value
     ) {
+        if (key == null || key.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "key is required");
+        }
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "value is required");
+        }
+        List<String> validOperators = List.of("eq", "neq", "gt", "gte", "lt", "lte", "contains");
+        if (operator == null || !validOperators.contains(operator.toLowerCase())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Invalid operator. Must be one of: " + validOperators);
+        }
         return budgetService.searchBudgetsByMetadata(key, operator, value);
     }
 

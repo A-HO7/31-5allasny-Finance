@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import java.util.List;
 
-@FeignClient(name = "user-service", url = "${feign.user-service.url}")
+@FeignClient(name = "user-service", url = "${feign.user-service.url:http://user-service:8080}")
 public interface UserServiceClient {
     @GetMapping("/api/users/{id}")
     UserDTO getUser(@PathVariable("id") Long id);
@@ -16,4 +16,9 @@ public interface UserServiceClient {
 
     @GetMapping("/api/users/by-ids")
     List<UserDTO> getUsersByIds(@RequestParam("ids") List<Long> ids);
+
+    @GetMapping("/api/users/search")
+    List<UserDTO> searchUsers(@RequestParam(value = "name", required = false) String name,
+                              @RequestParam(value = "email", required = false) String email,
+                              @RequestParam(value = "role", required = false) String role);
 }

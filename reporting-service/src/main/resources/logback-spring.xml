@@ -1,21 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
-    <!-- ── Console appender (plain text for local dev / kubectl logs) ── -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- ── Loki4J appender — pushes JSON log streams to Loki ── -->
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
         <http>
             <url>http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push</url>
         </http>
         <format>
             <label>
-                <!-- Labels must match exactly what LogQL panels query on -->
                 <pattern>app=financetracker,service=reporting-service,level=%level,env=k8s</pattern>
             </label>
             <message>
@@ -28,18 +24,20 @@
         <sendQueueMaxBytes>41943040</sendQueueMaxBytes>
     </appender>
 
-    <!-- ── Root logger: INFO to both appenders ── -->
+    <appender name="LOKI_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="LOKI"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="LOKI"/>
+        <appender-ref ref="LOKI_ASYNC"/>
     </root>
 
-    <!-- Downgrade Spring/Hibernate noise so only business logs reach Loki -->
     <logger name="org.springframework" level="WARN"/>
     <logger name="org.hibernate"       level="WARN"/>
-
-    <!-- Reporting service at DEBUG so Feign call WARN/INFO log points flow -->
     <logger name="com.team31.financetracker.reporting" level="DEBUG"/>
-    <logger name="feign"                               level="DEBUG"/>
-
+    <logger name="feign"               level="DEBUG"/>
 </configuration>

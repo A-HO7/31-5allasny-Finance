@@ -10,6 +10,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Servlet filter that populates the SLF4J MDC with observability keys for every
@@ -25,6 +27,8 @@ import java.util.UUID;
  */
 @Component
 public class CorrelationIdFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(CorrelationIdFilter.class);
 
     private static final String CORRELATION_HEADER = "X-Correlation-ID";
     private static final String MDC_CORRELATION    = "correlationId";
@@ -45,9 +49,12 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         // Echo the correlation ID back to the caller so the gateway/client can trace
         response.setHeader(CORRELATION_HEADER, correlationId);
 
+        log.info("Received {} {}", request.getMethod(), request.getRequestURI());
+
         try {
             filterChain.doFilter(request, response);
         } finally {
+            log.info("Returning {} for {} {}", response.getStatus(), request.getMethod(), request.getRequestURI());
             // MUST clear to prevent MDC leaking into next request on the same thread
             MDC.remove(MDC_CORRELATION);
         }

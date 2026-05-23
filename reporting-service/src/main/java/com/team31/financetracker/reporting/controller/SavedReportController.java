@@ -233,8 +233,6 @@ public class SavedReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             HttpServletRequest request) {
 
-        log.info("Received {} {}", request.getMethod(), request.getRequestURI());
-
         // Step a — JWT validation (401)
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -265,8 +263,6 @@ public class SavedReportController {
 
             // Step h — audit log OUTSIDE cache (always fires, including on cache hits)
             healthService.logHealthScoreViewed(userId);
-
-            log.info("Returning {} for {} {}", 200, request.getMethod(), request.getRequestURI());
 
             // Step j — return 200
             return ResponseEntity.ok(dto);

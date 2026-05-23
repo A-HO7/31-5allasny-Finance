@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: elasticsearch
-  namespace: finance-tracker
+  namespace: financetracker
   labels:
     app: elasticsearch
 spec:
@@ -16,6 +16,13 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+          volumeMounts:
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
       containers:
         - name: elasticsearch
           image: elasticsearch:8.19.12
@@ -23,16 +30,16 @@ spec:
             - name: http
               containerPort: 9200
               protocol: TCP
+            - name: transport
+              containerPort: 9300
+              protocol: TCP
           env:
             - name: discovery.type
               value: "single-node"
             - name: xpack.security.enabled
               value: "false"
             - name: ES_JAVA_OPTS
-              value: "-Xms512m -Xmx512m"
-          volumeMounts:
-            - name: elasticsearch-data
-              mountPath: /usr/share/elasticsearch/data
+              value: "-Xms1g -Xmx1g"
           resources:
             requests:
               memory: "1Gi"
@@ -40,6 +47,17 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
   volumeClaimTemplates:
     - metadata:
         name: elasticsearch-data

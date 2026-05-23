@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: financetracker
+data:
+  rabbitmq.conf: |
+    ## Default user credentials
+    default_user = guest
+    default_pass = guest
+
+    ## Allow guest user to connect from any host (not just localhost)
+    loopback_users = none
+
+    ## Networking
+    listeners.tcp.default = 5672
+
+    ## Management plugin
+    management.tcp.port = 15672
+
+    ## Logging
+    log.console = true
+    log.console.level = info

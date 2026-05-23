@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-configmap
+  namespace: financetracker
+data:
+  USER_SERVICE_URL: "http://user-service:8080"
+  ACCOUNT_SERVICE_URL: "http://account-service:8080"
+  TRANSACTION_SERVICE_URL: "http://transaction-service:8080"
+  BUDGET_SERVICE_URL: "http://budget-service:8080"
+  REPORTING_SERVICE_URL: "http://reporting-service:8080"
+  SERVER_PORT: "8080"
+  SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING: "true"

@@ -30,9 +30,11 @@ import com.team31.financetracker.transaction.outbox.OutboxRepository;
 import com.team31.financetracker.transaction.repository.TransactionRepository;
 import com.team31.financetracker.transaction.repository.CategoryNodeRepository;
 import com.team31.financetracker.transaction.repository.UserNodeRepository;
+import com.team31.financetracker.transaction.saga.SagaTriggerService;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsAdapter;
 import com.team31.financetracker.transaction.util.TransactionAnalyticsDashboardAdapter;
 import com.team31.financetracker.transaction.adapter.Neo4jRecordAdapter;
+import com.team31.financetracker.transaction.messaging.publishers.EventPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import feign.FeignException;
@@ -54,6 +56,8 @@ import java.util.stream.Collectors;
 @Service
 public class TransactionService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TransactionService.class);
+
     private final TransactionRepository transactionRepository;
     private final UserNodeRepository userNodeRepository;
     private final CategoryNodeRepository categoryNodeRepository;
@@ -64,9 +68,11 @@ public class TransactionService {
     private final OutboxRepository outboxRepository;
     private final EventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final SagaTriggerService sagaTriggerService;
 
     // ── Observer Pattern (DP-2) ───────────────────────────────────────────────
     private final List<EntityObserver> observers = new ArrayList<>();
+
 
     public TransactionService(TransactionRepository transactionRepository,
             UserNodeRepository userNodeRepository,
@@ -78,7 +84,8 @@ public class TransactionService {
             EventPublisher eventPublisher,
             MongoEventLogger mongoEventLogger,
             CacheInvalidationService cacheInvalidationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SagaTriggerService sagaTriggerService) {
         this.transactionRepository = transactionRepository;
         this.userNodeRepository = userNodeRepository;
         this.categoryNodeRepository = categoryNodeRepository;
@@ -89,6 +96,7 @@ public class TransactionService {
         this.eventPublisher = eventPublisher;
         this.cacheInvalidationService = cacheInvalidationService;
         this.objectMapper = objectMapper;
+        this.sagaTriggerService = sagaTriggerService;
         registerObserver(mongoEventLogger);
     }
 
@@ -307,84 +315,7 @@ public class TransactionService {
 
     @Transactional
     public Transaction completeTransaction(Long id) {
-        Transaction transaction = getTransactionById(id);
-
-        if (transaction.getStatus() != TransactionStatus.APPROVED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only APPROVED transactions can be completed");
-        }
-
-        Long userId = transaction.getUserId();
-
-        try {
-            UserDTO user = userServiceClient.getUser(userId);
-            if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "User must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "User must be ACTIVE");
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not verify user");
-        }
-
-        try {
-            AccountDTO account = accountServiceClient.getAccount(transaction.getAccountId());
-            if (!"ACTIVE".equalsIgnoreCase(account.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Account must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Account must be ACTIVE");
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not verify account");
-        }
-
-        String category = transaction.getCategory() != null ? transaction.getCategory().name() : null;
-        try {
-            BudgetDTO budget = budgetServiceClient.getActiveBudgetForUser(userId, category);
-            if (budget != null && budget.getStatus() != null
-                    && !"ACTIVE".equalsIgnoreCase(budget.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Budget must be ACTIVE");
-            }
-        } catch (feign.FeignException.NotFound e) {
-            // No active budget is acceptable; continue with completion.
-        } catch (FeignException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Could not verify budget");
-        }
-
-        transaction.setStatus(TransactionStatus.COMPLETING);
-        transaction.setCompletedAt(LocalDateTime.now());
-        transaction = transactionRepository.save(transaction);
-
-        try {
-            String payload = objectMapper.writeValueAsString(
-                    new TransactionCompletedEvent(
-                            transaction.getId(),
-                            transaction.getUserId(),
-                            transaction.getAccountId(),
-                            transaction.getCategory() != null ? transaction.getCategory().name() : null,
-                            transaction.getType().name(),
-                            transaction.getAmount(),
-                            transaction.getCompletedAt()));
-            outboxRepository.save(new OutboxEvent(
-                    "transaction.events",
-                    "transaction.completed",
-                    payload));
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Could not queue completion event");
-        }
-
-        notifyObservers("COMPLETING", transaction);
-        cacheInvalidationService.evictAllTransactionCaches(transaction.getId());
-        return transaction;
+        return sagaTriggerService.completeTransaction(id);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -606,9 +537,10 @@ public class TransactionService {
     public void recordSpendingPattern(Long transactionId) {
         Transaction transaction = getTransactionById(transactionId);
 
-        if (transaction.getStatus() != TransactionStatus.COMPLETED) {
+        if (transaction.getStatus() != TransactionStatus.COMPLETED
+                && transaction.getStatus() != TransactionStatus.REPORTED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only COMPLETED transactions can record spending patterns");
+                    "Only COMPLETED or REPORTED transactions can record spending patterns");
         }
 
         if (transaction.getType() == TransactionType.TRANSFER) {
@@ -622,8 +554,7 @@ public class TransactionService {
                 userId = owner.userId();
             }
         } catch (FeignException e) {
-            System.err.println("[WARN] Could not load account owner for accountId="
-                    + transaction.getAccountId() + ": " + e.getMessage());
+            log.warn("Could not load account owner for accountId={}: {}", transaction.getAccountId(), e.getMessage());
         }
 
         // Get user details (soft dependency — use defaults if unavailable)
@@ -638,8 +569,7 @@ public class TransactionService {
                 }
             }
         } catch (FeignException e) {
-            System.err.println("[WARN] Could not load user details for userId="
-                    + userId + ": " + e.getMessage());
+            log.warn("Could not load user details for userId={}: {}", userId, e.getMessage());
         }
 
         String categoryType = (transaction.getType() == TransactionType.INCOME)
@@ -661,7 +591,7 @@ public class TransactionService {
                             ? transaction.getCompletedAt()
                             : LocalDateTime.now());
         } catch (Exception ex) {
-            System.err.println("[WARN] Neo4j recordSpendingPattern failed: " + ex.getMessage());
+            log.warn("Neo4j recordSpendingPattern failed for transactionId={}: {}", transactionId, ex.getMessage());
         }
 
         // Always log PATTERN_RECORDED event to MongoDB (grader verifies this).
@@ -700,14 +630,24 @@ public class TransactionService {
 
         int actualLimit = (limit != null && limit > 0) ? limit : 5;
 
-        List<Map<String, Object>> raw = userNodeRepository
-                .getCategoryRecommendations(userId, actualLimit);
+        List<Map<String, Object>> raw;
+        try {
+            raw = userNodeRepository.getCategoryRecommendations(userId, actualLimit);
+        } catch (Exception e) {
+            log.warn("Neo4j unavailable for recommendations userId={}: {}", userId, e.getMessage());
+            return List.of();
+        }
 
-        // DP-7 Adapter — converts Neo4j raw records to CategoryRecommendationDTO
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+
         Neo4jRecordAdapter adapter = new Neo4jRecordAdapter();
 
         return raw.stream()
+                .filter(row -> row != null)
                 .map(adapter::adapt)
+                .filter(dto -> dto != null)
                 .filter(dto -> categoryType == null
                         || categoryType.equals(dto.categoryType()))
                 .collect(Collectors.toList());
@@ -733,7 +673,8 @@ public class TransactionService {
         return transactionRepository.getAccountTransactionSummaryAllTime(accountId);
     }
 
-    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start, LocalDateTime endExclusive) {
+    public Map<String, Object> getAccountTransactionSummary(Long accountId, LocalDateTime start,
+            LocalDateTime endExclusive) {
         return transactionRepository.getAccountTransactionSummary(accountId, start, endExclusive);
     }
 

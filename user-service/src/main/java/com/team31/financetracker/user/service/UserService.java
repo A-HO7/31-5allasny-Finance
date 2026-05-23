@@ -1,12 +1,24 @@
 package com.team31.financetracker.user.service;
 
-import com.team31.financetracker.user.dto.*;
+import com.team31.financetracker.contracts.dto.NetIncomeDTO;
+import com.team31.financetracker.contracts.dto.UserTransactionSummaryDTO;
+import com.team31.financetracker.contracts.events.UserDeactivatedEvent;
+import com.team31.financetracker.contracts.events.UserRegisteredEvent;
+import com.team31.financetracker.user.dto.ActivityEventDTO;
+import com.team31.financetracker.user.dto.FinancialGoalDTO;
+import com.team31.financetracker.user.dto.RegisterRequest;
+import com.team31.financetracker.user.dto.TopSaverDTO;
+import com.team31.financetracker.user.dto.UserActivityFeedResponse;
+import com.team31.financetracker.user.dto.UserProfileDTO;
+import com.team31.financetracker.user.messaging.publishers.UserEventPublisher;
+import com.team31.financetracker.user.exception.ServiceUnavailableException;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.observer.EntityObserver;
 import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
-import com.team31.financetracker.user.adapter.ObjectArrayDtoAdapter;
+import feign.FeignException;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.team31.financetracker.user.repository.UserRepository;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
@@ -19,21 +31,24 @@ import com.team31.financetracker.user.model.UserStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
 import com.team31.financetracker.user.model.FinancialGoal;
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.team31.financetracker.user.dto.RegisterRequest;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class UserService {
@@ -42,34 +57,45 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthEventRepository authEventRepository;
-    private final ObjectArrayDtoAdapter objectArrayDtoAdapter;
+    private final TransactionServiceClient transactionServiceClient;
+    private final BudgetServiceClient budgetServiceClient;
+    private final UserEventPublisher userEventPublisher;
     private final MongoDocumentAdapter mongoDocumentAdapter;
     private final CacheInvalidationService cacheInvalidationService;
     private final List<EntityObserver> observers = new ArrayList<>();
 
-    // 2. Update your Constructor
     public UserService(UserRepository userRepository,
             FinancialGoalRepository financialGoalRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             AuthEventRepository authEventRepository,
-            ObjectArrayDtoAdapter objectArrayDtoAdapter,
             MongoDocumentAdapter mongoDocumentAdapter,
             CacheInvalidationService cacheInvalidationService,
-            MongoEventLogger mongoEventLogger) { // Add this
+            TransactionServiceClient transactionServiceClient,
+            BudgetServiceClient budgetServiceClient,
+            UserEventPublisher userEventPublisher,
+            MongoEventLogger mongoEventLogger) {
         this.userRepository = userRepository;
         this.financialGoalRepository = financialGoalRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authEventRepository = authEventRepository;
-        this.objectArrayDtoAdapter = objectArrayDtoAdapter;
         this.mongoDocumentAdapter = mongoDocumentAdapter;
         this.cacheInvalidationService = cacheInvalidationService;
+        this.transactionServiceClient = transactionServiceClient;
+        this.budgetServiceClient = budgetServiceClient;
+        this.userEventPublisher = userEventPublisher;
         register(mongoEventLogger);
     }
 
-    public void register(EntityObserver observer) { observers.add(observer); }
-    public void unregister(EntityObserver observer) { observers.remove(observer); }
+    public void register(EntityObserver observer) {
+        observers.add(observer);
+    }
+
+    public void unregister(EntityObserver observer) {
+        observers.remove(observer);
+    }
+
     private void notifyObservers(String eventType, Object payload) {
         for (EntityObserver obs : observers) {
             obs.onEvent(eventType, payload);
@@ -105,33 +131,26 @@ public class UserService {
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "userDetailCache", key = "'user-service::user::' + #id")
     public User getUserById(Long id) {
-        validateOwnershipOrAdmin(id); // <--- Add this
-        return userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-    }
-
-    // Helper: get the currently authenticated user from SecurityContextHolder
-    private User getAuthenticatedUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null) return null;
-        return userRepository.findByEmail(auth.getName()).orElse(null);
-    }
-
-    // Helper: enforce that caller is the owner OR an ADMIN
-    private void enforceOwnership(Long targetId) {
-        User caller = getAuthenticatedUser();
-        if (caller == null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authenticated");
+        boolean setUserId = MDC.get("userId") == null;
+        if (setUserId) {
+            MDC.put("userId", id.toString());
         }
-        boolean isAdmin = caller.getRole().name().equals("ADMIN");
-        if (!isAdmin && !caller.getId().equals(targetId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        try {
+            validateOwnershipOrAdmin(id);
+            return userRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        } finally {
+            if (setUserId) {
+                MDC.remove("userId");
+            }
         }
     }
 
     // Update
     @Transactional
     public User updateUser(Long id, User userDetails) {
+        MDC.put("userId", id.toString());
+        try {
         validateOwnershipOrAdmin(id);
 
         User existingUser = userRepository.findById(id)
@@ -157,17 +176,25 @@ public class UserService {
         cacheInvalidationService.evictUserDetail(id);
         cacheInvalidationService.evictUserFeatureCaches();
         return saved;
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Delete
     @Transactional
     public void deleteUser(Long id) {
-        validateOwnershipOrAdmin(id); // <--- Add this
+        MDC.put("userId", id.toString());
+        try {
+        validateOwnershipOrAdmin(id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         userRepository.delete(user);
         cacheInvalidationService.evictUserDetail(id);
         cacheInvalidationService.evictUserFeatureCaches();
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Search with Filter (S1-F1)
@@ -183,6 +210,8 @@ public class UserService {
 
     // Update Preferences (S1-F2)
     public User updatePreferences(Long id, Map<String, Object> newPreferences) {
+        MDC.put("userId", id.toString());
+        try {
         // 1. Security Check
         validateOwnershipOrAdmin(id);
 
@@ -213,6 +242,9 @@ public class UserService {
         cacheInvalidationService.evictUserFeatureCaches();
 
         return savedUser;
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Filter Users by Preference (S1-F5)
@@ -228,19 +260,31 @@ public class UserService {
     // Deactivate User (S1-F4)
     @Transactional
     public User deactivateUser(Long id) {
-        User user = getUserById(id);
+        MDC.put("userId", id.toString());
+        try {
+        validateOwnershipOrAdmin(id);
 
-        int activeBudgets = userRepository.countActiveBudgetsNative(id);
-        if (activeBudgets > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot deactivate user with active budgets");
+        int activeBudgets;
+        try {
+            activeBudgets = budgetServiceClient.getActiveBudgetCount(id);
+        } catch (FeignException.NotFound e) {
+            activeBudgets = 0;
+        } catch (FeignException e) {
+            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
         }
 
-        userRepository.voidPendingTransactionsNative(id);
+        if (activeBudgets > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has active budgets");
+        }
+
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         user.setStatus(UserStatus.DEACTIVATED);
         User savedUser = userRepository.save(user);
 
-        // RETROFIT: Observer notification
+        userEventPublisher.publishUserDeactivated(new UserDeactivatedEvent(id));
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
         payload.put("action", "USER_DEACTIVATED");
@@ -249,11 +293,16 @@ public class UserService {
         cacheInvalidationService.evictUserFeatureCaches();
 
         return savedUser;
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Set Primary Financial Goal (S1-F7)
     @Transactional
     public User setPrimaryFinancialGoal(Long userId, Long goalId) {
+        MDC.put("userId", userId.toString());
+        try {
         User user = getUserById(userId);
 
         FinancialGoal goal = financialGoalRepository.findById(goalId)
@@ -276,12 +325,17 @@ public class UserService {
         cacheInvalidationService.evictUserDetail(userId);
         cacheInvalidationService.evictUserFeatureCaches();
         return saved;
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Get User Profile with Goals (S1-F8)
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F8::' + #id")
     public UserProfileDTO getUserProfileWithGoals(Long id) {
+        MDC.put("userId", id.toString());
+        try {
         User user = getUserById(id);
 
         List<FinancialGoalDTO> goalDTOs = user.getFinancialGoals().stream()
@@ -303,32 +357,49 @@ public class UserService {
                 .financialGoals(goalDTOs)
                 .totalGoals(goalDTOs.size())
                 .build();
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Get User Transaction Summary (S1-F3)
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F3::' + #userId")
+    @Transactional(readOnly = true)
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
+        MDC.put("userId", userId.toString());
+        try {
         User user = getUserById(userId);
 
-        List<Object[]> results = userRepository.getUserTransactionSummary(userId);
-
-        if (results == null || results.isEmpty()) {
-            return UserTransactionSummaryDTO.builder()
-                    .userId(user.getId())
-                    .name(user.getName())
-                    .totalTransactions(0L)
-                    .completedTransactions(0L)
-                    .voidedTransactions(0L)
-                    .totalIncome(0.0)
-                    .totalExpenses(0.0)
-                    .build();
+        UserTransactionSummaryDTO remote;
+        try {
+            remote = transactionServiceClient.getUserTransactionSummary(userId);
+        } catch (FeignException.NotFound e) {
+            remote = null;
+        } catch (FeignException e) {
+            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
         }
 
-        return objectArrayDtoAdapter.adaptToUserTransactionSummary(results.get(0));
+        if (remote == null) {
+            return emptyUserTransactionSummary(user);
+        }
+
+        return UserTransactionSummaryDTO.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .totalTransactions(longOrZero(remote.getTotalTransactions()))
+                .completedTransactions(longOrZero(remote.getCompletedTransactions()))
+                .voidedTransactions(longOrZero(remote.getVoidedTransactions()))
+                .totalIncome(remote.getTotalIncome() != null ? remote.getTotalIncome() : 0.0)
+                .totalExpenses(remote.getTotalExpenses() != null ? remote.getTotalExpenses() : 0.0)
+                .build();
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     // Top Savers by Net Income (S1-F6)
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F6::' + #startDate + ':' + #endDate + ':' + #limit")
+    @Transactional(readOnly = true)
     public List<TopSaverDTO> getTopSaversByNetIncome(LocalDate startDate, LocalDate endDate, int limit) {
         if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date range");
@@ -338,36 +409,89 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Limit must be greater than 0");
         }
 
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
+        String startDateStr = startDate.toString();
+        String endDateStr = endDate.toString();
 
-        List<Object[]> results = userRepository.getTopSaversByNetIncome(startDateTime, endDateTime, limit);
+        List<TopSaverDTO> aggregated = new ArrayList<>();
+        for (User u : userRepository.findAll()) {
+            NetIncomeDTO netIncomeDTO = fetchUserNetIncomeOrZero(u.getId(), startDateStr, endDateStr);
+            double savings = netIncomeDTO.netSavings() != null ? netIncomeDTO.netSavings() : 0.0;
+            aggregated.add(TopSaverDTO.builder()
+                    .userId(u.getId())
+                    .name(u.getName())
+                    .netSavings(savings)
+                    .transactionCount((long) netIncomeDTO.transactionCount())
+                    .build());
+        }
 
-        return results.stream()
-                .map(objectArrayDtoAdapter::adaptToTopSaver)
-                .toList();
+        aggregated.sort(Comparator.comparing(TopSaverDTO::getNetSavings).reversed());
+        return aggregated.stream().limit(limit).toList();
     }
 
     // Find users by currency preference with minimum completed transactions (S1-F9)
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F9::' + #currency + ':' + #minTransactions")
-    public List<CurrencyPreferenceUserDTO> findUsersByCurrencyPreference(String currency, int minTransactions) {
+    @Transactional(readOnly = true)
+    public List<User> findUsersByCurrencyPreference(String currency, int minTransactions) {
         if (currency == null || currency.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currency must not be blank");
         }
 
         String trimmed = currency.trim();
-        List<Object[]> rows = userRepository.findUsersByCurrencyPreferenceAndMinCompletedTransactions(
-                trimmed, minTransactions);
+        List<User> matched = userRepository.findUsersWithDefaultCurrency(trimmed);
+        List<User> result = new ArrayList<>();
 
-        return rows.stream()
-                .map(row -> new CurrencyPreferenceUserDTO(
-                        ((Number) row[0]).longValue(),
-                        (String) row[1],
-                        ((Number) row[2]).longValue()))
-                .toList();
+        for (User u : matched) {
+            long count = fetchCompletedTransactionCountOrZero(u.getId());
+            if (count >= minTransactions) {
+                result.add(u);
+            }
+        }
+        return result;
+    }
+
+    private UserTransactionSummaryDTO emptyUserTransactionSummary(User user) {
+        return UserTransactionSummaryDTO.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .totalTransactions(0L)
+                .completedTransactions(0L)
+                .voidedTransactions(0L)
+                .totalIncome(0.0)
+                .totalExpenses(0.0)
+                .build();
+    }
+
+    private long longOrZero(Long value) {
+        return value != null ? value : 0L;
+    }
+
+    private NetIncomeDTO fetchUserNetIncomeOrZero(Long userId, String startDateStr, String endDateStr) {
+        try {
+            NetIncomeDTO dto = transactionServiceClient.getUserNetIncome(userId, startDateStr, endDateStr);
+            return dto != null ? dto : emptyNetIncome();
+        } catch (FeignException.NotFound e) {
+            return emptyNetIncome();
+        } catch (FeignException e) {
+            return emptyNetIncome();
+        }
+    }
+
+    private static NetIncomeDTO emptyNetIncome() {
+        return new NetIncomeDTO(0.0, 0, 0.0, 0.0);
+    }
+
+    private long fetchCompletedTransactionCountOrZero(Long userId) {
+        try {
+            return transactionServiceClient.getCompletedTransactionCount(userId);
+        } catch (FeignException.NotFound e) {
+            return 0L;
+        } catch (FeignException e) {
+            return 0L;
+        }
     }
 
     // Register User (S1-F10)
+    @Transactional
     public String registerUser(RegisterRequest request) {
         // a) Validate not blank
         if (request.name() == null || request.name().isBlank() ||
@@ -393,6 +517,12 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
 
+        userEventPublisher.publishUserRegistered(new UserRegisteredEvent(
+                savedUser.getId(),
+                savedUser.getEmail(),
+                savedUser.getRole().name()
+        ));
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
         payload.put("email", savedUser.getEmail());
@@ -417,24 +547,27 @@ public class UserService {
 
         // 3. Generate and return token
         String token = jwtService.generateToken(user.getId(), user.getEmail(), user.getRole().name());
-        
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", user.getId());
         payload.put("email", user.getEmail());
         notifyObservers("LOGGED_IN", payload);
-        
+
         return token;
     }
 
     // CC-2 Role Management
     @Transactional
     public User updateUserRole(Long id, String roleName) {
+        MDC.put("userId", id.toString());
+        try {
         User user = getUserById(id);
         Role oldRole = user.getRole();
         try {
             user.setRole(Role.valueOf(roleName.toUpperCase()));
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
         }
         User savedUser = userRepository.save(user);
 
@@ -447,10 +580,15 @@ public class UserService {
         cacheInvalidationService.evictUserFeatureCaches();
 
         return savedUser;
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     @Cacheable(cacheNames = "user-service", key = "'user-service::S1-F12::' + #id + ':' + (#page == null ? 0 : #page) + ':' + (#size == null ? 10 : #size)")
     public UserActivityFeedResponse getUserActivityFeed(Long id, Integer page, Integer size) {
+        MDC.put("userId", id.toString());
+        try {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof User caller)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
@@ -467,14 +605,16 @@ public class UserService {
 
         Page<AuthEvent> eventsPage = authEventRepository.findByUserIdOrderByTimestampDesc(
                 id,
-                PageRequest.of(resolvedPage, resolvedSize)
-        );
+                PageRequest.of(resolvedPage, resolvedSize));
 
         List<ActivityEventDTO> content = eventsPage.getContent().stream()
                 .map(mongoDocumentAdapter::adapt)
                 .toList();
 
         return new UserActivityFeedResponse(content, resolvedPage, resolvedSize, eventsPage.getTotalElements());
+        } finally {
+            MDC.remove("userId");
+        }
     }
 
     private void validateOwnershipOrAdmin(Long targetUserId) {

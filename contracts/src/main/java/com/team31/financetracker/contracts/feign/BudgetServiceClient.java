@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "budget-service", url = "${feign.budget-service.url}")
+@FeignClient(name = "budget-service", url = "${feign.budget-service.url:http://budget-service:8080}")
 public interface BudgetServiceClient {
 
     // S1-F4: active-budget pre-check before user deactivation

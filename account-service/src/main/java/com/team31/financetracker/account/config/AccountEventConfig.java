@@ -7,6 +7,10 @@ import org.springframework.amqp.core.TopicExchange;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.core.QueueBuilder;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,17 +18,17 @@ import java.util.Map;
 @Configuration
 public class AccountEventConfig {
 
+    @Value("${rabbitmq.queues.transaction-saga-listener}")
+    private String sagaListenerQueue;
+
+    @Value("${rabbitmq.queues.transaction-saga-listener-dlq}")
+    private String sagaListenerDlq;
+
     @Value("${rabbitmq.exchanges.account}")
     private String accountExchange;
 
     @Value("${rabbitmq.exchanges.transaction}")
     private String transactionExchange;
-
-    @Value("${rabbitmq.queues.transaction-saga-listener}")
-    private String transactionSagaListenerQueue;
-
-    @Value("${rabbitmq.queues.transaction-saga-listener-dlq}")
-    private String transactionSagaListenerDlq;
 
     @Value("${rabbitmq.routing-keys.transaction-approved}")
     private String transactionApprovedRoutingKey;
@@ -41,30 +45,54 @@ public class AccountEventConfig {
     }
 
     @Bean
-    public Queue transactionSagaListenerQueue() {
-        Map<String, Object> args = new HashMap<>();
-        args.put("x-dead-letter-exchange", "");
-        args.put("x-dead-letter-routing-key", transactionSagaListenerDlq);
-        return new Queue(transactionSagaListenerQueue, true, false, false, args);
+    public TopicExchange transactionEventsExchange() {
+        return new TopicExchange(transactionExchange);
     }
 
     @Bean
-    public Queue transactionSagaListenerDlq() {
-        return new Queue(transactionSagaListenerDlq, true);
+    public Queue accountTransactionSagaListenerQueue() {
+        return QueueBuilder.durable(sagaListenerQueue)
+                .withArgument("x-dead-letter-exchange", "")
+                .withArgument("x-dead-letter-routing-key", sagaListenerDlq)
+                .build();
+    }
+
+    @Bean
+    public Queue accountTransactionSagaListenerDlq() {
+        return new Queue(sagaListenerDlq, true);
     }
 
     @Bean
     public Binding transactionApprovedBinding() {
-        return BindingBuilder.bind(transactionSagaListenerQueue()).to(new TopicExchange(transactionExchange)).with(transactionApprovedRoutingKey);
+        return BindingBuilder.bind(accountTransactionSagaListenerQueue())
+                .to(transactionEventsExchange())
+                .with(transactionApprovedRoutingKey);
     }
 
     @Bean
     public Binding transactionCompletedBinding() {
-        return BindingBuilder.bind(transactionSagaListenerQueue()).to(new TopicExchange(transactionExchange)).with(transactionCompletedRoutingKey);
+        return BindingBuilder.bind(accountTransactionSagaListenerQueue())
+                .to(transactionEventsExchange())
+                .with(transactionCompletedRoutingKey);
     }
 
     @Bean
     public Binding transactionVoidedBinding() {
-        return BindingBuilder.bind(transactionSagaListenerQueue()).to(new TopicExchange(transactionExchange)).with(transactionVoidedRoutingKey);
+        return BindingBuilder.bind(accountTransactionSagaListenerQueue())
+                .to(transactionEventsExchange())
+                .with(transactionVoidedRoutingKey);
+    }
+
+    @Bean
+    public JacksonJsonMessageConverter messageConverter() {
+        return new JacksonJsonMessageConverter();
+    }
+
+    @Bean
+    public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory,
+                                         JacksonJsonMessageConverter messageConverter) {
+        RabbitTemplate template = new RabbitTemplate(connectionFactory);
+        template.setMessageConverter(messageConverter);
+        return template;
     }
 }

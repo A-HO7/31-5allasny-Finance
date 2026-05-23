@@ -80,8 +80,6 @@ public class BudgetAnalyticsService implements BudgetSubject {
         } catch (FeignException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service unavailable");
         }
-        // M3: verify the user exists via BudgetService (all Feign calls centralised there)
-        budgetService.verifyUserExists(userId);
 
         String cacheKey = "budget-service::S4-F10::" + userId + "::" + startDate + "::" + endDate;
 
@@ -182,7 +180,7 @@ public class BudgetAnalyticsService implements BudgetSubject {
         payload.put("feature", "S4-F10");
         payload.put("cacheHit", cacheHit);
 
-        notifyObservers("DASHBOARD_VIEWED", payload);
+        notifyObservers("ANALYTICS_VIEWED", payload);
     }
 
     @Override

@@ -1,13 +1,15 @@
 package com.team31.financetracker.user;
 
+import com.team31.financetracker.contracts.feign.BudgetServiceClient;
+import com.team31.financetracker.contracts.feign.TransactionServiceClient;
 import com.team31.financetracker.user.adapter.MongoDocumentAdapter;
-import com.team31.financetracker.user.adapter.ObjectArrayDtoAdapter;
 import com.team31.financetracker.user.dto.UserActivityFeedResponse;
 import com.team31.financetracker.user.model.Role;
 import com.team31.financetracker.user.model.User;
 import com.team31.financetracker.user.model.nosql.AuthEvent;
 import com.team31.financetracker.user.observer.MongoEventLogger;
 import com.team31.financetracker.user.repository.FinancialGoalRepository;
+import com.team31.financetracker.user.messaging.publishers.UserEventPublisher;
 import com.team31.financetracker.user.repository.UserRepository;
 import com.team31.financetracker.user.repository.nosql.AuthEventRepository;
 import com.team31.financetracker.user.service.CacheInvalidationService;
@@ -15,7 +17,6 @@ import com.team31.financetracker.user.service.JwtService;
 import com.team31.financetracker.user.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -51,10 +52,13 @@ class UserServiceApplicationTests {
     @Mock
     private MongoEventLogger mongoEventLogger;
     @Mock
+    private com.team31.financetracker.contracts.feign.TransactionServiceClient transactionServiceClient;
+    @Mock
+    private com.team31.financetracker.contracts.feign.BudgetServiceClient budgetServiceClient;
+    @Mock
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
-
-    @InjectMocks
-    private UserService userService;
+    @Mock
+    private UserEventPublisher userEventPublisher;
 
     @Test
     void ownerCanReadActivityFeed() {
@@ -78,9 +82,11 @@ class UserServiceApplicationTests {
                 passwordEncoder,
                 jwtService,
                 authEventRepository,
-                new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
+                transactionServiceClient,
+                budgetServiceClient,
+                userEventPublisher,
                 mongoEventLogger
         );
 
@@ -105,9 +111,11 @@ class UserServiceApplicationTests {
                 passwordEncoder,
                 jwtService,
                 authEventRepository,
-                new ObjectArrayDtoAdapter(),
                 new MongoDocumentAdapter(),
                 cacheInvalidationService,
+                transactionServiceClient,
+                budgetServiceClient,
+                userEventPublisher,
                 mongoEventLogger
         );
 

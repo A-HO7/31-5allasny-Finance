@@ -35,10 +35,10 @@ spring:
     keyspace-name: financeks
     schema-action: CREATE_IF_NOT_EXISTS
     connection:
-      connect-timeout: 5s
-      init-query-timeout: 5s
+      connect-timeout: 15s
+      init-query-timeout: 15s
     request:
-      timeout: 50ms
+      timeout: 15s
 
   rabbitmq:
     host: rabbitmq

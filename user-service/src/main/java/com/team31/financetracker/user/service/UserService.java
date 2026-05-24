@@ -146,36 +146,54 @@ public class UserService {
         }
     }
 
+    // Read multiple by IDs — batch lookup
+    @Transactional(readOnly = true)
+    public List<com.team31.financetracker.contracts.dto.UserDTO> getUsersByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return userRepository.findAllByIdIn(ids).stream()
+                .map(u -> com.team31.financetracker.contracts.dto.UserDTO.builder()
+                        .id(u.getId())
+                        .name(u.getName())
+                        .email(u.getEmail())
+                        .role(u.getRole() != null ? u.getRole().name() : null)
+                        .status(u.getStatus() != null ? u.getStatus().name() : null)
+                        .preferences(u.getPreferences())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     // Update
     @Transactional
     public User updateUser(Long id, User userDetails) {
         MDC.put("userId", id.toString());
         try {
-        validateOwnershipOrAdmin(id);
+            validateOwnershipOrAdmin(id);
 
-        User existingUser = userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+            User existingUser = userRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        existingUser.setName(userDetails.getName());
-        existingUser.setEmail(userDetails.getEmail());
-        existingUser.setPhone(userDetails.getPhone());
+            existingUser.setName(userDetails.getName());
+            existingUser.setEmail(userDetails.getEmail());
+            existingUser.setPhone(userDetails.getPhone());
 
-        if (userDetails.getPassword() != null && !userDetails.getPassword().isBlank()) {
-            existingUser.setPassword(passwordEncoder.encode(userDetails.getPassword()));
-        }
-
-        // Role Change Protection: Only an ADMIN can change roles
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof User caller) {
-            if (caller.getRole() == Role.ADMIN) {
-                existingUser.setRole(userDetails.getRole());
+            if (userDetails.getPassword() != null && !userDetails.getPassword().isBlank()) {
+                existingUser.setPassword(passwordEncoder.encode(userDetails.getPassword()));
             }
-        }
 
-        User saved = userRepository.save(existingUser);
-        cacheInvalidationService.evictUserDetail(id);
-        cacheInvalidationService.evictUserFeatureCaches();
-        return saved;
+            // Role Change Protection: Only an ADMIN can change roles
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User caller) {
+                if (caller.getRole() == Role.ADMIN) {
+                    existingUser.setRole(userDetails.getRole());
+                }
+            }
+
+            User saved = userRepository.save(existingUser);
+            cacheInvalidationService.evictUserDetail(id);
+            cacheInvalidationService.evictUserFeatureCaches();
+            return saved;
         } finally {
             MDC.remove("userId");
         }
@@ -186,12 +204,12 @@ public class UserService {
     public void deleteUser(Long id) {
         MDC.put("userId", id.toString());
         try {
-        validateOwnershipOrAdmin(id);
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        userRepository.delete(user);
-        cacheInvalidationService.evictUserDetail(id);
-        cacheInvalidationService.evictUserFeatureCaches();
+            validateOwnershipOrAdmin(id);
+            User user = userRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+            userRepository.delete(user);
+            cacheInvalidationService.evictUserDetail(id);
+            cacheInvalidationService.evictUserFeatureCaches();
         } finally {
             MDC.remove("userId");
         }
@@ -212,36 +230,36 @@ public class UserService {
     public User updatePreferences(Long id, Map<String, Object> newPreferences) {
         MDC.put("userId", id.toString());
         try {
-        // 1. Security Check
-        validateOwnershipOrAdmin(id);
+            // 1. Security Check
+            validateOwnershipOrAdmin(id);
 
-        // 2. Fetch User
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+            // 2. Fetch User
+            User user = userRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // 3. Merge Logic (M1 Requirement)
-        Map<String, Object> existing = user.getPreferences();
-        if (existing == null) {
-            user.setPreferences(newPreferences);
-        } else {
-            existing.putAll(newPreferences); // merges, overwrites same keys
-            user.setPreferences(existing);
-        }
+            // 3. Merge Logic (M1 Requirement)
+            Map<String, Object> existing = user.getPreferences();
+            if (existing == null) {
+                user.setPreferences(newPreferences);
+            } else {
+                existing.putAll(newPreferences); // merges, overwrites same keys
+                user.setPreferences(existing);
+            }
 
-        // 4. Save
-        User savedUser = userRepository.save(user);
+            // 4. Save
+            User savedUser = userRepository.save(user);
 
-        // 5. Notify Observers (M2 Retrofit)
-        Map<String, Object> payload = new HashMap<>(newPreferences);
-        payload.put("userId", savedUser.getId());
-        payload.put("action", "USER_UPDATED");
-        notifyObservers("USER_UPDATED", payload);
+            // 5. Notify Observers (M2 Retrofit)
+            Map<String, Object> payload = new HashMap<>(newPreferences);
+            payload.put("userId", savedUser.getId());
+            payload.put("action", "USER_UPDATED");
+            notifyObservers("USER_UPDATED", payload);
 
-        // 6. Cache Invalidation
-        cacheInvalidationService.evictUserDetail(id);
-        cacheInvalidationService.evictUserFeatureCaches();
+            // 6. Cache Invalidation
+            cacheInvalidationService.evictUserDetail(id);
+            cacheInvalidationService.evictUserFeatureCaches();
 
-        return savedUser;
+            return savedUser;
         } finally {
             MDC.remove("userId");
         }
@@ -262,37 +280,37 @@ public class UserService {
     public User deactivateUser(Long id) {
         MDC.put("userId", id.toString());
         try {
-        validateOwnershipOrAdmin(id);
+            validateOwnershipOrAdmin(id);
 
-        int activeBudgets;
-        try {
-            activeBudgets = budgetServiceClient.getActiveBudgetCount(id);
-        } catch (FeignException.NotFound e) {
-            activeBudgets = 0;
-        } catch (FeignException e) {
-            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
-        }
+            int activeBudgets;
+            try {
+                activeBudgets = budgetServiceClient.getActiveBudgetCount(id);
+            } catch (FeignException.NotFound e) {
+                activeBudgets = 0;
+            } catch (FeignException e) {
+                throw new ServiceUnavailableException("Downstream service temporarily unavailable");
+            }
 
-        if (activeBudgets > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has active budgets");
-        }
+            if (activeBudgets > 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has active budgets");
+            }
 
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+            User user = userRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        user.setStatus(UserStatus.DEACTIVATED);
-        User savedUser = userRepository.save(user);
+            user.setStatus(UserStatus.DEACTIVATED);
+            User savedUser = userRepository.save(user);
 
-        userEventPublisher.publishUserDeactivated(new UserDeactivatedEvent(id));
+            userEventPublisher.publishUserDeactivated(new UserDeactivatedEvent(id));
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("userId", savedUser.getId());
-        payload.put("action", "USER_DEACTIVATED");
-        notifyObservers("USER_DEACTIVATED", payload);
-        cacheInvalidationService.evictUserDetail(id);
-        cacheInvalidationService.evictUserFeatureCaches();
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", savedUser.getId());
+            payload.put("action", "USER_DEACTIVATED");
+            notifyObservers("USER_DEACTIVATED", payload);
+            cacheInvalidationService.evictUserDetail(id);
+            cacheInvalidationService.evictUserFeatureCaches();
 
-        return savedUser;
+            return savedUser;
         } finally {
             MDC.remove("userId");
         }
@@ -303,28 +321,28 @@ public class UserService {
     public User setPrimaryFinancialGoal(Long userId, Long goalId) {
         MDC.put("userId", userId.toString());
         try {
-        User user = getUserById(userId);
+            User user = getUserById(userId);
 
-        FinancialGoal goal = financialGoalRepository.findById(goalId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial goal not found"));
+            FinancialGoal goal = financialGoalRepository.findById(goalId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial goal not found"));
 
-        if (!goal.getUser().getId().equals(userId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Goal does not belong to the user");
-        }
+            if (!goal.getUser().getId().equals(userId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Goal does not belong to the user");
+            }
 
-        // Remove primary from all user's goals
-        for (FinancialGoal g : user.getFinancialGoals()) {
-            g.setPrimary(false);
-        }
+            // Remove primary from all user's goals
+            for (FinancialGoal g : user.getFinancialGoals()) {
+                g.setPrimary(false);
+            }
 
-        // Set the target goal to primary
-        goal.setPrimary(true);
+            // Set the target goal to primary
+            goal.setPrimary(true);
 
-        // Save via JPA cascade from User
-        User saved = userRepository.save(user);
-        cacheInvalidationService.evictUserDetail(userId);
-        cacheInvalidationService.evictUserFeatureCaches();
-        return saved;
+            // Save via JPA cascade from User
+            User saved = userRepository.save(user);
+            cacheInvalidationService.evictUserDetail(userId);
+            cacheInvalidationService.evictUserFeatureCaches();
+            return saved;
         } finally {
             MDC.remove("userId");
         }
@@ -336,27 +354,27 @@ public class UserService {
     public UserProfileDTO getUserProfileWithGoals(Long id) {
         MDC.put("userId", id.toString());
         try {
-        User user = getUserById(id);
+            User user = getUserById(id);
 
-        List<FinancialGoalDTO> goalDTOs = user.getFinancialGoals().stream()
-                .map(goal -> new FinancialGoalDTO(
-                        goal.getLabel(),
-                        goal.getTargetAmount(),
-                        goal.getCurrentAmount(),
-                        goal.getDeadline(),
-                        goal.getPrimary(),
-                        goal.getMetadata()))
-                .collect(Collectors.toList());
+            List<FinancialGoalDTO> goalDTOs = user.getFinancialGoals().stream()
+                    .map(goal -> new FinancialGoalDTO(
+                            goal.getLabel(),
+                            goal.getTargetAmount(),
+                            goal.getCurrentAmount(),
+                            goal.getDeadline(),
+                            goal.getPrimary(),
+                            goal.getMetadata()))
+                    .collect(Collectors.toList());
 
-        return UserProfileDTO.builder()
-                .userId(user.getId())
-                .name(user.getName())
-                .email(user.getEmail())
-                .phone(user.getPhone())
-                .preferences(user.getPreferences())
-                .financialGoals(goalDTOs)
-                .totalGoals(goalDTOs.size())
-                .build();
+            return UserProfileDTO.builder()
+                    .userId(user.getId())
+                    .name(user.getName())
+                    .email(user.getEmail())
+                    .phone(user.getPhone())
+                    .preferences(user.getPreferences())
+                    .financialGoals(goalDTOs)
+                    .totalGoals(goalDTOs.size())
+                    .build();
         } finally {
             MDC.remove("userId");
         }
@@ -368,30 +386,30 @@ public class UserService {
     public UserTransactionSummaryDTO getUserTransactionSummary(Long userId) {
         MDC.put("userId", userId.toString());
         try {
-        User user = getUserById(userId);
+            User user = getUserById(userId);
 
-        UserTransactionSummaryDTO remote;
-        try {
-            remote = transactionServiceClient.getUserTransactionSummary(userId);
-        } catch (FeignException.NotFound e) {
-            remote = null;
-        } catch (FeignException e) {
-            throw new ServiceUnavailableException("Downstream service temporarily unavailable");
-        }
+            UserTransactionSummaryDTO remote;
+            try {
+                remote = transactionServiceClient.getUserTransactionSummary(userId);
+            } catch (FeignException.NotFound e) {
+                remote = null;
+            } catch (FeignException e) {
+                throw new ServiceUnavailableException("Downstream service temporarily unavailable");
+            }
 
-        if (remote == null) {
-            return emptyUserTransactionSummary(user);
-        }
+            if (remote == null) {
+                return emptyUserTransactionSummary(user);
+            }
 
-        return UserTransactionSummaryDTO.builder()
-                .userId(user.getId())
-                .name(user.getName())
-                .totalTransactions(longOrZero(remote.getTotalTransactions()))
-                .completedTransactions(longOrZero(remote.getCompletedTransactions()))
-                .voidedTransactions(longOrZero(remote.getVoidedTransactions()))
-                .totalIncome(remote.getTotalIncome() != null ? remote.getTotalIncome() : 0.0)
-                .totalExpenses(remote.getTotalExpenses() != null ? remote.getTotalExpenses() : 0.0)
-                .build();
+            return UserTransactionSummaryDTO.builder()
+                    .userId(user.getId())
+                    .name(user.getName())
+                    .totalTransactions(longOrZero(remote.getTotalTransactions()))
+                    .completedTransactions(longOrZero(remote.getCompletedTransactions()))
+                    .voidedTransactions(longOrZero(remote.getVoidedTransactions()))
+                    .totalIncome(remote.getTotalIncome() != null ? remote.getTotalIncome() : 0.0)
+                    .totalExpenses(remote.getTotalExpenses() != null ? remote.getTotalExpenses() : 0.0)
+                    .build();
         } finally {
             MDC.remove("userId");
         }
@@ -520,8 +538,7 @@ public class UserService {
         userEventPublisher.publishUserRegistered(new UserRegisteredEvent(
                 savedUser.getId(),
                 savedUser.getEmail(),
-                savedUser.getRole().name()
-        ));
+                savedUser.getRole().name()));
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", savedUser.getId());
@@ -561,25 +578,25 @@ public class UserService {
     public User updateUserRole(Long id, String roleName) {
         MDC.put("userId", id.toString());
         try {
-        User user = getUserById(id);
-        Role oldRole = user.getRole();
-        try {
-            user.setRole(Role.valueOf(roleName.toUpperCase()));
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
-        }
-        User savedUser = userRepository.save(user);
+            User user = getUserById(id);
+            Role oldRole = user.getRole();
+            try {
+                user.setRole(Role.valueOf(roleName.toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Invalid role: " + roleName + ". Valid values: PERSONAL, BUSINESS, ADMIN");
+            }
+            User savedUser = userRepository.save(user);
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("userId", savedUser.getId());
-        payload.put("oldRole", oldRole.name());
-        payload.put("newRole", savedUser.getRole().name());
-        notifyObservers("ROLE_CHANGED", payload);
-        cacheInvalidationService.evictRoleChangeCaches(savedUser.getId());
-        cacheInvalidationService.evictUserFeatureCaches();
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("userId", savedUser.getId());
+            payload.put("oldRole", oldRole.name());
+            payload.put("newRole", savedUser.getRole().name());
+            notifyObservers("ROLE_CHANGED", payload);
+            cacheInvalidationService.evictRoleChangeCaches(savedUser.getId());
+            cacheInvalidationService.evictUserFeatureCaches();
 
-        return savedUser;
+            return savedUser;
         } finally {
             MDC.remove("userId");
         }
@@ -589,29 +606,29 @@ public class UserService {
     public UserActivityFeedResponse getUserActivityFeed(Long id, Integer page, Integer size) {
         MDC.put("userId", id.toString());
         try {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getPrincipal() instanceof User caller)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-        }
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !(authentication.getPrincipal() instanceof User caller)) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+            }
 
-        if (!caller.getId().equals(id) && caller.getRole() != Role.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
-        }
+            if (!caller.getId().equals(id) && caller.getRole() != Role.ADMIN) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+            }
 
-        getUserById(id);
+            getUserById(id);
 
-        int resolvedPage = page == null ? 0 : Math.max(page, 0);
-        int resolvedSize = size == null ? 10 : Math.min(Math.max(size, 1), 100);
+            int resolvedPage = page == null ? 0 : Math.max(page, 0);
+            int resolvedSize = size == null ? 10 : Math.min(Math.max(size, 1), 100);
 
-        Page<AuthEvent> eventsPage = authEventRepository.findByUserIdOrderByTimestampDesc(
-                id,
-                PageRequest.of(resolvedPage, resolvedSize));
+            Page<AuthEvent> eventsPage = authEventRepository.findByUserIdOrderByTimestampDesc(
+                    id,
+                    PageRequest.of(resolvedPage, resolvedSize));
 
-        List<ActivityEventDTO> content = eventsPage.getContent().stream()
-                .map(mongoDocumentAdapter::adapt)
-                .toList();
+            List<ActivityEventDTO> content = eventsPage.getContent().stream()
+                    .map(mongoDocumentAdapter::adapt)
+                    .toList();
 
-        return new UserActivityFeedResponse(content, resolvedPage, resolvedSize, eventsPage.getTotalElements());
+            return new UserActivityFeedResponse(content, resolvedPage, resolvedSize, eventsPage.getTotalElements());
         } finally {
             MDC.remove("userId");
         }

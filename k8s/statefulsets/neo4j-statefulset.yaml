@@ -22,9 +22,11 @@ spec:
             - name: NEO4J_AUTH
               value: "neo4j/neo4jpass"
             - name: NEO4J_server_memory_heap_max__size
-              value: "512m"
-            - name: NEO4J_server_memory_heap_initial__size
               value: "256m"
+            - name: NEO4J_server_memory_heap_initial__size
+              value: "128m"
+            - name: NEO4J_server_memory_pagecache_size
+              value: "64m"
           ports:
             - containerPort: 7687
               name: bolt
@@ -32,10 +34,10 @@ spec:
               name: http
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
+              memory: "256Mi"
+              cpu: "150m"
             limits:
-              memory: "1Gi"
+              memory: "512Mi"
               cpu: "500m"
           readinessProbe:
             httpGet:

@@ -47,12 +47,7 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
-  volumeClaimTemplates:
-    - metadata:
-        name: user-postgres-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
+      volumes:
+        - name: user-postgres-data
+          persistentVolumeClaim:
+            claimName: user-postgres-pvc
